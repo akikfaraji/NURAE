@@ -1,0 +1,103 @@
+// NURAE V00.00.000-beta-01 — FRAZIYM TECH & AI
+// Data model. SQLite for this release; the schema is intentionally simple
+// and standard so migration to PostgreSQL later is straightforward
+// (no SQLite-specific column types, no JSON columns, standard relations).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  status      String   @default("active") // active | archived
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  bots Bot[]
+
+  @@map("projects")
+}
+
+model Bot {
+  id          String   @id @default(cuid())
+  projectId   String   @map("project_id")
+  name        String
+  description String   @default("")
+  // Telegram username is resolved via getMe when the bot starts (e.g. "@my_bot").
+  telegramUsername     String? @map("telegram_username")
+  // Encrypted Telegram bot token (AES-256-GCM via SecretManager). NEVER returned by APIs.
+  telegramTokenRef     String  @map("telegram_token_reference")
+  // Optional encrypted AI provider API key. NEVER returned by APIs.
+  apiKeyRef            String? @map("api_key_reference")
+  // Optional base URL override for openai-compatible providers.
+  baseUrl              String? @map("base_url")
+  systemPrompt         String  @default("You are a helpful assistant. Answer clearly and concisely.") @map("system_prompt")
+  provider             String  @default("zai") // zai | openai | openrouter | deepseek | glm | local | custom
+  model                String  @default("glm-4.5-flash") @map("model")
+  temperature          Float   @default(0.7)
+  maxTokens            Int     @default(1024) @map("max_tokens")
+  // Short-term conversation memory: number of recent messages kept per chat.
+  memorySize           Int     @default(10) @map("memory_size")
+  enabled              Boolean @default(true)
+  status               String  @default("stopped") // stopped | starting | running | stopping | error
+  statusDetail         String? @map("status_detail") // last error / human-readable status info
+  lastStartedAt        DateTime? @map("last_started_at")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  logs          Log[]
+
+  @@index([projectId])
+  @@map("bots")
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  botId     String   @map("bot_id")
+  // Telegram chat id (string to stay portable across platforms/DBs).
+  chatId    String   @map("chat_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([botId, chatId])
+  @@index([botId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String   @map("conversation_id")
+  role           String // user | assistant | system
+  content        String
+  timestamp      DateTime @default(now()) @map("timestamp")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, timestamp])
+  @@map("messages")
+}
+
+model Log {
+  id        String   @id @default(cuid())
+  botId     String?  @map("bot_id") // null => system-level (NURAE core) log
+  level     String // info | warn | error
+  message   String
+  timestamp DateTime @default(now()) @map("timestamp")
+
+  bot Bot? @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, timestamp])
+  @@map("logs")
+}
