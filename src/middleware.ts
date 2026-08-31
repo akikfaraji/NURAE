@@ -15,6 +15,12 @@ import { readGatewayLink } from '@/lib/gateway/store';
  * When no backend is linked yet the API answers 503 backend-not-linked so
  * the dashboard can show a clear state instead of cryptic failures.
  *
+ * Role guard: a deployment that REGISTERS itself with a frontend (i.e. the
+ * backend, which carries NURAE_LINK_FRONTEND_URL + NURAE_GATEWAY_KEY) must
+ * never proxy its own API — it has no link store of its own and would
+ * otherwise answer 503 to its own health checks (and so would the frontend's
+ * chain verification). Backend ⇒ middleware is a no-op pass-through.
+ *
  * Precedence note: middleware runs before next.config.ts rewrites, so an
  * accepted gateway link wins over a build-time NURAE_BACKEND_URL. Without
  * NURAE_GATEWAY_KEY this middleware is a no-op pass-through and the app
@@ -25,6 +31,9 @@ export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   if (pathname === '/api' || pathname.startsWith('/api/gateway/')) {
     return NextResponse.next(); // control routes are served locally
+  }
+  if (process.env.NURAE_LINK_FRONTEND_URL) {
+    return NextResponse.next(); // I am a registering backend, not a gateway frontend
   }
   if (!process.env.NURAE_GATEWAY_KEY) {
     return NextResponse.next(); // gateway mode not enabled on this deployment

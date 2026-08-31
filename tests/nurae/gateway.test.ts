@@ -58,7 +58,7 @@ describe('gateway registration core', () => {
   test('422 invalid-endpoint for non-HTTPS, invalid URLs and paths', async () => {
     await withKey('k', async () => {
       for (const endpoint of ['http://b.example.com', 'not-a-url', 'https://b.example.com/sub/path', '', undefined]) {
-        const r = await handleGatewayRegister({ endpoint, key: 'k' }, { fetchImpl: healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.000-beta-03' } }) });
+        const r = await handleGatewayRegister({ endpoint, key: 'k' }, { fetchImpl: healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.001-beta-03' } }) });
         expect(r.status).toBe(422);
         expect(r.body.error).toBe('invalid-endpoint');
       }
@@ -73,7 +73,7 @@ describe('gateway registration core', () => {
 
       const wrongStatus = await handleGatewayRegister(
         { endpoint: 'https://b.example.com', key: 'k' },
-        { fetchImpl: healthFetch({ status: 200, body: { status: 'degraded', version: 'V00.01.000-beta-03' } }) },
+        { fetchImpl: healthFetch({ status: 200, body: { status: 'degraded', version: 'V00.01.001-beta-03' } }) },
       );
       expect(wrongStatus.status).toBe(502);
 
@@ -126,7 +126,7 @@ describe('gateway registration core', () => {
       const r = await handleGatewayRegister(
         { endpoint: 'https://b.example.com', key: 'correct-key' },
         {
-          fetchImpl: healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.000-beta-03' } }),
+          fetchImpl: healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.001-beta-03' } }),
           store: memoryStore,
         },
       );
@@ -146,7 +146,7 @@ describe('gateway registration core', () => {
   });
 
   test('health verifier accepts only NURAE V00-series health payloads', async () => {
-    const ok = await verifyBackendHealth('https://b.example.com', healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.000-beta-03' } }));
+    const ok = await verifyBackendHealth('https://b.example.com', healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.001-beta-03' } }));
     expect(ok).toBeNull();
     const bad = await verifyBackendHealth('https://b.example.com', healthFetch({ status: 200, body: { status: 'ok', version: 'V01.00.000' } }));
     expect(bad).toContain('not a NURAE V00-series');

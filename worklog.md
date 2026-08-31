@@ -125,3 +125,22 @@ Stage Summary:
 - beta-03: static frontend + self-registering backend; per-run Vercel rebuilds eliminated from CI
 - One-time user setup for gateway mode: deploy once on Vercel + create Blob store + set NURAE_GATEWAY_KEY env + put GATEWAY_KEY in GitHub Secrets
 - Gateway Link middleware proxy and Actions gateway E2E remain honestly UNTESTED until first run with the new setup
+
+---
+Task ID: 6
+Agent: main (Super Z)
+Task: Fix split-e2e run-3 failure — backend self-proxied its own /api/health (503 backend-not-linked)
+
+Work Log:
+- Triaged run 33397550269 (ce3ecb2): preflight/build/tunnel all green, "Start backend" failed — health gate saw 503 for 60s despite "Ready in 71ms" in backend.log; runs 33396139382 + 33397295386 had failed earlier at preflight (GATEWAY_KEY secret not yet created — user fixed it before run 3)
+- Root cause: the backend process needs NURAE_GATEWAY_KEY to register, but src/middleware.ts activated gateway proxying wherever that var was set — including the backend itself, which has no Blob link store → every /api/* (health included) answered 503 backend-not-linked on the backend's own port
+- Fix (src/middleware.ts): role guard — middleware passes through when NURAE_LINK_FRONTEND_URL is set (a registering backend is never a gateway frontend); health stays proxied on real frontends so the e2e "health via frontend → backend chain" check keeps proving the chain
+- Fix (gateway-link.ts): link outcomes now mirrored to stdout ([gateway] GATEWAY_LINKED / GATEWAY_LINK_FAILED) — DB-only logging made backend.log blind and run 3 undiagnosable from artifacts
+- Version bump V00.01.000-beta-03 -> V00.01.001-beta-03 (bugfix digit per FRAZIYM format); version/api/gateway test fixtures updated
+- Real verification (local standalone boots): (a) backend-role env (LINK_FRONTEND_URL+GATEWAY_KEY, exact run-3 env) → /api/health 200 (was 503); log shows the heartbeat firing and the REAL frontend answering 501 gateway-not-configured; (b) frontend-role env (GATEWAY_KEY only) → /api/health + /api/bots 503 backend-not-linked, /api/gateway/status gatewayMode:true — middleware still active where it belongs
+- Live evidence: https://nurae.vercel.app/api/gateway/status currently returns gatewayMode:false and the real register call returns 501 — the Vercel deployment has NOT been put in gateway mode yet
+
+Stage Summary:
+- 101/101 tests pass; standalone build green; both gateway roles proven by real boots (backend: health 200; frontend: proxying 503-unlinked)
+- Remaining blocker is one-time Vercel setup by the user: set NURAE_GATEWAY_KEY (production) = GATEWAY_KEY secret value, connect a Blob store, redeploy — then re-run the workflow
+- Committed locally only; push awaiting user instruction
