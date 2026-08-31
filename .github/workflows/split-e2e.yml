@@ -31,14 +31,19 @@
 #                        webhook on that bot).
 #   AI_API_KEY           Real key for the chosen provider (openai / openrouter
 #                        / deepseek / glm / custom).
-#   GATEWAY_KEY          Gateway-mode only: the SAME value as the
-#                        NURAE_GATEWAY_KEY env var on the Vercel deployment.
+#   GATEWAY_KEY          Optional. When unset the backend falls back to the
+#                        TEMPORARY bootstrap key hardcoded below (beta-03) —
+#                        PUBLIC in this repo, rotate/delete after the check.
+#                        It must equal NURAE_GATEWAY_KEY on the Vercel
+#                        deployment (which currently falls back to the same
+#                        bootstrap key via src/lib/gateway/bootstrap-key.ts).
 #
 # One-time Vercel setup for frontend=gateway (see README §14):
 #   1. Deploy NURAE to Vercel once (any commit of beta-03+).
 #   2. Project → Storage → create a Blob store (the link is stored there).
-#   3. Project → Settings → Environment Variables:
-#        NURAE_GATEWAY_KEY = <same value as the GATEWAY_KEY secret>
+#   3. (Temporary, beta-03) Nothing else — a bootstrap gateway key is
+#      hardcoded and auto-active on Vercel. For production set the real
+#      NURAE_GATEWAY_KEY env var; it always wins over the fallback.
 #   4. Note the production URL (default https://<project>.vercel.app).
 #
 # Run it from the Actions tab → this workflow → Run workflow. Watch the log
@@ -109,8 +114,10 @@ jobs:
           for s in TELEGRAM_BOT_TOKEN AI_API_KEY; do
             if [ -z "${!s}" ]; then echo "::error::Missing repository secret: $s"; missing=1; fi
           done
-          if [ "$FRONTEND_MODE" = "gateway" ] && [ -z "$GATEWAY_KEY" ]; then
-            echo "::error::Missing repository secret: GATEWAY_KEY (same value as NURAE_GATEWAY_KEY on the Vercel deployment)"; missing=1
+          if [ "$FRONTEND_MODE" = "gateway" ]; then
+            if [ -z "$GATEWAY_KEY" ]; then
+              echo "NOTE: GATEWAY_KEY secret not set — using the TEMPORARY bootstrap key hardcoded for beta-03 (public in this repo; rotate after the check)."
+            fi
           fi
           if [ "$missing" = "1" ]; then
             echo "Required secrets:"
@@ -168,7 +175,8 @@ jobs:
           echo "ADMIN_TOKEN=$ADMIN_TOKEN" >> "$GITHUB_ENV"
           GATEWAY_ENV=""
           if [ "$FRONTEND_MODE" = "gateway" ]; then
-            GATEWAY_ENV="NURAE_LINK_FRONTEND_URL=$FRONTEND_URL NURAE_GATEWAY_KEY=$GATEWAY_KEY"
+            # TEMPORARY bootstrap key (beta-03) — must equal the frontend fallback in src/lib/gateway/bootstrap-key.ts. Rotate both together.
+            GATEWAY_ENV="NURAE_LINK_FRONTEND_URL=$FRONTEND_URL NURAE_GATEWAY_KEY=${GATEWAY_KEY:-nurae-f&bc_0U24KN802q0CATd8f9YwX1Pde8aj}"
           fi
           env \
             DATABASE_URL="file:$PWD/db/e2e.db" \

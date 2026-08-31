@@ -17,6 +17,7 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { NURAE_VERSION } from '../nurae/version';
+import { effectiveGatewayKey } from './bootstrap-key';
 import { blobStore, type GatewayLink, type GatewayStore } from './store';
 
 export interface GatewayResult {
@@ -27,7 +28,7 @@ export interface GatewayResult {
 type FetchLike = typeof fetch;
 
 function keysMatch(presented: string): boolean {
-  const expected = process.env.NURAE_GATEWAY_KEY || '';
+  const expected = effectiveGatewayKey(); // env wins; TEMPORARY bootstrap fallback on Vercel
   if (!expected || !presented) return false;
   const a = createHash('sha256').update(presented, 'utf8').digest();
   const b = createHash('sha256').update(expected, 'utf8').digest();
@@ -90,7 +91,7 @@ export async function handleGatewayRegister(
   deps?: GatewayDeps,
 ): Promise<GatewayResult> {
   const store = deps?.store ?? blobStore;
-  if (!process.env.NURAE_GATEWAY_KEY) {
+  if (!effectiveGatewayKey()) { // TEMPORARY bootstrap fallback keeps this non-501 on Vercel
     return {
       status: 501,
       body: {
@@ -125,7 +126,7 @@ export async function handleGatewayRegister(
 /** DELETE /api/gateway/register — drop the link (key required). */
 export async function handleGatewayUnregister(payload: unknown, deps?: GatewayDeps): Promise<GatewayResult> {
   const store = deps?.store ?? blobStore;
-  if (!process.env.NURAE_GATEWAY_KEY) {
+  if (!effectiveGatewayKey()) {
     return { status: 501, body: { error: 'gateway-not-configured' } };
   }
   const body = (payload ?? {}) as { key?: unknown };
@@ -145,7 +146,7 @@ export async function handleGatewayUnregister(payload: unknown, deps?: GatewayDe
 
 /** GET /api/gateway/status — safe to expose publicly (host only, no secrets). */
 export async function handleGatewayStatus(deps?: GatewayDeps): Promise<GatewayResult> {
-  const gatewayMode = Boolean(process.env.NURAE_GATEWAY_KEY);
+  const gatewayMode = Boolean(effectiveGatewayKey()); // TEMPORARY bootstrap fallback counts on Vercel
   const link = gatewayMode ? await (deps?.store ?? blobStore).read() : null;
   let host: string | null = null;
   if (link) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { effectiveGatewayKey } from '@/lib/gateway/bootstrap-key';
 import { readGatewayLink } from '@/lib/gateway/store';
 
 /**
@@ -35,8 +36,8 @@ export async function middleware(req: NextRequest) {
   if (process.env.NURAE_LINK_FRONTEND_URL) {
     return NextResponse.next(); // I am a registering backend, not a gateway frontend
   }
-  if (!process.env.NURAE_GATEWAY_KEY) {
-    return NextResponse.next(); // gateway mode not enabled on this deployment
+  if (!effectiveGatewayKey()) {
+    return NextResponse.next(); // gateway mode not enabled on this deployment (env wins; TEMPORARY bootstrap fallback on Vercel)
   }
   const link = await readGatewayLink();
   if (!link) {
