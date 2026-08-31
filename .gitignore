@@ -63,3 +63,6 @@ server.log
 /skills/
 # environment (never commit real secrets)
 .env
+
+# local-only diagnostics uploaded by user
+upload/
