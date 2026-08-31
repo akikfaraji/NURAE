@@ -102,7 +102,7 @@ bun run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.002-beta-03",...}`
+`{"status":"ok","version":"V00.01.003-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and
@@ -291,6 +291,7 @@ Complete, commented list: **`.env.example`** in the repo root. Summary:
 | Variable | Scope | Effect |
 |---|---|---|
 | `DATABASE_URL` | core | SQLite/libSQL location |
+| `DATABASE_AUTH_TOKEN` | core | Auth token — only when `DATABASE_URL` is `libsql://` (Turso) |
 | `NURAE_SECRET_KEY` | core | Master encryption key (AI keys, bot tokens at rest) |
 | `NURAE_ADMIN_TOKEN` | core | Dashboard/admin API authentication |
 | `PORT`, `HOSTNAME` | server | Standalone listener binding |

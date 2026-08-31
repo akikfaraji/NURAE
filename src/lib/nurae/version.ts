@@ -17,7 +17,7 @@ export const NURAE_NAME = 'NURAE';
 export const NURAE_VENDOR = 'FRAZIYM TECH & AI';
 export const NURAE_TAGLINE = 'Autonomous Digital Operations System';
 
-export const NURAE_VERSION = 'V00.01.002-beta-03';
+export const NURAE_VERSION = 'V00.01.003-beta-03';
 
 /** Structured representation of the FRAZIYM version format. */
 export interface FraziymVersion {

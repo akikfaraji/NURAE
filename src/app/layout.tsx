@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { NURAE_NAME, NURAE_TAGLINE, NURAE_VENDOR, NURAE_VERSION } from "@/lib/nurae/version";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,9 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NURAE — FRAZIYM TECH & AI",
-  description:
-    "NURAE V00.00.000-beta-01 — Autonomous Digital Operations System. AI-powered Telegram bot creation and operation.",
+  title: `${NURAE_NAME} — ${NURAE_VENDOR}`,
+  description: `${NURAE_NAME} ${NURAE_VERSION} — ${NURAE_TAGLINE}. AI-powered Telegram bot creation and operation.`,
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
