@@ -144,3 +144,26 @@ Stage Summary:
 - 101/101 tests pass; standalone build green; both gateway roles proven by real boots (backend: health 200; frontend: proxying 503-unlinked)
 - Remaining blocker is one-time Vercel setup by the user: set NURAE_GATEWAY_KEY (production) = GATEWAY_KEY secret value, connect a Blob store, redeploy — then re-run the workflow
 - Committed locally only; push awaiting user instruction
+
+---
+Task ID: 7
+Agent: main (Super Z)
+Task: Local self-hosting pivot — all configs in .env, gitignore verified, SETUP.md finished, clone-ready repo (user: "Move all configs to a .env file... test it locally in my termux debian environment... make me a how to setup manual")
+
+Work Log:
+- Found Task was largely pre-committed in 8de40b0 (SETUP.md 320 lines, .env.example rewrite, README pointers); finished the remaining gaps instead of redoing
+- Completed local .env: DATABASE_URL (absolute), generated NURAE_SECRET_KEY (openssl rand -hex 32) + NURAE_ADMIN_TOKEN (hex 24), HOSTNAME/PORT, NURAE_BOT_TRANSPORT=polling, provider fallback keys, gateway section commented out
+- Gap fix: DATABASE_AUTH_TOKEN documented in .env.example §1 + SETUP.md §9 (read by src/lib/db.ts, needed only for libsql:// Turso)
+- .gitignore verified: .env* + !.env.example + explicit .env; git check-ignore .env → matched; never staged
+- BUG FOUND by verification: with a real .env present, bun test failed 26/102 (401 cascade) — @prisma/client re-loads project .env at PrismaClient construction (fill-in mode) and REFILLED deleted vars (NURAE_ADMIN_TOKEN) at import('../../src/lib/db'); diagnosed via 5 bisect probes (P4 = db import); root cause confirmed not middleware/base.ts/stub
+- Fix (tests/nurae/helpers.ts): neutralize externally-injected env with EMPTY-STRING overrides instead of delete ('' survives Prisma's refill; every NURAE consumer treats '' as unset — adminToken/transport/gateway/fallbacks); documented rationale in-file
+- BUG FOUND: src/app/layout.tsx hardcoded stale "V00.00.000-beta-01" in metadata, violating the version.ts-only rule → metadata now derives from NURAE_NAME/NURAE_VENDOR/NURAE_TAGLINE/NURAE_VERSION
+- Version bump V00.01.002-beta-03 → V00.01.003-beta-03 (bugfix digit); synced version.test.ts (3), api.test.ts health assert, .env.example header, SETUP.md §4 example; gateway.test.ts stub fixtures left at 002 (any valid version passes)
+- Verification: 102/102 tests pass; db:push green; fresh build green; killed stale next-server holding :3000 (pid 1081); .env-ONLY standalone boot proven — PORT=3210 from .env honored, /api/health 200 + correct version, /api/projects 401 without token and 200 {"projects":[]} with the .env token, dashboard 200; final boot on :3000 with metadata showing V00.01.003-beta-03; ports left clean
+- Committed c6b2c00 and PUSHED (user is about to clone; push covers prior local-only commits 5410d02/2880151/f5f7b9d/8de40b0 too — origin/main == local main)
+
+Stage Summary:
+- Repo is clone-ready: SETUP.md (Termux Debian Part A + VPS Part B), .env.example complete incl. DATABASE_AUTH_TOKEN, .gitignore proven, all fixes on origin
+- Test suite is now hermetic against a real populated .env (the exact state of a user clone following SETUP.md §2)
+- Sandbox .env holds generated secrets for this machine only (gitignored); on Termux the user generates their own via SETUP.md §3
+- Honest notes: real-Telegram delivery still unverified (no BotFather token here); Termux aarch64 path follows SETUP.md but was executed only in this x86 sandbox
