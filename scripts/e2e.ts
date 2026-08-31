@@ -1,50 +1,67 @@
 /**
- * NURAE — End-to-End test driver (Step 14/15).
+ * NURAE — REAL end-to-end test driver for the split deployment (Step 14).
  *
- * Exercises the full product loop against the running NURAE deployment, with
- * a mock Telegram Bot API and either the REAL built-in GLM provider (local
- * sandbox) or the mock OpenAI provider (CI / split-deployment runs):
+ * NO MOCKS, NO STUBS. Everything in this run is real:
  *
- *   health → auth gate → create project → create bot → start (webhook)
- *     → POST /start update → POST real message → AI reply verified
- *     → logs/events verified → restart → stop → error-path (bad token)
+ *   real driver (here) → real Vercel frontend → /api/* proxy rewrite
+ *     → real cloudflared tunnel → real backend → real api.telegram.org
+ *     → real AI provider API
  *
- * Configuration (all optional — defaults match the local sandbox):
- *   E2E_BASE_URL           NURAE origin to test. In split mode this is the
- *                          VERCEL FRONTEND URL — every admin API call then
- *                          exercises Vercel → rewrite proxy → tunnel → backend.
- *                          Default: http://127.0.0.1:3000
- *   E2E_WEBHOOK_BASE       Where fake Telegram updates are delivered (like the
- *                          real Telegram, which POSTs the registered webhook
- *                          URL directly). Default: E2E_BASE_URL
- *   E2E_MOCK_TELEGRAM_URL  Mock Telegram Bot API for __dump. Default
- *                          http://127.0.0.1:3131 (driver runs next to it).
- *   E2E_ADMIN_TOKEN        Set when NURAE_ADMIN_TOKEN is configured on the
- *                          target (production-like). Adds Bearer auth and
- *                          verifies the 401 gate first. Default: unset (open).
- *   E2E_PROVIDER / E2E_MODEL / E2E_PROVIDER_BASE_URL
- *                          Bot provider triple. Local default: zai +
- *                          glm-4.5-flash (real GLM). CI: custom + mock-model
- *                          + http://127.0.0.1:5151/v1 (mock OpenAI).
- *   E2E_MOCK_AI=1          Assert the deterministic echo contract of
- *                          scripts/mock-openai.ts (request window content),
- *                          which proves memory works without a real model.
+ * The one input that cannot be automated: a Telegram USER must send an
+ * actual message to the bot (Telegram forbids bots from messaging first and
+ * bots cannot message bots). The workflow run prints the bot's @username and
+ * waits — you send the message from any Telegram account — the driver then
+ * verifies the FULL round trip through real structured logs:
+ *
+ *   TELEGRAM_MESSAGE_RECEIVED → AI_REQUEST → AI_RESPONSE → TELEGRAM_MESSAGE_SENT
+ *   (and asserts NO AI_REQUEST_FAILED / TELEGRAM_SEND_FAILED / BOT_ERROR)
+ *
+ * Webhook registration/removal is verified directly against the REAL
+ * Telegram API (getWebhookInfo) from this driver — not from the backend's
+ * own claims.
+ *
+ * Configuration:
+ *   E2E_BASE_URL              Frontend origin under test (Vercel URL in split
+ *                             mode). Default http://127.0.0.1:3000
+ *   E2E_WEBHOOK_BASE          Public HTTPS origin of the BACKEND (the tunnel).
+ *                             Default: E2E_BASE_URL
+ *   E2E_ADMIN_TOKEN           Admin token of the target (enables bearer auth
+ *                             and the 401 gate check). Default: open access.
+ *   E2E_TELEGRAM_TOKEN        REQUIRED. Real bot token. Used by this driver to
+ *                             verify getMe/getWebhookInfo directly.
+ *   E2E_PROVIDER / E2E_MODEL  Real AI provider id + model (default openai /
+ *                             gpt-4o-mini). E2E_AI_API_KEY is the REAL key,
+ *                             sent once in the bot-create payload (over HTTPS)
+ *                             and stored encrypted at rest — exactly like the
+ *                             dashboard does; it is never returned by the API.
+ *   E2E_PROVIDER_BASE_URL     Optional base URL (required for provider=custom).
+ *   E2E_MESSAGE_WAIT_SECONDS  How long to wait for the human message.
+ *                             Default 300.
  *
  * Usage: bun scripts/e2e.ts
  */
 
 const BASE = (process.env.E2E_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const WEBHOOK_BASE = (process.env.E2E_WEBHOOK_BASE || BASE).replace(/\/+$/, '');
-const MOCK = (process.env.E2E_MOCK_TELEGRAM_URL || 'http://127.0.0.1:3131').replace(/\/+$/, '');
 const ADMIN_TOKEN = (process.env.E2E_ADMIN_TOKEN || '').trim();
-const PROVIDER = process.env.E2E_PROVIDER || 'zai';
-const MODEL = process.env.E2E_MODEL || 'glm-4.5-flash';
+const TG_TOKEN = (process.env.E2E_TELEGRAM_TOKEN || '').trim();
+const PROVIDER = process.env.E2E_PROVIDER || 'openai';
+const MODEL = process.env.E2E_MODEL || 'gpt-4o-mini';
+const AI_KEY = (process.env.E2E_AI_API_KEY || '').trim();
 const PROVIDER_BASE_URL = (process.env.E2E_PROVIDER_BASE_URL || '').trim();
-const MOCK_AI = process.env.E2E_MOCK_AI === '1';
-const BOT_TOKEN = process.env.E2E_BOT_TOKEN || '123456789:AAE2ETokenForNuraeMockTelegramAPITest';
+const WAIT_SECONDS = Number(process.env.E2E_MESSAGE_WAIT_SECONDS || 300);
+
+if (!TG_TOKEN) {
+  console.error('E2E_TELEGRAM_TOKEN is required (a REAL bot token from @BotFather).');
+  process.exit(2);
+}
+if (!/^https?:\/\//.test(BASE) || !/^https?:\/\//.test(WEBHOOK_BASE)) {
+  console.error('E2E_BASE_URL / E2E_WEBHOOK_BASE must be absolute URLs.');
+  process.exit(2);
+}
 
 console.log(
-  `E2E target: ${BASE}${WEBHOOK_BASE !== BASE ? ` (webhooks → ${WEBHOOK_BASE})` : ''} | provider=${PROVIDER}${PROVIDER_BASE_URL ? ` @ ${PROVIDER_BASE_URL}` : ''} | auth=${ADMIN_TOKEN ? 'bearer' : 'open'} | mock-ai=${MOCK_AI}`,
+  `E2E target: ${BASE}${WEBHOOK_BASE !== BASE ? ` (backend/webhooks → ${WEBHOOK_BASE})` : ''} | provider=${PROVIDER}/${MODEL}${PROVIDER_BASE_URL ? ` @ ${PROVIDER_BASE_URL}` : ''} | auth=${ADMIN_TOKEN ? 'bearer' : 'open'} | message wait=${WAIT_SECONDS}s`,
 );
 
 interface Step {
@@ -72,6 +89,8 @@ function expect(cond: unknown, message: string): void {
   if (!cond) throw new Error(message);
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function api<T>(path: string, init?: RequestInit): Promise<{ status: number; body: T }> {
   const res = await fetch(`${BASE}${path}`, {
     headers: {
@@ -84,25 +103,50 @@ async function api<T>(path: string, init?: RequestInit): Promise<{ status: numbe
   return { status: res.status, body };
 }
 
-interface MockDump {
-  calls: Array<{ method: string; body: Record<string, unknown> }>;
-  webhooks: Array<[string, { url: string; secret: string }]>;
+/** Direct REAL Telegram Bot API call (never logs the token or URL). */
+async function tg<T>(method: string): Promise<T> {
+  const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/${method}`);
+  const body = (await res.json().catch(() => null)) as { ok: boolean; result?: T; error_code?: number; description?: string } | null;
+  if (!body?.ok) {
+    throw new Error(`real Telegram ${method} failed: ${body?.error_code ?? res.status} ${body?.description ?? 'unknown error'}`);
+  }
+  return body.result as T;
 }
 
-const mockDump = async (): Promise<MockDump> => {
-  const res = await fetch(`${MOCK}/__dump`);
-  return (await res.json()) as MockDump;
-};
+interface TgWebhookInfo {
+  url: string;
+  pending_update_count: number;
+  last_error_message?: string;
+}
+interface TgMe {
+  id: number;
+  username?: string;
+  first_name: string;
+}
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+interface LogEntry {
+  level: string;
+  event: string | null;
+  message: string;
+  timestamp: string;
+}
+
+async function fetchLogs(botId: string, limit = 200): Promise<LogEntry[]> {
+  const { status, body } = await api<{ logs: LogEntry[] }>(`/api/bots/${botId}/logs?limit=${limit}`);
+  expect(status === 200, `logs ${status}`);
+  return [...body.logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp)); // oldest → newest
+}
 
 let botId = '';
-const botToken = BOT_TOKEN;
+let tgUsername = '';
 let startToRunningMs = 0;
-let webhookLatencyMs = 0;
-let aiReplyText = '';
+let roundTripMs = 0;
 
-await step('health endpoint returns beta-02 identity', async () => {
+// ---------------------------------------------------------------------------
+// The flow
+// ---------------------------------------------------------------------------
+
+await step('health endpoint (via frontend → backend chain)', async () => {
   const { status, body } = await api<{ status: string; version: string }>('/api/health');
   expect(status === 200, `health status ${status}`);
   expect(body.version === 'V00.01.000-beta-02', `unexpected version ${body.version}`);
@@ -116,17 +160,19 @@ if (ADMIN_TOKEN) {
     const { body } = await api<{ authRequired: boolean; authenticated: boolean }>('/api/auth/status');
     expect(body.authRequired === true && body.authenticated === true, `auth status ${JSON.stringify(body)}`);
   });
-} else {
-  await step('auth is open (no admin token configured locally)', async () => {
-    const { body } = await api<{ authRequired: boolean; authenticated: boolean }>('/api/auth/status');
-    expect(body.authRequired === false || body.authenticated === true, 'unexpected auth gate');
-  });
 }
 
-await step(`create project + bot (provider: ${PROVIDER})`, async () => {
+await step('REAL Telegram getMe (driver → api.telegram.org)', async () => {
+  const me = await tg<TgMe>('getMe');
+  tgUsername = me.username ? `@${me.username}` : '';
+  expect(Boolean(tgUsername), 'bot has no username');
+  return tgUsername;
+});
+
+await step('create project + bot (real token, real provider)', async () => {
   const p = await api<{ project: { id: string } }>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({ name: `E2E ${new Date().toISOString().slice(0, 19)}`, description: 'beta-02 E2E' }),
+    body: JSON.stringify({ name: `E2E ${new Date().toISOString().slice(0, 19)}`, description: 'split-deployment E2E' }),
   });
   expect(p.status === 201, `project create ${p.status} ${JSON.stringify(p.body)}`);
   const pid = p.body.project.id;
@@ -135,9 +181,10 @@ await step(`create project + bot (provider: ${PROVIDER})`, async () => {
     method: 'POST',
     body: JSON.stringify({
       name: 'E2E Assistant',
-      telegramToken: botToken,
+      telegramToken: TG_TOKEN,
       provider: PROVIDER,
       model: MODEL,
+      ...(AI_KEY ? { apiKey: AI_KEY } : {}),
       ...(PROVIDER_BASE_URL ? { baseUrl: PROVIDER_BASE_URL } : {}),
       systemPrompt: 'You are NURAE E2E, a concise assistant. Answer in at most two short sentences.',
       temperature: 0.5,
@@ -150,127 +197,121 @@ await step(`create project + bot (provider: ${PROVIDER})`, async () => {
   return `bot ${botId}`;
 });
 
-await step('start bot → webhook registered on Telegram, status RUNNING', async () => {
+await step('start bot → real setWebhook → status RUNNING (webhook)', async () => {
   const t0 = Date.now();
   const r = await api<{ bot: { status: string; transport: string | null } }>(`/api/bots/${botId}/start`, { method: 'POST' });
   startToRunningMs = Date.now() - t0;
   expect(r.status === 200, `start ${r.status} ${JSON.stringify(r.body)}`);
   expect(r.body.bot.status === 'running', `status ${r.body.bot.status}`);
   expect(r.body.bot.transport === 'webhook', `transport ${r.body.bot.transport}`);
-
-  const dump = await mockDump();
-  const wh = dump.webhooks.find(([token]) => token === botToken);
-  expect(wh, 'no webhook registered on mock Telegram');
-  expect(wh![1].url === `${WEBHOOK_BASE}/api/telegram/webhook/${botId}`, `wrong webhook url ${wh![1].url}`);
-  expect(wh![1].secret.length >= 32, 'webhook secret too short');
-  return `registered ${wh![1].url}`;
+  return `${startToRunningMs}ms`;
 });
 
-async function deliverUpdate(updateId: number, text: string): Promise<void> {
-  // Delivered to the webhook URL Telegram would use — the backend origin
-  // (E2E_WEBHOOK_BASE), NOT the Vercel frontend, exactly like the real API.
-  const res = await fetch(`${WEBHOOK_BASE}/api/telegram/webhook/${botId}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-telegram-bot-api-secret-token': (await mockDump()).webhooks.find(([t]) => t === botToken)![1].secret,
-    },
-    body: JSON.stringify({
-      update_id: updateId,
-      message: {
-        message_id: updateId,
-        from: { id: 42, is_bot: false, first_name: 'E2E' },
-        chat: { id: 4242, type: 'private' },
-        date: Math.floor(Date.now() / 1000),
-        text,
-      },
-    }),
-  });
-  expect(res.status === 200, `webhook POST ${res.status}: ${await res.text()}`);
-}
-
-await step('Telegram /start delivered → welcome reply sent', async () => {
-  await deliverUpdate(101, '/start');
-  const dump = await mockDump();
-  const sends = dump.calls.filter((c) => c.method === 'sendMessage');
-  expect(sends.some((s) => String(s.body.text).includes('is online')), 'no welcome message sent');
-});
-
-await step(MOCK_AI ? 'real message → mock AI reply delivered through webhook pipeline' : 'real message → REAL GLM reply delivered through webhook pipeline', async () => {
-  const t0 = Date.now();
-  await deliverUpdate(102, 'In one short sentence: what is NURAE?');
-  webhookLatencyMs = Date.now() - t0;
-  const dump = await mockDump();
-  const sends = dump.calls.filter((c) => c.method === 'sendMessage');
-  const aiSend = sends.find((s) => String(s.body.text).startsWith('NURAE') || (String(s.body.text).length > 40 && !String(s.body.text).startsWith('⚠️') && !String(s.body.text).includes('is online')));
-  expect(aiSend, `no AI reply in sends: ${JSON.stringify(sends.map((s) => String(s.body.text).slice(0, 60)))}`);
-  aiReplyText = String(aiSend!.body.text);
-  expect(!aiReplyText.startsWith('⚠️'), `AI failed: ${aiReplyText.slice(0, 80)}`);
-  if (MOCK_AI) {
-    // Deterministic echo contract: the user's text reached the provider.
-    expect(/in one short sentence/i.test(aiReplyText), `mock reply missing latest-message echo: ${aiReplyText.slice(0, 120)}`);
+await step('REAL Telegram getWebhookInfo confirms the registered webhook URL', async () => {
+  const expected = `${WEBHOOK_BASE}/api/telegram/webhook/${botId}`;
+  let info: TgWebhookInfo | null = null;
+  for (let i = 0; i < 5; i++) {
+    info = await tg<TgWebhookInfo>('getWebhookInfo');
+    if (info.url === expected) break;
+    await sleep(2000);
   }
-  return `"${aiReplyText.slice(0, 70)}${aiReplyText.length > 70 ? '…' : ''}" (${webhookLatencyMs}ms round-trip)`;
+  expect(info?.url === expected, `webhook url mismatch: registered="${info?.url}" expected="${expected}"`);
+  return info!.url;
 });
 
-await step('second message → context memory used (bot remembers)', async () => {
-  await deliverUpdate(103, 'What did I just ask you about? Answer briefly.');
-  const dump = await mockDump();
-  const sends = dump.calls.filter((c) => c.method === 'sendMessage');
-  const last = sends[sends.length - 1];
-  expect(last, 'no reply to second message');
-  const reply = String(last.body.text);
-  expect(!reply.startsWith('⚠️'), `AI failed: ${reply.slice(0, 80)}`);
-  if (MOCK_AI) {
-    // The reply echoes the FIRST user message, proving the earlier exchange
-    // was included in the provider request window (memory works end-to-end).
-    expect(/what is nurae/i.test(reply), `memory not in provider window: ${reply.slice(0, 160)}`);
-  }
+await step('bot detail matches REAL Telegram identity + leaks no secrets', async () => {
+  const { status, body } = await api<{ bot: { telegramUsername: string | null; transport: string | null } }>(`/api/bots/${botId}`);
+  expect(status === 200, `bot detail ${status}`);
+  expect(body.bot.telegramUsername === tgUsername, `username ${body.bot.telegramUsername} ≠ real ${tgUsername}`);
+  expect(body.bot.transport === 'webhook', 'transport not webhook');
+  expect(!JSON.stringify(body).includes(TG_TOKEN), 'token leaked in DTO');
 });
 
-await step('structured logs carry Step-9 event codes', async () => {
-  const { body } = await api<{ logs: Array<{ level: string; event: string | null; message: string }> }>(`/api/bots/${botId}/logs?limit=100`);
-  const events = new Set(body.logs.map((l) => l.event).filter(Boolean));
+await step(
+  `HUMAN INPUT: waiting for a real Telegram message to ${tgUsername} (up to ${WAIT_SECONDS}s)`,
+  async () => {
+    console.log('');
+    console.log('================================================================');
+    console.log(`👉 NOW: open Telegram and send ANY text message to ${tgUsername}`);
+    console.log('   (not /start — a plain sentence, e.g. "What is NURAE?")');
+    console.log('   Telegram → real webhook → tunnel → backend → real AI → reply');
+    console.log('================================================================');
+    console.log('');
+
+    const deadline = Date.now() + WAIT_SECONDS * 1000;
+    let lastNotice = 0;
+    while (Date.now() < deadline) {
+      const logs = await fetchLogs(botId);
+      const failures = logs.filter((l) => l.event === 'AI_REQUEST_FAILED' || l.event === 'TELEGRAM_SEND_FAILED' || l.event === 'BOT_ERROR');
+      if (failures.length > 0) {
+        throw new Error(`pipeline failure during wait: ${failures.map((l) => `${l.event}: ${l.message}`).join(' | ')}`);
+      }
+      // Anchor on the LAST received message so a prior /start welcome does
+      // not pollute the timing window or the sequence check.
+      const received = [...logs].reverse().find((l) => l.event === 'TELEGRAM_MESSAGE_RECEIVED');
+      if (received) {
+        const after = logs.filter((l) => l.timestamp >= received.timestamp);
+        const aiReq = after.find((l) => l.event === 'AI_REQUEST');
+        const aiRes = after.find((l) => l.event === 'AI_RESPONSE');
+        const sent = after.filter((l) => l.event === 'TELEGRAM_MESSAGE_SENT');
+        if (aiReq && aiRes && sent.length > 0) {
+          roundTripMs = Date.parse(sent[sent.length - 1].timestamp) - Date.parse(received.timestamp);
+          console.log(`      ${aiReq.message}`);
+          console.log(`      ${aiRes.message}`);
+          console.log(`      ${sent[sent.length - 1].message}`);
+          return `round-trip ≈ ${roundTripMs}ms (receipt → Telegram delivery)`;
+        }
+      }
+      if (Date.now() - lastNotice > 30_000) {
+        console.log(`      …still waiting for your message to ${tgUsername} (${Math.round((deadline - Date.now()) / 1000)}s left)`);
+        lastNotice = Date.now();
+      }
+      await sleep(4000);
+    }
+    const logs = await fetchLogs(botId, 50);
+    console.error('      Last logs before timeout:');
+    for (const l of logs.slice(-10)) console.error(`      [${l.level}] ${l.event ?? '-'}: ${l.message}`);
+    throw new Error(`no real Telegram message round trip within ${WAIT_SECONDS}s. Send a plain text message to ${tgUsername} and re-run.`);
+  },
+);
+
+await step('structured logs carry Step-9 event codes + no token leak', async () => {
+  const logs = await fetchLogs(botId);
+  const events = new Set(logs.map((l) => l.event).filter(Boolean));
   for (const event of ['BOT_STARTING', 'BOT_STARTED', 'TELEGRAM_MESSAGE_RECEIVED', 'AI_REQUEST', 'AI_RESPONSE', 'TELEGRAM_MESSAGE_SENT']) {
     expect(events.has(event), `missing ${event} (have: ${[...events].join(', ')})`);
   }
-  const tokenLeak = body.logs.some((l) => l.message.includes(botToken));
-  expect(!tokenLeak, 'TELEGRAM TOKEN LEAKED INTO LOGS');
+  const leak = logs.some((l) => l.message.includes(TG_TOKEN));
+  expect(!leak, 'TELEGRAM TOKEN LEAKED INTO LOGS');
+  return `${events.size} distinct events`;
 });
 
-await step('bot detail shows @username + no secrets', async () => {
-  const { body } = await api<{ bot: { telegramUsername: string | null; transport: string | null } }>(`/api/bots/${botId}`);
-  expect(body.bot.telegramUsername === '@nurae_e2e_bot', `username ${body.bot.telegramUsername}`);
-  expect(body.bot.transport === 'webhook', 'transport not webhook');
-  expect(!JSON.stringify(body).includes(botToken), 'token leaked in DTO');
-});
-
-await step('restart keeps the bot RUNNING via webhook', async () => {
-  const r = await api<{ bot: { status: string } }>(`/api/bots/${botId}/restart`, { method: 'POST' });
-  expect(r.status === 200 && r.body.bot.status === 'running', `restart → ${r.status} ${JSON.stringify(r.body)}`);
-  await deliverUpdate(104, '/help');
-  const dump = await mockDump();
-  expect(dump.calls.some((c) => c.method === 'sendMessage' && String(c.body.text).includes('/start —')), 'no /help reply after restart');
-});
-
-await step('stop → webhook removed, status STOPPED', async () => {
+await step('stop bot → real deleteWebhook confirmed via getWebhookInfo', async () => {
   const r = await api<{ bot: { status: string } }>(`/api/bots/${botId}/stop`, { method: 'POST' });
-  expect(r.status === 200 && r.body.bot.status === 'stopped', `stop ${r.status}`);
-  const dump = await mockDump();
-  expect(!dump.webhooks.some(([t]) => t === botToken), 'webhook still registered after stop');
+  expect(r.status === 200 && r.body.bot.status === 'stopped', `stop ${r.status} ${JSON.stringify(r.body)}`);
+  let info: TgWebhookInfo | null = null;
+  for (let i = 0; i < 5; i++) {
+    info = await tg<TgWebhookInfo>('getWebhookInfo');
+    if (!info.url) break;
+    await sleep(2000);
+  }
+  expect(!info?.url, `webhook still registered after stop: "${info?.url}"`);
+  return 'webhook removed on Telegram side';
 });
 
-await step('invalid token → start fails with friendly 401 error', async () => {
-  // The mock Telegram rejects tokens starting with 000000000 (simulated 401).
+await step('invalid token → REAL Telegram 401 → friendly error + ERROR state', async () => {
   const p = await api<{ project: { id: string } }>('/api/projects', {
     method: 'POST',
     body: JSON.stringify({ name: 'E2E errors' }),
   });
+  expect(p.status === 201, `error project create ${p.status}`);
+  // Syntactically valid, deliberately wrong credential — the REAL Telegram
+  // API rejects it with 401. This tests the real failure path end to end.
   const b = await api<{ bot: { id: string } }>(`/api/projects/${p.body.project.id}/bots`, {
     method: 'POST',
     body: JSON.stringify({
       name: 'Broken',
-      telegramToken: '000000000:AAInvalidTokenThatMockRejects000000',
+      telegramToken: '000000000:AARealTelegramWillRejectThisToken0000000',
       provider: PROVIDER,
       model: MODEL,
       ...(PROVIDER_BASE_URL ? { baseUrl: PROVIDER_BASE_URL } : {}),
@@ -297,13 +338,13 @@ await step('cleanup: delete E2E bots and projects', async () => {
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);
-console.log('\n===== E2E SUMMARY =====');
+console.log('\n===== E2E SUMMARY (real services, no mocks) =====');
 for (const r of results) {
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ms !== undefined ? ` (${r.ms}ms)` : ''}`);
 }
-console.log('\n===== PERFORMANCE (single bot) =====');
-console.log(`bot start (webhook registration): ${startToRunningMs}ms`);
-console.log(`webhook round-trip incl. ${MOCK_AI ? 'mock' : 'real GLM'} AI reply: ${webhookLatencyMs}ms`);
+console.log('\n===== PERFORMANCE (real network, single bot) =====');
+console.log(`bot start (real getMe + setWebhook): ${startToRunningMs}ms`);
+console.log(`real message round trip (receipt → AI → Telegram delivery): ≈${roundTripMs}ms`);
 const mem = process.memoryUsage();
 console.log(`E2E driver RSS: ${(mem.rss / 1024 / 1024).toFixed(1)}MB`);
 

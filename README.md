@@ -292,9 +292,56 @@ config, lifecycle, logs), and security (secrets never returned, 401s, 422s,
 IDOR-resistant error responses). Network-dependent units use mocks — no real
 Telegram credentials are required.
 
-An end-to-end driver lives at `scripts/e2e.ts` (uses
-`scripts/mock-telegram.ts` as a stand-in Telegram API and the real built-in
-GLM provider).
+An end-to-end driver lives at `scripts/e2e.ts`. It is REAL-only: real
+Telegram Bot API, real AI provider, real HTTP chain — no mocks. It drives
+the full loop (health → auth gate → create → start → real webhook check via
+`getWebhookInfo` → **you send one real Telegram message** → AI round trip
+verified through structured logs → stop → webhook removal check → real-401
+error path → cleanup) and exits non-zero on any failure.
+
+## 14.1 Split-deployment E2E workflow (GitHub Actions × Vercel)
+
+`.github/workflows/split-e2e.yml` proves the split architecture with real
+services on every manual run (Actions tab → *Split E2E* → *Run workflow*):
+
+```
+[Vercel preview]  ← real dashboard frontend
+      │  /api/* beforeFiles rewrite → NURAE_BACKEND_URL (baked at build)
+      ▼
+[trycloudflare tunnel]  ← the only public entry to a GitHub runner
+      ▼
+[Actions runner]  real backend (:3000, admin auth on) → real api.telegram.org
+                  (webhook on the tunnel URL) + real AI provider API
+```
+
+What it verifies: the rewrite proxy chain (Vercel → tunnel → backend), the
+auth gate over that chain, real `setWebhook`/`getWebhookInfo` against
+Telegram, one REAL message round trip (a human sends it — Telegram forbids
+bots from messaging first; the workflow pauses and prints `👉 NOW: send ANY
+text message to @bot`), the AI pipeline via structured log events
+(`TELEGRAM_MESSAGE_RECEIVED → AI_REQUEST → AI_RESPONSE → TELEGRAM_MESSAGE_SENT`),
+webhook removal on stop, and the real-401 invalid-token path.
+
+Required repository secrets: `TELEGRAM_BOT_TOKEN` (use a **dedicated test
+bot** — the workflow overwrites its webhook and removes it at the end),
+`AI_API_KEY` (for the chosen provider), and `VERCEL_TOKEN` / `VERCEL_ORG_ID`
+/ `VERCEL_PROJECT_ID` (frontend mode; `tunnel-only` skips Vercel and tests
+the backend through the tunnel directly).
+
+Known limitations of this workflow: the tunnel and preview URL are
+per-run and ephemeral; the round-trip step needs a human at the keyboard;
+a `push` trigger is commented out (Vercel build minutes + concurrency).
+Locally, the rewrite-proxy mechanism was verified end to end (proxy build
+vs origin build, auth + CRUD + cookie login through the proxy).
+
+### Status of this release's testing
+
+| Layer | Status |
+| --- | --- |
+| Unit/integration (92 tests) | PASS (local) |
+| Rewrite-proxy split chain (health/auth/CRUD/cookie) | PASS (local, real HTTP) |
+| Split E2E in GitHub Actions | IMPLEMENTED — UNTESTED (requires real secrets + runner) |
+| Real Telegram delivery from Actions | UNTESTED until first run with secrets |
 
 ## 15. Troubleshooting
 

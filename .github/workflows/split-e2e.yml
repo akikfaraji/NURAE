@@ -1,0 +1,237 @@
+# ============================================================================
+# NURAE — Split-deployment E2E (REAL services, no mocks)
+# ============================================================================
+#
+# Proves the split architecture end to end with real everything:
+#
+#   [Vercel preview]  ← serves the real dashboard frontend
+#         │   /api/* beforeFiles rewrite → NURAE_BACKEND_URL (baked at build)
+#         ▼
+#   [trycloudflare tunnel]  ← the only public entry to a GitHub runner
+#         ▼
+#   [GitHub Actions runner]
+#     ├─ real backend (Next.js standalone, fresh SQLite, admin auth ON)
+#     ├─ real api.telegram.org   (webhook registered to the tunnel URL)
+#     └─ real AI provider API    (real key, encrypted at rest in the DB)
+#
+# Then a HUMAN sends one real Telegram message to the bot (Telegram does not
+# allow bots to message first, and bots cannot message bots) and the E2E
+# driver verifies the full real round trip:
+#
+#   Telegram → webhook → tunnel → backend → AI provider → Telegram reply
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   TELEGRAM_BOT_TOKEN   Real bot token from @BotFather. Use a DEDICATED test
+#                        bot: this workflow registers a webhook on it and
+#                        removes it at the end (it overwrites any existing
+#                        webhook on that bot).
+#   AI_API_KEY           Real key for the chosen provider (openai / openrouter
+#                        / deepseek / glm / custom).
+#   VERCEL_TOKEN         https://vercel.com/account/tokens
+#   VERCEL_ORG_ID        Vercel project → Settings → General → Vercel ID
+#   VERCEL_PROJECT_ID    Same page → Project ID
+#
+# Run it from the Actions tab → this workflow → Run workflow. Pick the
+# provider/model, watch the log for "👉 NOW: send ANY text message to
+# @your_test_bot", send it from any Telegram account, and the workflow
+# verifies the rest on its own.
+#
+# To also run on every push to main, uncomment the push trigger below.
+
+name: Split E2E (Vercel frontend × Actions backend)
+
+on:
+  workflow_dispatch:
+    inputs:
+      frontend:
+        description: 'Frontend under test (tunnel-only skips Vercel)'
+        type: choice
+        default: vercel
+        options:
+          - vercel
+          - tunnel-only
+      ai_provider:
+        description: 'Real AI provider (id from the NURAE catalog)'
+        type: choice
+        default: openai
+        options:
+          - openai
+          - openrouter
+          - deepseek
+          - glm
+          - custom
+      ai_model:
+        description: 'Real model name (e.g. gpt-4o-mini)'
+        type: string
+        default: gpt-4o-mini
+      message_wait_seconds:
+        description: 'Seconds to wait for your real Telegram message'
+        type: string
+        default: '300'
+
+  # push:
+  #   branches: [main]
+
+concurrency:
+  group: split-e2e
+  cancel-in-progress: true
+
+jobs:
+  split-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      FRONTEND_MODE: ${{ inputs.frontend || 'vercel' }}
+      AI_PROVIDER: ${{ inputs.ai_provider || 'openai' }}
+      AI_MODEL: ${{ inputs.ai_model || 'gpt-4o-mini' }}
+      MESSAGE_WAIT: ${{ inputs.message_wait_seconds || '300' }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+    steps:
+      - name: Preflight — fail fast with setup instructions
+        run: |
+          missing=0
+          for s in TELEGRAM_BOT_TOKEN AI_API_KEY; do
+            if [ -z "${!s}" ]; then echo "::error::Missing repository secret: $s"; missing=1; fi
+          done
+          if [ "$FRONTEND_MODE" = "vercel" ]; then
+            for s in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+              if [ -z "${!s}" ]; then echo "::error::Missing repository secret: $s"; missing=1; fi
+            done
+          fi
+          if [ "$missing" = "1" ]; then
+            echo "Required secrets:"
+            echo "  TELEGRAM_BOT_TOKEN  — real token from @BotFather (use a dedicated test bot)"
+            echo "  AI_API_KEY          — real key for provider '$AI_PROVIDER'"
+            echo "  VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID — only for frontend=vercel"
+            echo "Tip: run with frontend=tunnel-only to test without Vercel first."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies + database schema
+        run: |
+          bun install --frozen-lockfile
+          export DATABASE_URL="file:$PWD/db/e2e.db"
+          bun run db:generate
+          bun run db:push
+
+      - name: Build backend (Next.js standalone)
+        run: |
+          export DATABASE_URL="file:$PWD/db/e2e.db"
+          bun run build
+
+      - name: Start public tunnel (cloudflared quick tunnel)
+        run: |
+          curl -sSLo cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          ./cloudflared tunnel --url http://localhost:3000 --no-autoupdate --protocol http2 > tunnel.log 2>&1 &
+          for i in $(seq 1 45); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' tunnel.log | head -1 || true)
+            if [ -n "$URL" ]; then
+              echo "TUNNEL_URL=$URL" >> "$GITHUB_ENV"
+              echo "Tunnel ready: $URL"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Tunnel did not produce a URL in 90s"
+          cat tunnel.log
+          exit 1
+
+      - name: Start backend (real admin auth, real Telegram, real AI provider)
+        run: |
+          ADMIN_TOKEN=$(openssl rand -hex 24)
+          SECRET_KEY=$(openssl rand -hex 32)
+          echo "ADMIN_TOKEN=$ADMIN_TOKEN" >> "$GITHUB_ENV"
+          DATABASE_URL="file:$PWD/db/e2e.db" \
+          NURAE_SECRET_KEY="$SECRET_KEY" \
+          NURAE_ADMIN_TOKEN="$ADMIN_TOKEN" \
+          NURAE_PUBLIC_BASE_URL="$TUNNEL_URL" \
+          bun .next/standalone/server.js > backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3000/api/health > /dev/null; then
+              echo "Backend healthy on :3000 (public via $TUNNEL_URL)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Backend did not become healthy"
+          cat backend.log
+          exit 1
+
+      - name: Smoke test through the tunnel (health via public HTTPS)
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf "$TUNNEL_URL/api/health" > tunnel-health.json; then
+              echo "Tunnel → backend OK:"; cat tunnel-health.json; echo
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::Tunnel smoke test failed"
+          tail -40 tunnel.log
+          exit 1
+
+      - name: Deploy frontend preview to Vercel (backend URL baked into the rewrite)
+        if: env.FRONTEND_MODE == 'vercel'
+        run: |
+          mkdir -p .vercel
+          printf '{"projectId":"%s","orgId":"%s"}' "$VERCEL_PROJECT_ID" "$VERCEL_ORG_ID" > .vercel/project.json
+          npx vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN" > vercel-deploy.log 2>&1
+          NURAE_BACKEND_URL="$TUNNEL_URL" DATABASE_URL="file:$PWD/db/e2e.db" \
+            npx vercel@latest build --token="$VERCEL_TOKEN" >> vercel-deploy.log 2>&1
+          URL=$(npx vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN" 2>&1 | tee -a vercel-deploy.log | grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app' | tail -1)
+          if [ -z "$URL" ]; then
+            echo "::error::Could not read the preview URL from 'vercel deploy' output"
+            tail -60 vercel-deploy.log
+            exit 1
+          fi
+          echo "FRONTEND_URL=$URL" >> "$GITHUB_ENV"
+          echo "Vercel preview: $URL  (all /api/* proxied to $TUNNEL_URL)"
+
+      - name: Wait for the frontend to serve
+        if: env.FRONTEND_MODE == 'vercel'
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf -o /dev/null "$FRONTEND_URL/"; then echo "Frontend serving: $FRONTEND_URL"; exit 0; fi
+            sleep 3
+          done
+          echo "::error::Frontend URL never answered"
+          exit 1
+
+      - name: Run split E2E (real Telegram + real AI; YOU send one message when prompted)
+        run: bun scripts/e2e.ts
+        env:
+          E2E_BASE_URL: ${{ env.FRONTEND_MODE == 'vercel' && env.FRONTEND_URL || env.TUNNEL_URL }}
+          E2E_WEBHOOK_BASE: ${{ env.TUNNEL_URL }}
+          E2E_ADMIN_TOKEN: ${{ env.ADMIN_TOKEN }}
+          E2E_TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          E2E_AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          E2E_PROVIDER: ${{ env.AI_PROVIDER }}
+          E2E_MODEL: ${{ env.AI_MODEL }}
+          E2E_MESSAGE_WAIT_SECONDS: ${{ env.MESSAGE_WAIT }}
+
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: split-e2e-logs
+          if-no-files-found: ignore
+          path: |
+            backend.log
+            tunnel.log
+            vercel-deploy.log
+            tunnel-health.json
