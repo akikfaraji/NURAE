@@ -185,14 +185,43 @@ jobs:
           tail -40 tunnel.log
           exit 1
 
+      - name: Verify Vercel secrets against the real API (fail with precise reason)
+        if: env.FRONTEND_MODE == 'vercel'
+        run: |
+          code=$(curl -s -o vproj.json -w '%{http_code}' \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID")
+          head -c 400 vproj.json; echo
+          case "$code" in
+            200) echo "OK: token + project + team all match" ;;
+            401) echo "::error::VERCEL_TOKEN is invalid or expired (API 401). Create a new one at vercel.com/account/tokens"; exit 1 ;;
+            403) echo "::error::VERCEL_TOKEN is valid but CANNOT ACCESS this team/project (API 403). The token must be created under the account/team that owns VERCEL_ORG_ID"; exit 1 ;;
+            404) echo "::error::Project not found (API 404). Check VERCEL_PROJECT_ID / VERCEL_ORG_ID are correct, not swapped, and belong to the token's team"; exit 1 ;;
+            *) echo "::error::Unexpected Vercel API status $code"; exit 1 ;;
+          esac
+          count=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v13/deployments?projectId=$VERCEL_PROJECT_ID&teamId=$VERCEL_ORG_ID&limit=1" \
+            | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{console.log(JSON.parse(d).count??0)}catch{console.log(0)}})')
+          echo "Existing deployments: $count"
+          [ "$count" = "0" ] && echo "NEVER_DEPLOYED=1" >> "$GITHUB_ENV" || true
+
       - name: Deploy frontend preview to Vercel (backend URL baked into the rewrite)
         if: env.FRONTEND_MODE == 'vercel'
         run: |
           mkdir -p .vercel
           printf '{"projectId":"%s","orgId":"%s"}' "$VERCEL_PROJECT_ID" "$VERCEL_ORG_ID" > .vercel/project.json
-          npx vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN" > vercel-deploy.log 2>&1
+          if [ "${NEVER_DEPLOYED:-0}" = "1" ]; then
+            echo "Project has no deployments yet — bootstrapping once so project settings materialize..."
+            npx vercel@latest deploy --yes --token="$VERCEL_TOKEN" > bootstrap-deploy.log 2>&1 \
+              || echo "::warning::bootstrap deploy reported a failure (continuing — settings are usually initialized anyway)"
+            sleep 3
+            tail -5 bootstrap-deploy.log
+          fi
+          npx vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN" > vercel-deploy.log 2>&1 \
+            || { echo "::error::vercel pull failed"; tail -60 vercel-deploy.log; exit 1; }
           NURAE_BACKEND_URL="$TUNNEL_URL" DATABASE_URL="file:$PWD/db/e2e.db" \
-            npx vercel@latest build --token="$VERCEL_TOKEN" >> vercel-deploy.log 2>&1
+            npx vercel@latest build --token="$VERCEL_TOKEN" >> vercel-deploy.log 2>&1 \
+            || { echo "::error::vercel build failed"; tail -60 vercel-deploy.log; exit 1; }
           URL=$(npx vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN" 2>&1 | tee -a vercel-deploy.log | grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app' | tail -1)
           if [ -z "$URL" ]; then
             echo "::error::Could not read the preview URL from 'vercel deploy' output"
@@ -233,5 +262,6 @@ jobs:
           path: |
             backend.log
             tunnel.log
+            bootstrap-deploy.log
             vercel-deploy.log
             tunnel-health.json
