@@ -98,3 +98,8 @@ Stage Summary:
 - V00.01.000-beta-02 COMPLETE: full Step-13 loop (login→create→configure→start→message→AI reply→stop→status→logs) implemented and verified at 3 levels: 92 unit/integration tests, 13-step E2E with real GLM, agent-browser UI pass
 - Architecture now: single Next.js process, webhook-first transport, shared pipeline, DB-enforced state machine, libSQL/Turso storage — Vercel-deployable per README §11
 - Honest gaps: real-Telegram delivery untested (no token), zai provider is sandbox-dependent (EXPERIMENTAL), dedupe per-instance, single-tenant auth model
+
+---
+Task ID: 4
+Agent: main (Super Z)
+Task: Split-deployment E2E — Actions backend x Vercel frontend, real services only (no mocks)
