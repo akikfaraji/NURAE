@@ -1,23 +1,51 @@
 /**
  * NURAE — End-to-End test driver (Step 14/15).
  *
- * Exercises the full product loop against the running dev server, with a
- * mock Telegram Bot API and the REAL built-in GLM provider:
+ * Exercises the full product loop against the running NURAE deployment, with
+ * a mock Telegram Bot API and either the REAL built-in GLM provider (local
+ * sandbox) or the mock OpenAI provider (CI / split-deployment runs):
  *
- *   health → auth status → create project → create bot → start (webhook)
+ *   health → auth gate → create project → create bot → start (webhook)
  *     → POST /start update → POST real message → AI reply verified
  *     → logs/events verified → restart → stop → error-path (bad token)
  *
- * Prerequisites:
- *   - dev server on 127.0.0.1:3000 (fresh, with the beta-02 Prisma client)
- *   - mock Telegram on 127.0.0.1:3131 (bun scripts/mock-telegram.ts)
- *   - .env has NURAE_TELEGRAM_API_BASE=http://127.0.0.1:3131
+ * Configuration (all optional — defaults match the local sandbox):
+ *   E2E_BASE_URL           NURAE origin to test. In split mode this is the
+ *                          VERCEL FRONTEND URL — every admin API call then
+ *                          exercises Vercel → rewrite proxy → tunnel → backend.
+ *                          Default: http://127.0.0.1:3000
+ *   E2E_WEBHOOK_BASE       Where fake Telegram updates are delivered (like the
+ *                          real Telegram, which POSTs the registered webhook
+ *                          URL directly). Default: E2E_BASE_URL
+ *   E2E_MOCK_TELEGRAM_URL  Mock Telegram Bot API for __dump. Default
+ *                          http://127.0.0.1:3131 (driver runs next to it).
+ *   E2E_ADMIN_TOKEN        Set when NURAE_ADMIN_TOKEN is configured on the
+ *                          target (production-like). Adds Bearer auth and
+ *                          verifies the 401 gate first. Default: unset (open).
+ *   E2E_PROVIDER / E2E_MODEL / E2E_PROVIDER_BASE_URL
+ *                          Bot provider triple. Local default: zai +
+ *                          glm-4.5-flash (real GLM). CI: custom + mock-model
+ *                          + http://127.0.0.1:5151/v1 (mock OpenAI).
+ *   E2E_MOCK_AI=1          Assert the deterministic echo contract of
+ *                          scripts/mock-openai.ts (request window content),
+ *                          which proves memory works without a real model.
  *
  * Usage: bun scripts/e2e.ts
  */
 
-const BASE = 'http://127.0.0.1:3000';
-const MOCK = 'http://127.0.0.1:3131';
+const BASE = (process.env.E2E_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+const WEBHOOK_BASE = (process.env.E2E_WEBHOOK_BASE || BASE).replace(/\/+$/, '');
+const MOCK = (process.env.E2E_MOCK_TELEGRAM_URL || 'http://127.0.0.1:3131').replace(/\/+$/, '');
+const ADMIN_TOKEN = (process.env.E2E_ADMIN_TOKEN || '').trim();
+const PROVIDER = process.env.E2E_PROVIDER || 'zai';
+const MODEL = process.env.E2E_MODEL || 'glm-4.5-flash';
+const PROVIDER_BASE_URL = (process.env.E2E_PROVIDER_BASE_URL || '').trim();
+const MOCK_AI = process.env.E2E_MOCK_AI === '1';
+const BOT_TOKEN = process.env.E2E_BOT_TOKEN || '123456789:AAE2ETokenForNuraeMockTelegramAPITest';
+
+console.log(
+  `E2E target: ${BASE}${WEBHOOK_BASE !== BASE ? ` (webhooks → ${WEBHOOK_BASE})` : ''} | provider=${PROVIDER}${PROVIDER_BASE_URL ? ` @ ${PROVIDER_BASE_URL}` : ''} | auth=${ADMIN_TOKEN ? 'bearer' : 'open'} | mock-ai=${MOCK_AI}`,
+);
 
 interface Step {
   name: string;
@@ -46,7 +74,10 @@ function expect(cond: unknown, message: string): void {
 
 async function api<T>(path: string, init?: RequestInit): Promise<{ status: number; body: T }> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(ADMIN_TOKEN ? { Authorization: `Bearer ${ADMIN_TOKEN}` } : {}),
+    },
     ...init,
   });
   const body = (await res.json().catch(() => ({}))) as T;
@@ -66,7 +97,7 @@ const mockDump = async (): Promise<MockDump> => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let botId = '';
-let botToken = '123456789:AAE2ETokenForNuraeMockTelegramAPITest';
+const botToken = BOT_TOKEN;
 let startToRunningMs = 0;
 let webhookLatencyMs = 0;
 let aiReplyText = '';
@@ -78,12 +109,21 @@ await step('health endpoint returns beta-02 identity', async () => {
   return body.version;
 });
 
-await step('auth is open (no admin token configured locally)', async () => {
-  const { body } = await api<{ authRequired: boolean; authenticated: boolean }>('/api/auth/status');
-  expect(body.authRequired === false || body.authenticated === true, 'unexpected auth gate');
-});
+if (ADMIN_TOKEN) {
+  await step('auth gate: request without credentials is rejected (401)', async () => {
+    const res = await fetch(`${BASE}/api/projects`);
+    expect(res.status === 401, `expected 401 without credentials, got ${res.status}`);
+    const { body } = await api<{ authRequired: boolean; authenticated: boolean }>('/api/auth/status');
+    expect(body.authRequired === true && body.authenticated === true, `auth status ${JSON.stringify(body)}`);
+  });
+} else {
+  await step('auth is open (no admin token configured locally)', async () => {
+    const { body } = await api<{ authRequired: boolean; authenticated: boolean }>('/api/auth/status');
+    expect(body.authRequired === false || body.authenticated === true, 'unexpected auth gate');
+  });
+}
 
-await step('create project + bot (built-in GLM provider)', async () => {
+await step(`create project + bot (provider: ${PROVIDER})`, async () => {
   const p = await api<{ project: { id: string } }>('/api/projects', {
     method: 'POST',
     body: JSON.stringify({ name: `E2E ${new Date().toISOString().slice(0, 19)}`, description: 'beta-02 E2E' }),
@@ -96,8 +136,9 @@ await step('create project + bot (built-in GLM provider)', async () => {
     body: JSON.stringify({
       name: 'E2E Assistant',
       telegramToken: botToken,
-      provider: 'zai',
-      model: 'glm-4.5-flash',
+      provider: PROVIDER,
+      model: MODEL,
+      ...(PROVIDER_BASE_URL ? { baseUrl: PROVIDER_BASE_URL } : {}),
       systemPrompt: 'You are NURAE E2E, a concise assistant. Answer in at most two short sentences.',
       temperature: 0.5,
       maxTokens: 300,
@@ -120,13 +161,15 @@ await step('start bot → webhook registered on Telegram, status RUNNING', async
   const dump = await mockDump();
   const wh = dump.webhooks.find(([token]) => token === botToken);
   expect(wh, 'no webhook registered on mock Telegram');
-  expect(wh![1].url === `${BASE}/api/telegram/webhook/${botId}`, `wrong webhook url ${wh![1].url}`);
+  expect(wh![1].url === `${WEBHOOK_BASE}/api/telegram/webhook/${botId}`, `wrong webhook url ${wh![1].url}`);
   expect(wh![1].secret.length >= 32, 'webhook secret too short');
   return `registered ${wh![1].url}`;
 });
 
 async function deliverUpdate(updateId: number, text: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/telegram/webhook/${botId}`, {
+  // Delivered to the webhook URL Telegram would use — the backend origin
+  // (E2E_WEBHOOK_BASE), NOT the Vercel frontend, exactly like the real API.
+  const res = await fetch(`${WEBHOOK_BASE}/api/telegram/webhook/${botId}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -153,7 +196,7 @@ await step('Telegram /start delivered → welcome reply sent', async () => {
   expect(sends.some((s) => String(s.body.text).includes('is online')), 'no welcome message sent');
 });
 
-await step('real message → REAL GLM reply delivered through webhook pipeline', async () => {
+await step(MOCK_AI ? 'real message → mock AI reply delivered through webhook pipeline' : 'real message → REAL GLM reply delivered through webhook pipeline', async () => {
   const t0 = Date.now();
   await deliverUpdate(102, 'In one short sentence: what is NURAE?');
   webhookLatencyMs = Date.now() - t0;
@@ -163,6 +206,10 @@ await step('real message → REAL GLM reply delivered through webhook pipeline',
   expect(aiSend, `no AI reply in sends: ${JSON.stringify(sends.map((s) => String(s.body.text).slice(0, 60)))}`);
   aiReplyText = String(aiSend!.body.text);
   expect(!aiReplyText.startsWith('⚠️'), `AI failed: ${aiReplyText.slice(0, 80)}`);
+  if (MOCK_AI) {
+    // Deterministic echo contract: the user's text reached the provider.
+    expect(/in one short sentence/i.test(aiReplyText), `mock reply missing latest-message echo: ${aiReplyText.slice(0, 120)}`);
+  }
   return `"${aiReplyText.slice(0, 70)}${aiReplyText.length > 70 ? '…' : ''}" (${webhookLatencyMs}ms round-trip)`;
 });
 
@@ -172,7 +219,13 @@ await step('second message → context memory used (bot remembers)', async () =>
   const sends = dump.calls.filter((c) => c.method === 'sendMessage');
   const last = sends[sends.length - 1];
   expect(last, 'no reply to second message');
-  expect(!String(last.body.text).startsWith('⚠️'), `AI failed: ${String(last.body.text).slice(0, 80)}`);
+  const reply = String(last.body.text);
+  expect(!reply.startsWith('⚠️'), `AI failed: ${reply.slice(0, 80)}`);
+  if (MOCK_AI) {
+    // The reply echoes the FIRST user message, proving the earlier exchange
+    // was included in the provider request window (memory works end-to-end).
+    expect(/what is nurae/i.test(reply), `memory not in provider window: ${reply.slice(0, 160)}`);
+  }
 });
 
 await step('structured logs carry Step-9 event codes', async () => {
@@ -218,8 +271,9 @@ await step('invalid token → start fails with friendly 401 error', async () => 
     body: JSON.stringify({
       name: 'Broken',
       telegramToken: '000000000:AAInvalidTokenThatMockRejects000000',
-      provider: 'zai',
-      model: 'glm-4.5-flash',
+      provider: PROVIDER,
+      model: MODEL,
+      ...(PROVIDER_BASE_URL ? { baseUrl: PROVIDER_BASE_URL } : {}),
     }),
   });
   expect(b.status === 201, `broken bot create ${b.status}`);
@@ -247,9 +301,9 @@ console.log('\n===== E2E SUMMARY =====');
 for (const r of results) {
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ms !== undefined ? ` (${r.ms}ms)` : ''}`);
 }
-console.log('\n===== PERFORMANCE (single bot, sandbox) =====');
+console.log('\n===== PERFORMANCE (single bot) =====');
 console.log(`bot start (webhook registration): ${startToRunningMs}ms`);
-console.log(`webhook round-trip incl. real GLM reply: ${webhookLatencyMs}ms`);
+console.log(`webhook round-trip incl. ${MOCK_AI ? 'mock' : 'real GLM'} AI reply: ${webhookLatencyMs}ms`);
 const mem = process.memoryUsage();
 console.log(`E2E driver RSS: ${(mem.rss / 1024 / 1024).toFixed(1)}MB`);
 
