@@ -1,12 +1,14 @@
 /**
  * NURAE — bot lifecycle API helper (start / stop / restart).
- * Shared by the three POST routes; proxies to the isolated runtime process.
+ * Shared by the three POST routes; drives the transport layer directly.
+ * Since beta-02 the bot runtime lives inside this app (webhook transport is
+ * stateless; polling runs in-process), so there is no runtime service call.
  */
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { apiError, guard, internalError, toBotDTO } from './base';
-import { runtimeClient } from './runtime-client';
+import { restartBot, resolvePublicBaseUrl, startBot, stopBot } from '../runtime/transport';
 
 export type LifecycleAction = 'start' | 'stop' | 'restart';
 
@@ -21,32 +23,22 @@ export async function performLifecycle(
     const bot = await db.bot.findUnique({ where: { id: botId } });
     if (!bot) return apiError('Bot not found', 404);
 
-    if (action === 'start' && !bot.enabled) {
-      return apiError('Bot is disabled. Enable it in configuration before starting.', 400);
-    }
-
+    const publicBaseUrl = action === 'stop' ? null : resolvePublicBaseUrl(req);
     const result =
       action === 'start'
-        ? await runtimeClient.start(botId)
+        ? await startBot(botId, { publicBaseUrl })
         : action === 'stop'
-          ? await runtimeClient.stop(botId)
-          : await runtimeClient.restart(botId);
+          ? await stopBot(botId)
+          : await restartBot(botId, { publicBaseUrl });
 
-    if (!result.ok || !result.data) {
-      if (result.status === 503) {
-        return apiError(
-          'NURAE runtime service is not reachable. Ensure the runtime process is running.',
-          503,
-        );
-      }
-      const message = (result.data as { error?: string } | null)?.error ?? 'Runtime rejected the request.';
-      return apiError(message, result.status === 404 ? 404 : 400);
+    if (!result.ok) {
+      return apiError(result.detail ?? 'Lifecycle action failed.', 400);
     }
 
     const updated = await db.bot.findUnique({ where: { id: botId } });
     return NextResponse.json({
       bot: updated ? toBotDTO(updated) : null,
-      runtime: result.data,
+      runtime: { status: result.status, transport: updated?.transport ?? null },
     });
   } catch (err) {
     return internalError(err, `lifecycle.${action}`);

@@ -32,6 +32,11 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
+/** Timing-safe string comparison for credential checks. */
+export function safeCompare(a: string, b: string): boolean {
+  return safeEqual(a, b);
+}
+
 /** Extract the presented credential from cookie or Authorization header. */
 export function presentedCredential(req: Request): string | null {
   const cookieHeader = req.headers.get('cookie') || '';
@@ -94,6 +99,8 @@ export interface BotDTO {
   enabled: boolean;
   status: string;
   statusDetail: string | null;
+  /** Transport used at last start: "webhook" | "polling" (null: never started). */
+  transport: string | null;
   lastStartedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -118,6 +125,7 @@ export interface BotRowLike {
   enabled: boolean;
   status: string;
   statusDetail: string | null;
+  transport: string | null;
   lastStartedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -142,6 +150,7 @@ export function toBotDTO(row: BotRowLike): BotDTO {
     enabled: row.enabled,
     status: row.status,
     statusDetail: row.statusDetail,
+    transport: row.transport,
     lastStartedAt: row.lastStartedAt ? row.lastStartedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

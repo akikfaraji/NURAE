@@ -1,13 +1,16 @@
 /**
- * NURAE — API route tests (spec §19: create project, create bot, update
- * configuration, start/stop/restart, logs; security: secrets never returned,
- * invalid requests rejected, unauthorized operations rejected).
+ * NURAE — API route tests (Steps 6, 7, 12, 13: projects, bots, config,
+ * lifecycle, logs; security: secrets never returned, invalid requests
+ * rejected, unauthorized operations rejected).
  *
  * Route handlers are imported directly and invoked with Request objects —
- * no HTTP server needed. The runtime service is stubbed at the fetch level.
+ * no HTTP server needed. Since beta-02 the bot runtime lives inside the app:
+ * the Telegram Bot API is stubbed at the fetch level (stateful webhook
+ * registry), so the real webhook-mode lifecycle runs end-to-end in-process.
  */
 
 import { describe, expect, test, afterAll } from 'bun:test';
+import { installTelegramStub, resetTelegramStub, telegramState, STUB_TELEGRAM_TOKEN } from './telegram-stub';
 
 await import('./helpers');
 const { pushTestSchema } = await import('./helpers');
@@ -41,45 +44,14 @@ const jsonReq = (url: string, body?: unknown, extra?: RequestInit): Request =>
     ...extra,
   });
 
-// Stub the runtime service for lifecycle endpoints.
-const REAL_FETCH = globalThis.fetch;
-const runtimeCalls: Array<{ path: string; method: string }> = [];
-let runtimeMode: 'ok' | 'down' | 'reject-start' = 'ok';
-process.env.NURAE_RUNTIME_PORT = '39999';
-process.env.NURAE_RUNTIME_TOKEN = 'test-internal-token';
+// Stub: Telegram Bot API (stateful webhook registry) + OpenAI-compatible AI
+// live in tests/nurae/telegram-stub.ts (shared with webhook.test.ts).
+installTelegramStub();
 
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-  const url = String(input);
-  if (url.startsWith('http://127.0.0.1:39999')) {
-    const path = url.replace('http://127.0.0.1:39999', '');
-    runtimeCalls.push({ path, method: init?.method ?? 'GET' });
-    if (runtimeMode === 'down') throw new Error('ECONNREFUSED');
-    if (path === '/health') {
-      return new Response(JSON.stringify({ name: 'NURAE', version: 'V00.00.000-beta-01', uptimeSec: 1, managedBots: 0 }), {
-        status: 200,
-      });
-    }
-    if (path === '/status') {
-      return new Response(JSON.stringify({ bots: [] }), { status: 200 });
-    }
-    const m = /^\/bots\/([^/]+)\/(start|stop|restart|status)$/.exec(path);
-    if (m) {
-      const [, botId, action] = m;
-      if (action === 'status') {
-        return new Response(JSON.stringify({ botId, status: 'stopped', startedAt: null }), { status: 200 });
-      }
-      if (action === 'start' && runtimeMode === 'reject-start') {
-        return new Response(JSON.stringify({ error: 'Telegram rejected the bot token (401 Unauthorized).' }), { status: 400 });
-      }
-      return new Response(JSON.stringify({ botId, status: action === 'stop' ? 'stopped' : 'running' }), { status: 200 });
-    }
-    return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
-  }
-  return REAL_FETCH(input as Request, init);
-}) as typeof fetch;
+delete process.env.NURAE_BOT_TRANSPORT; // default = webhook
 
 afterAll(async () => {
-  globalThis.fetch = REAL_FETCH;
+  resetTelegramStub();
   await db.$disconnect();
 });
 
@@ -93,7 +65,7 @@ describe('health & metadata', () => {
     const body = (await res.json()) as Record<string, unknown>;
     expect(res.status).toBe(200);
     expect(body.status).toBe('ok');
-    expect(body.version).toBe('V00.00.000-beta-01');
+    expect(body.version).toBe('V00.01.000-beta-02');
     expect(body.vendor).toBe('FRAZIYM TECH & AI');
   });
 
@@ -178,6 +150,7 @@ describe('bots API', () => {
     expect(bot.hasTelegramToken).toBe(true);
     expect(bot.telegramTokenRef).toBeUndefined();
     expect(bot.apiKeyRef).toBeUndefined();
+    expect(bot.transport).toBeNull();
     expect(JSON.stringify(bot)).not.toContain('AAValidFormatTokenForTesting1234');
 
     // And the raw row indeed stores ciphertext, not plaintext.
@@ -226,11 +199,12 @@ describe('bots API', () => {
   test('GET bot detail includes runtime block and no secrets', async () => {
     const res = await botDetailRoute.GET(jsonReq(`/api/bots/${botId}`), ctx(botId));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { bot: Record<string, unknown>; runtime: { managed: boolean; status: string } };
+    const body = (await res.json()) as { bot: Record<string, unknown>; runtime: { managed: boolean; status: string; transport: string | null } };
     expect(body.bot.id).toBe(botId);
-    // The stubbed runtime answers the status probe, so the bot counts as managed.
-    expect(body.runtime.managed).toBe(true);
+    // Never started → not managed, no transport, persisted status shown.
+    expect(body.runtime.managed).toBe(false);
     expect(body.runtime.status).toBe('stopped');
+    expect(body.runtime.transport).toBeNull();
     expect(JSON.stringify(body)).not.toContain('v1:');
   });
 
@@ -251,48 +225,87 @@ describe('bots API', () => {
     expect(res.status).toBe(422);
   });
 
-  test('start / stop / restart proxy to the runtime', async () => {
-    runtimeMode = 'ok';
+  test('start / stop / restart drive the webhook transport end-to-end', async () => {
+    telegramState.mode = 'ok';
+
     const start = await botStartRoute.POST(jsonReq(`/api/bots/${botId}/start`, {}), ctx(botId));
     expect(start.status).toBe(200);
+    const startBody = (await start.json()) as { bot: { status: string; transport: string | null; telegramUsername: string | null }; runtime: { status: string } };
+    expect(startBody.bot.status).toBe('running');
+    expect(startBody.bot.transport).toBe('webhook');
+    expect(startBody.bot.telegramUsername).toBe('@stub_bot');
+    expect(startBody.runtime.status).toBe('running');
+
+    // The stubbed Telegram actually received setWebhook with a secret + our URL.
+    const wh = telegramState.registry.get(STUB_TELEGRAM_TOKEN);
+    expect(wh?.url).toBe(`http://localhost:3000/api/telegram/webhook/${botId}`);
+    expect(wh?.secret.length).toBeGreaterThanOrEqual(32);
+
+    // The webhook secret is stored encrypted, never in plaintext.
+    const row = await db.bot.findUnique({ where: { id: botId } });
+    expect(row!.webhookSecretRef?.startsWith('v1:')).toBe(true);
+    expect(row!.webhookSecretRef).not.toContain(wh!.secret);
+
     const stop = await botStopRoute.POST(jsonReq(`/api/bots/${botId}/stop`, {}), ctx(botId));
     expect(stop.status).toBe(200);
+    const stopBody = (await stop.json()) as { bot: { status: string } };
+    expect(stopBody.bot.status).toBe('stopped');
+    expect(telegramState.registry.has(STUB_TELEGRAM_TOKEN)).toBe(false);
+
     const restart = await botRestartRoute.POST(jsonReq(`/api/bots/${botId}/restart`, {}), ctx(botId));
     expect(restart.status).toBe(200);
-    expect(runtimeCalls.filter((c) => c.method === 'POST').map((c) => c.path)).toEqual([
-      `/bots/${botId}/start`,
-      `/bots/${botId}/stop`,
-      `/bots/${botId}/restart`,
-    ]);
+    const restartBody = (await restart.json()) as { bot: { status: string } };
+    expect(restartBody.bot.status).toBe('running');
   });
 
-  test('start failure surfaces a clear error to the client', async () => {
-    runtimeMode = 'reject-start';
+  test('starting an already-running bot is rejected (state machine)', async () => {
     const res = await botStartRoute.POST(jsonReq(`/api/bots/${botId}/start`, {}), ctx(botId));
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain('401');
-    runtimeMode = 'ok';
+    expect(body.error).toContain('running');
   });
 
-  test('runtime down → 503 with actionable message', async () => {
-    runtimeMode = 'down';
-    const res = await botStartRoute.POST(jsonReq(`/api/bots/${botId}/start`, {}), ctx(botId));
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain('runtime');
-    runtimeMode = 'ok';
+  test('invalid Telegram token → start fails with a clear, secret-free error', async () => {
+    // Stop the running bot first.
+    await botStopRoute.POST(jsonReq(`/api/bots/${botId}/stop`, {}), ctx(botId));
+
+    telegramState.mode = 'invalid-token';
+    try {
+      const res = await botStartRoute.POST(jsonReq(`/api/bots/${botId}/start`, {}), ctx(botId));
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('401');
+      // Bot went to error state with the detail persisted.
+      const status = await botStatusRoute.GET(jsonReq(`/api/bots/${botId}/status`), ctx(botId));
+      const statusBody = (await status.json()) as { persistedStatus: string; statusDetail: string | null };
+      expect(statusBody.persistedStatus).toBe('error');
+      expect(statusBody.statusDetail).toContain('401');
+    } finally {
+      telegramState.mode = 'ok';
+    }
   });
 
-  test('status endpoint merges persisted + runtime state', async () => {
+  test('status endpoint merges persisted + live webhook state', async () => {
+    // Start again (webhook registered by the stub).
+    await botStartRoute.POST(jsonReq(`/api/bots/${botId}/start`, {}), ctx(botId));
     const res = await botStatusRoute.GET(jsonReq(`/api/bots/${botId}/status`), ctx(botId));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { botId: string; persistedStatus: string; runtimeManaged: boolean };
+    const body = (await res.json()) as {
+      botId: string;
+      status: string;
+      persistedStatus: string;
+      runtimeManaged: boolean;
+      transport: string | null;
+      pendingUpdateCount: number | null;
+    };
     expect(body.botId).toBe(botId);
-    // With the runtime stubbed, the persisted status column never changed:
-    // the real runtime would have set it to running on start.
-    expect(body.persistedStatus).toBe('stopped');
+    expect(body.status).toBe('running');
+    expect(body.persistedStatus).toBe('running');
     expect(body.runtimeManaged).toBe(true);
+    expect(body.transport).toBe('webhook');
+    expect(body.pendingUpdateCount).toBe(0);
+
+    await botStopRoute.POST(jsonReq(`/api/bots/${botId}/stop`, {}), ctx(botId));
   });
 
   test('logs endpoint returns sanitized entries; level filter works', async () => {

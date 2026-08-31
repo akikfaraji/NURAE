@@ -29,7 +29,7 @@ export function NuraeConsole() {
   const [authed, setAuthed] = useState(true);
   const [checked, setChecked] = useState(false);
   const [view, setView] = useState<View>({ type: 'overview' });
-  const [runtimeUp, setRuntimeUp] = useState<boolean | null>(null);
+  const [coreUp, setCoreUp] = useState<boolean | null>(null);
 
   // Load catalog + auth state. Catalog lives behind the auth guard, so fetch
   // it only once authenticated.
@@ -50,11 +50,11 @@ export function NuraeConsole() {
         setAuthed(s.authenticated);
         if (s.authenticated) {
           await loadCatalog();
-          // Runtime health probe (non-blocking informational).
+          // Core health probe (non-blocking informational).
           nuraeApi
             .health()
-            .then(() => setRuntimeUp(true))
-            .catch(() => setRuntimeUp(false));
+            .then(() => setCoreUp(true))
+            .catch(() => setCoreUp(false));
         }
       } catch {
         setAuthed(true); // fail-open to the UI; API calls will surface errors
@@ -119,21 +119,21 @@ export function NuraeConsole() {
             <span
               className={
                 'ml-2 hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs sm:inline-flex ' +
-                (runtimeUp === null
+                (coreUp === null
                   ? 'border-zinc-200 text-zinc-400'
-                  : runtimeUp
+                  : coreUp
                     ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
                     : 'border-red-300 bg-red-50 text-red-700')
               }
-              title={runtimeUp ? 'Runtime service reachable' : 'Runtime service unreachable — start/stop will fail'}
+              title={coreUp ? 'NURAE core reachable' : 'NURAE core unreachable — API calls will fail'}
             >
               <span
                 className={
                   'inline-block h-1.5 w-1.5 rounded-full ' +
-                  (runtimeUp === null ? 'bg-zinc-300' : runtimeUp ? 'bg-emerald-500' : 'bg-red-500')
+                  (coreUp === null ? 'bg-zinc-300' : coreUp ? 'bg-emerald-500' : 'bg-red-500')
                 }
               />
-              Runtime {runtimeUp === null ? '…' : runtimeUp ? 'online' : 'offline'}
+              Core {coreUp === null ? '…' : coreUp ? 'online' : 'offline'}
             </span>
           </nav>
         </div>
@@ -144,7 +144,7 @@ export function NuraeConsole() {
           <div className="mb-6">
             <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Autonomous Digital Operations</h1>
             <p className="text-sm text-zinc-500">
-              Create and operate AI-powered Telegram bots. This is the V00.00.000-beta-01 foundation.
+              Create and operate AI-powered Telegram bots. This is the {NURAE_VERSION} release.
             </p>
           </div>
         )}

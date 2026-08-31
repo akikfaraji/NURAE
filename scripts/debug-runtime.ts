@@ -1,8 +1,12 @@
 import { BotRuntime } from '../src/lib/nurae/runtime/bot-runtime';
+import { handleBotMessage, updateToInboundMessage } from '../src/lib/nurae/runtime/pipeline';
 import type { RuntimeBotRecord, RuntimeStore } from '../src/lib/nurae/runtime/store';
-import { TelegramApiError } from '../src/lib/nurae/telegram/adapter';
+import type { TelegramAdapter, TelegramUpdate } from '../src/lib/nurae/telegram/adapter';
 
-const updates = [
+// Debug harness: run one fake Telegram update through the shared pipeline.
+// Usage: bun scripts/debug-runtime.ts
+
+const updates: TelegramUpdate[] = [
   {
     update_id: 1,
     message: {
@@ -45,8 +49,8 @@ const store: RuntimeStore = {
     console.log('appendAssistant', botId, chatId, content);
   },
   async trimConversation() {},
-  async createLog(_botId, level, message) {
-    console.log('LOG', level, message);
+  async createLog(_botId, level, message, event) {
+    console.log('LOG', event ?? '-', level, message);
   },
 };
 
@@ -55,6 +59,12 @@ const adapter = {
     return { id: 1, username: 'fake_bot' };
   },
   async deleteWebhook() {},
+  async setWebhook() {
+    return true;
+  },
+  async getWebhookInfo() {
+    return { url: '', has_custom_certificate: false, pending_update_count: 0 };
+  },
   async getUpdates(_offset: number, o?: { signal?: AbortSignal }) {
     if (updates.length) return updates.splice(0);
     return new Promise<never[]>((resolve) => {
@@ -80,13 +90,35 @@ const selector = () => ({
   baseUrl: null,
 });
 
-const rt = new BotRuntime(await store.getBot('bot-1') as RuntimeBotRecord, {
+const record = (await store.getBot('bot-1')) as RuntimeBotRecord;
+
+// 1. Poll-loop smoke test via BotRuntime.
+const rt = new BotRuntime(record, {
   store,
   adapterFactory: () => adapter as never,
-  providerSelector: selector as never,
 });
 await rt.start();
 console.log('started, status =', rt.status);
 await new Promise((r) => setTimeout(r, 300));
 await rt.stop();
 console.log('stopped');
+
+// 2. Direct pipeline test (transport-agnostic path used by webhook + polling).
+const update = updates[0] ?? {
+  update_id: 1,
+  message: {
+    message_id: 1,
+    from: { id: 1, is_bot: false, first_name: 'T' },
+    chat: { id: 777, type: 'private' },
+    date: 1,
+    text: 'hello',
+  },
+} as TelegramUpdate;
+const msg = updateToInboundMessage(update);
+if (msg) {
+  await handleBotMessage(record, adapter as unknown as TelegramAdapter, msg, {
+    store,
+    providerSelector: selector as never,
+  });
+}
+console.log('pipeline done');

@@ -55,3 +55,46 @@ Stage Summary:
 - Push successful: commit 0977f47 (NURAE V00.00.000-beta-01) now HEAD of origin/main
 - Verified on remote: src/app/api/auth/*, src/lib/nurae/*, mini-services/nurae-runtime/* all present
 - Note: PAT is embedded in .git/config remote URL (user-provided token for this purpose)
+
+---
+Task ID: 3
+Agent: main (Super Z)
+Task: NURAE V00.01.000-beta-02 — STEP 1 audit + STEP 2 architecture design (webhook-first, Vercel-compatible refactor)
+
+Work Log:
+- Audited all core modules: version.ts, schema.prisma, secrets.ts, sanitize.ts, validation.ts, logging.ts, ai/* (types, registry, providers), telegram/adapter.ts, runtime/{store,bot-runtime,bot-manager}.ts, api/{base,lifecycle,runtime-client}.ts, all API routes, dashboard components (views/bot-view/bot-form/console/bits), tests (7 files, 76 tests), mini-services/nurae-runtime/index.ts, .zscripts, .env.example
+
+Stage Summary:
+- AUDIT VERDICT: architecture is solid overall (clean provider abstraction, centralized Telegram adapter, AES-256-GCM secrets, sanitized logs, zod validation, timing-safe admin auth). REUSE: schema (has all Step 6 fields), AI layer (Step 3 satisfied), store boundary, sanitizer, validation, auth guard, dashboard (Step 7 ~95% present)
+- MAJOR CHANGE REQUIRED (explained per spec Step 1): three-process polling design (Next.js + :3030 runtime mini-service + SQLite WAL) is fundamentally incompatible with Vercel/serverless: (1) no second process/port allowed; (2) long-poll loops die with the invocation; (3) ephemeral filesystem wipes SQLite; (4) in-memory BotManager state lost. Per user directive "Plus vercel compatible refactor", the runtime merges INTO the Next.js app and webhook mode becomes the primary transport
+- DESIGN DECISIONS (Step 5): transport = WEBHOOK primary (stateless, per-message invocation, Telegram redelivery semantics, works on Vercel; local polling kept as fallback for dev without public URL via NURAE_BOT_TRANSPORT=polling). Storage = Prisma libsql provider (file: local dev, libsql:// Turso on Vercel — one schema, both worlds). Secret key = env-first (NURAE_SECRET_KEY), key-file only as local fallback. State machine (Step 8) enforced in DB transitions. Shared transport-agnostic pipeline (Step 2 flow diagram) used by BOTH transports. Webhook secured via per-bot secret_token (X-Telegram-Bot-Api-Secret-Token, constant-time compare)
+- Plan: version bump -> schema (libsql + Log.event + Bot.webhookSecretRef/transport) -> de-risk libsql db push -> state-machine.ts -> pipeline.ts extraction -> adapter webhook methods -> transport.ts -> lifecycle rework (delete runtime-client + mini-service) -> /api/telegram/webhook/[botId] -> status/DTO updates -> dashboard copy -> tests -> mock-Telegram E2E with real GLM -> README/.env.example -> commit (NO push)
+
+---
+Task ID: 3 (implementation)
+Agent: main (Super Z)
+Task: Implement NURAE V00.01.000-beta-02 — minimal working Telegram bot platform + Vercel-compatible refactor
+
+Work Log:
+- Version: src/lib/nurae/version.ts → V00.01.000-beta-02 (FRAZIYM convention preserved)
+- Storage: Prisma libsql driver adapter (@prisma/adapter-libsql + @libsql/client); db.ts single code path — file: local / libsql:// Turso remote; schema provider stays sqlite (libSQL dialect); de-risked with sanity test (raw PRAGMAs OK)
+- Schema: + Bot.transport, Bot.webhookSecretRef (encrypted), Log.event (structured codes)
+- State machine (Step 8): runtime/state-machine.ts — 5 states, transition matrix enforced atomically in DB (updateMany where status in [...from])
+- Pipeline (Step 2/4): runtime/pipeline.ts — transport-agnostic handleBotMessage (commands → memory → Provider Selector → AIProvider → reply) with Step-9 event codes on every log
+- Telegram adapter: + setWebhook/getWebhookInfo; adapter unchanged otherwise
+- Transport (Step 5): runtime/transport.ts — webhook primary (setWebhook+secret → RUNNING; deleteWebhook → STOPPED; getWebhookInfo status reconciliation incl. out-of-band webhook removal detection), polling fallback (in-process BotManager, refuses on serverless), webhook secret gen/verify (timing-safe), per-bot update dedupe (500-cap)
+- Webhook route: /api/telegram/webhook/[id] — secret-gated (401 before existence disclosure), 400 malformed, 500 transient (Telegram retries), maxDuration 60 + nodejs runtime
+- REMOVED: mini-services/nurae-runtime (isolated process), runtime-client.ts (localhost proxy), WAL pragmas (single process now)
+- Security (Step 12): login timing-safe compare (safeCompare), .env untracked + gitignored, webhook route no-existence-oracle, DTOs secret-free (verified by tests), sanitizer covers all new log paths
+- Lifecycle/API: start/stop/restart direct through transport; status merges persisted + Telegram-side state (pending_update_count, last_error); project delete stops bots via transport
+- Dashboard: transport badge + pending-updates indicator on bot view, transport row in overview meta, Core online/offline badge (replaces Runtime badge), version strings from version.ts
+- Tests: 92 pass across 8 files — new: state-machine matrix, webhook receiver (10 cases incl. duplicate suppression), shared stateful Telegram stub; updated: api lifecycle (real webhook flow in-process), version bump
+- E2E (Step 14): scripts/e2e.ts + scripts/mock-telegram.ts — 13/13 PASS: health → create project/bot → start (webhook registered on mock) → /start welcome → REAL GLM reply via webhook pipeline (663-678ms) → memory follow-up → event-coded logs → @username/no-secrets → restart → stop (webhook removed) → invalid-token 401 path → cleanup. Real-Telegram delivery UNTESTED (no BotFather token in sandbox)
+- Performance (Step 15): start→running 105-905ms (first-compile vs warm), webhook round-trip incl. GLM 663ms, next-server RSS ~652MB (dev mode), CPU idle ~0.2%. No scalability claims
+- Docs (Step 16): README rewritten for beta-02 (webhook-vs-polling rationale, Vercel/Turso deploy guide §11, IMPLEMENTED/EXPERIMENTAL/PLANNED, limitations incl. per-instance dedupe + single-tenant ownership); .env.example full annotated rewrite
+- Browser verification: dashboard golden path (create project → bot → start → RUNNING + webhook badge + live logs → delete) verified with agent-browser; mobile viewport + screenshots OK; no console errors
+
+Stage Summary:
+- V00.01.000-beta-02 COMPLETE: full Step-13 loop (login→create→configure→start→message→AI reply→stop→status→logs) implemented and verified at 3 levels: 92 unit/integration tests, 13-step E2E with real GLM, agent-browser UI pass
+- Architecture now: single Next.js process, webhook-first transport, shared pipeline, DB-enforced state machine, libSQL/Turso storage — Vercel-deployable per README §11
+- Honest gaps: real-Telegram delivery untested (no token), zai provider is sandbox-dependent (EXPERIMENTAL), dedupe per-instance, single-tenant auth model

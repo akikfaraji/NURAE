@@ -35,9 +35,10 @@ export async function PUT(req: Request, ctx: Ctx): Promise<Response> {
     const input = parsed.data;
 
     // Provider change: ensure credentials will exist after the update.
-    if (input.provider && providerNeedsKey(input.provider)) {
+    const nextProvider = input.provider;
+    if (nextProvider && providerNeedsKey(nextProvider)) {
       const willHaveKey = Boolean(input.apiKey) || Boolean(existing.apiKeyRef);
-      const info = await import('@/lib/nurae/ai/registry').then((m) => m.getProviderInfo(input.provider));
+      const info = await import('@/lib/nurae/ai/registry').then((m) => m.getProviderInfo(nextProvider));
       const envVar = info?.apiKeyEnvVar;
       const hasEnvKey = envVar ? Boolean(process.env[envVar]) : false;
       if (!willHaveKey && !hasEnvKey) {
@@ -68,6 +69,7 @@ export async function PUT(req: Request, ctx: Ctx): Promise<Response> {
       data: {
         botId: id,
         level: 'info',
+        event: 'BOT_UPDATED',
         message: sanitizeForLog(`Configuration updated${Object.keys(data).length ? ` (fields: ${Object.keys(data).join(', ')})` : ''}.`),
       },
     });

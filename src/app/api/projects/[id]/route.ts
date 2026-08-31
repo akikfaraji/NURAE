@@ -97,9 +97,9 @@ export async function DELETE(req: Request, ctx: Ctx): Promise<Response> {
 
 async function fetchStopBot(botId: string): Promise<void> {
   try {
-    const { runtimeClient } = await import('@/lib/nurae/api/runtime-client');
-    await runtimeClient.stop(botId);
+    const { stopBot } = await import('@/lib/nurae/runtime/transport');
+    await stopBot(botId);
   } catch {
-    /* runtime down — cascade delete still proceeds */
+    /* transport failure — cascade delete still proceeds */
   }
 }

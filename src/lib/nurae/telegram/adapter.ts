@@ -55,6 +55,14 @@ export class TelegramApiError extends Error {
   }
 }
 
+export interface WebhookInfo {
+  url: string;
+  has_custom_certificate: boolean;
+  pending_update_count: number;
+  last_error_message?: string;
+  last_error_date?: number;
+}
+
 export interface TelegramAdapterOptions {
   token: string;
   apiBase?: string;
@@ -165,6 +173,28 @@ export class TelegramAdapter {
   /** Remove any active webhook so getUpdates can run (avoids 409). */
   async deleteWebhook(opts?: { signal?: AbortSignal }): Promise<void> {
     await this.call<boolean>('deleteWebhook', { drop_pending_updates: false }, opts);
+  }
+
+  /** Register the webhook Telegram should POST updates to (webhook transport). */
+  async setWebhook(
+    url: string,
+    opts?: { secretToken?: string; dropPendingUpdates?: boolean; allowedUpdates?: string[]; signal?: AbortSignal },
+  ): Promise<boolean> {
+    return this.call<boolean>(
+      'setWebhook',
+      {
+        url,
+        secret_token: opts?.secretToken,
+        drop_pending_updates: opts?.dropPendingUpdates ?? false,
+        allowed_updates: opts?.allowedUpdates ?? ['message'],
+      },
+      opts,
+    );
+  }
+
+  /** Current Telegram-side webhook state (used for status reconciliation). */
+  async getWebhookInfo(opts?: { signal?: AbortSignal }): Promise<WebhookInfo> {
+    return this.call<WebhookInfo>('getWebhookInfo', undefined, opts);
   }
 
   /** One long-poll round of getUpdates. */

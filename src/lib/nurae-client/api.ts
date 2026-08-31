@@ -62,6 +62,8 @@ export interface BotDTO {
   enabled: boolean;
   status: string;
   statusDetail: string | null;
+  /** Transport used at last start: "webhook" | "polling" (null: never started). */
+  transport: string | null;
   lastStartedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -70,13 +72,16 @@ export interface BotDTO {
 export interface RuntimeInfo {
   managed: boolean;
   status: string | null;
-  startedAt: number | null;
+  transport: string | null;
+  pendingUpdateCount: number | null;
 }
 
 export interface LogEntry {
   id: string;
   botId: string | null;
   level: 'info' | 'warn' | 'error';
+  /** Structured event code (Step 9), e.g. BOT_STARTED, AI_RESPONSE. */
+  event: string | null;
   message: string;
   timestamp: string;
 }
@@ -175,6 +180,9 @@ export const nuraeApi = {
       persistedStatus: string;
       statusDetail: string | null;
       telegramUsername: string | null;
+      transport: string | null;
+      pendingUpdateCount: number | null;
+      telegramLastErrorMessage: string | null;
       runtimeManaged: boolean;
     }>(`/api/bots/${id}/status`),
 

@@ -38,6 +38,9 @@ export interface RuntimeStatusPatch {
   statusDetail?: string | null;
   telegramUsername?: string | null;
   lastStartedAt?: Date | null;
+  transport?: string | null;
+  /** Encrypted webhook secret reference — written by the transport layer only. */
+  webhookSecretRef?: string | null;
 }
 
 export interface RuntimeStore {
@@ -49,7 +52,12 @@ export interface RuntimeStore {
   appendAssistantMessage(botId: string, chatId: string, content: string): Promise<void>;
   /** Keep only the newest `keep` messages for this conversation. */
   trimConversation(botId: string, chatId: string, keep: number): Promise<void>;
-  createLog(botId: string | null, level: 'info' | 'warn' | 'error', message: string): Promise<void>;
+  createLog(
+    botId: string | null,
+    level: 'info' | 'warn' | 'error',
+    message: string,
+    event?: string,
+  ): Promise<void>;
 }
 
 export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
@@ -97,6 +105,8 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
       if (patch.statusDetail !== undefined) data.statusDetail = patch.statusDetail;
       if (patch.telegramUsername !== undefined) data.telegramUsername = patch.telegramUsername;
       if (patch.lastStartedAt !== undefined) data.lastStartedAt = patch.lastStartedAt;
+      if (patch.transport !== undefined) data.transport = patch.transport;
+      if (patch.webhookSecretRef !== undefined) data.webhookSecretRef = patch.webhookSecretRef;
       if (Object.keys(data).length === 0) return;
       await prisma.bot.update({ where: { id: botId }, data }).catch(() => {
         // Bot row may have been deleted while running — ignore.
@@ -141,8 +151,8 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
       await prisma.message.deleteMany({ where: { id: { in: ids.map((m) => m.id) } } });
     },
 
-    async createLog(botId, level, message) {
-      await prisma.log.create({ data: { botId, level, message } }).catch(() => undefined);
+    async createLog(botId, level, message, event) {
+      await prisma.log.create({ data: { botId, level, message, event: event ?? null } }).catch(() => undefined);
     },
   };
 }

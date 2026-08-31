@@ -1,8 +1,12 @@
 /**
- * NURAE — BotRuntime (spec §9, §11, §16, §17).
+ * NURAE — BotRuntime (polling transport; spec Steps 2, 4, 8).
  *
- * Owns exactly ONE bot: Telegram long-poll loop → command routing → memory
- * window → Provider Selector → AI Provider → reply via Telegram.
+ * Owns exactly ONE bot for the LOCAL polling transport: Telegram long-poll
+ * loop → shared pipeline (commands → memory → AI provider → reply).
+ *
+ * Webhook transport does NOT use this class — it processes updates directly
+ * through the same pipeline (see transport.ts and the webhook API route),
+ * because serverless platforms cannot host persistent poll loops.
  *
  * Reliability guarantees:
  *  - A failed AI request never crashes the runtime: the user gets a friendly
@@ -14,11 +18,12 @@
  */
 
 import { TelegramAdapter, TelegramApiError } from '../telegram/adapter';
-import { selectProvider } from '../ai/registry';
-import { AIError, ChatMessage } from '../ai/types';
+import { handleBotMessage, updateToInboundMessage } from './pipeline';
 import { RuntimeBotRecord, RuntimeStore } from './store';
+import { BotStatus } from './state-machine';
+import type { selectProvider } from '../ai/registry';
 
-export type BotStatus = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
+export type { BotStatus };
 
 export interface BotRuntimeDeps {
   store: RuntimeStore;
@@ -30,32 +35,12 @@ export interface BotRuntimeDeps {
   maxBackoffMs?: number;
 }
 
-const START_TEXT = (botName: string) =>
-  `${botName} is online ✅\n\nI am an AI assistant powered by NURAE (FRAZIYM TECH & AI).\nSend me any message and I will reply.\nUse /help to see available commands.`;
-
-const HELP_TEXT =
-  'Available commands:\n' +
-  '/start — check that the bot is online\n' +
-  '/help — show this help\n\n' +
-  'Anything else you send is handled by the AI assistant.';
-
-const AI_FAILURE_TEXT: Record<string, string> = {
-  invalid_credentials: 'The AI provider rejected the credentials. The bot owner has been notified via logs.',
-  missing_credentials: 'The AI provider is not configured yet. Please add an API key in the dashboard.',
-  rate_limited: 'The AI provider is rate-limiting requests right now. Please try again in a moment.',
-  timeout: 'The AI request timed out. Please try again.',
-  provider_not_found: 'The configured AI provider is unknown. Please check the bot configuration.',
-  network_error: 'Could not reach the AI provider. Please try again shortly.',
-  api_error: 'The AI provider returned an error. Please try again shortly.',
-  invalid_response: 'The AI provider returned an unexpected response. Please try again.',
-};
-
 export class BotRuntime {
   readonly botId: string;
   private record: RuntimeBotRecord;
   private readonly store: RuntimeStore;
   private readonly adapterFactory: (token: string) => TelegramAdapter;
-  private readonly providerSelector: typeof selectProvider;
+  private readonly providerSelector?: typeof selectProvider;
   private readonly maxBackoffMs: number;
 
   private abortController: AbortController | null = null;
@@ -67,7 +52,7 @@ export class BotRuntime {
     this.record = record;
     this.store = deps.store;
     this.adapterFactory = deps.adapterFactory ?? ((token) => new TelegramAdapter({ token }));
-    this.providerSelector = deps.providerSelector ?? selectProvider;
+    this.providerSelector = deps.providerSelector;
     this.maxBackoffMs = deps.maxBackoffMs ?? 30_000;
   }
 
@@ -85,8 +70,12 @@ export class BotRuntime {
     }
 
     this._status = 'starting';
-    await this.store.updateBotRuntimeState(this.botId, { status: 'starting', statusDetail: null });
-    await this.store.createLog(this.botId, 'info', 'Starting bot: verifying Telegram identity…');
+    await this.store.updateBotRuntimeState(this.botId, {
+      status: 'starting',
+      statusDetail: null,
+      transport: 'polling',
+    });
+    await this.store.createLog(this.botId, 'info', 'Starting bot: verifying Telegram identity…', 'BOT_STARTING');
 
     const adapter = this.adapterFactory(this.record.telegramToken);
     this.abortController = new AbortController();
@@ -104,7 +93,8 @@ export class BotRuntime {
       await this.store.createLog(
         this.botId,
         'info',
-        `Bot is running as ${me.username ? '@' + me.username : me.id} (provider: ${this.record.provider}, model: ${this.record.model}).`,
+        `Bot is running as ${me.username ? '@' + me.username : me.id} (provider: ${this.record.provider}, model: ${this.record.model}, transport: polling).`,
+        'BOT_STARTED',
       );
     } catch (err) {
       const detail = err instanceof TelegramApiError
@@ -124,6 +114,7 @@ export class BotRuntime {
     if (this._status === 'stopped' || this._status === 'stopping') return;
     this._status = 'stopping';
     await this.store.updateBotRuntimeState(this.botId, { status: 'stopping' });
+    await this.store.createLog(this.botId, 'info', 'Stopping bot…', 'BOT_STOPPING');
     this.abortController?.abort();
     if (this.pollPromise) {
       await Promise.race([this.pollPromise, sleep(3000)]);
@@ -131,7 +122,7 @@ export class BotRuntime {
     }
     this._status = 'stopped';
     await this.store.updateBotRuntimeState(this.botId, { status: 'stopped', statusDetail: null });
-    await this.store.createLog(this.botId, 'info', 'Bot stopped.');
+    await this.store.createLog(this.botId, 'info', 'Bot stopped.', 'BOT_STOPPED');
   }
 
   async restart(): Promise<void> {
@@ -152,9 +143,19 @@ export class BotRuntime {
         for (const update of updates) {
           if (signal.aborted) return;
           offset = Math.max(offset, update.update_id + 1);
-          if (update.message?.text) {
-            await this.handleMessage(adapter, update.message.chat.id, update.message.text, update.message.from?.is_bot ?? false);
-          }
+          const msg = updateToInboundMessage(update);
+          if (!msg) continue;
+          await this.store.createLog(
+            this.botId,
+            'info',
+            `Message received from chat ${msg.chatId} (${msg.text?.length ?? 0} chars).`,
+            'TELEGRAM_MESSAGE_RECEIVED',
+          );
+          await handleBotMessage(this.record, adapter, msg, {
+            store: this.store,
+            signal,
+            providerSelector: this.providerSelector,
+          });
         }
       } catch (err) {
         if (signal.aborted) return;
@@ -188,96 +189,10 @@ export class BotRuntime {
     return Math.min(1000 * 2 ** Math.max(0, n - 1), this.maxBackoffMs);
   }
 
-  /** Command routing + AI pipeline (spec §16). */
-  private async handleMessage(
-    adapter: TelegramAdapter,
-    chatId: number,
-    text: string,
-    fromBot: boolean,
-  ): Promise<void> {
-    if (fromBot) return; // ignore bots to avoid loops
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    // Command routing
-    if (trimmed === '/start') {
-      await this.sendSafely(adapter, chatId, START_TEXT(this.record.name));
-      await this.store.createLog(this.botId, 'info', `Handled /start for chat ${chatId}.`);
-      return;
-    }
-    if (trimmed === '/help') {
-      await this.sendSafely(adapter, chatId, HELP_TEXT);
-      await this.store.createLog(this.botId, 'info', `Handled /help for chat ${chatId}.`);
-      return;
-    }
-    if (trimmed.startsWith('/')) {
-      await this.sendSafely(adapter, chatId, `Unknown command "${trimmed.split(/\s+/)[0]}".\n\n${HELP_TEXT}`);
-      return;
-    }
-
-    // --- AI pipeline -------------------------------------------------------
-    await this.store.appendUserMessage(this.botId, String(chatId), trimmed);
-    const history = await this.store.getRecentMessages(this.botId, String(chatId), this.record.memorySize);
-    const messages: ChatMessage[] = [
-      { role: 'system', content: this.record.systemPrompt },
-      ...history,
-    ];
-
-    let reply: string;
-    try {
-      const selection = this.providerSelector(this.record.provider, {
-        apiKey: this.record.apiKey,
-        baseUrl: this.record.baseUrl,
-      });
-      if (selection.info.requiresKey && !selection.apiKey) {
-        throw new AIError('missing_credentials', `No API key configured for provider "${selection.info.id}".`);
-      }
-      reply = await selection.provider.generate(messages, {
-        model: this.record.model,
-        temperature: this.record.temperature,
-        maxTokens: this.record.maxTokens,
-        apiKey: selection.apiKey,
-        baseUrl: selection.baseUrl,
-        signal: this.abortController?.signal,
-      });
-    } catch (err) {
-      const aiErr = err instanceof AIError ? err : null;
-      const message = aiErr ? `${aiErr.code}: ${aiErr.message}` : err instanceof Error ? err.message : String(err);
-      await this.store.createLog(this.botId, 'error', `AI request failed — ${message}`);
-      const friendly =
-        AI_FAILURE_TEXT[aiErr?.code ?? 'api_error'] ?? AI_FAILURE_TEXT.api_error;
-      await this.sendSafely(adapter, chatId, `⚠️ ${friendly}`);
-      return;
-    }
-
-    await this.store.appendAssistantMessage(this.botId, String(chatId), reply);
-    if (this.record.memorySize > 0) {
-      await this.store.trimConversation(this.botId, String(chatId), this.record.memorySize);
-    }
-    await this.sendSafely(adapter, chatId, reply);
-    await this.store.createLog(this.botId, 'info', `Replied to chat ${chatId} (${reply.length} chars).`);
-  }
-
-  private async sendSafely(adapter: TelegramAdapter, chatId: number, text: string): Promise<void> {
-    try {
-      await adapter.sendMessage(chatId, text, { signal: this.abortController?.signal });
-    } catch (err) {
-      if (err instanceof TelegramApiError) {
-        await this.store.createLog(this.botId, 'warn', `Telegram send failed for chat ${chatId}: ${err.message}`);
-      } else {
-        await this.store.createLog(
-          this.botId,
-          'warn',
-          `Telegram send failed for chat ${chatId}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  }
-
   private async markError(detail: string): Promise<void> {
     this._status = 'error';
     await this.store.updateBotRuntimeState(this.botId, { status: 'error', statusDetail: detail });
-    await this.store.createLog(this.botId, 'error', detail);
+    await this.store.createLog(this.botId, 'error', detail, 'BOT_ERROR');
   }
 }
 

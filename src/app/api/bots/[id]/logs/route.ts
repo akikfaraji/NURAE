@@ -36,6 +36,7 @@ export async function GET(req: Request, ctx: Ctx): Promise<Response> {
         id: l.id,
         botId: l.botId,
         level: l.level,
+        event: l.event,
         message: sanitizeForLog(l.message),
         timestamp: l.timestamp.toISOString(),
       })),

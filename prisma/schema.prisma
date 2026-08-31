@@ -1,7 +1,9 @@
-// NURAE V00.00.000-beta-01 — FRAZIYM TECH & AI
-// Data model. SQLite for this release; the schema is intentionally simple
-// and standard so migration to PostgreSQL later is straightforward
-// (no SQLite-specific column types, no JSON columns, standard relations).
+// NURAE V00.01.000-beta-02 — FRAZIYM TECH & AI
+// Data model. SQLite/libSQL dialect. The SAME schema serves local development
+// (file: URL via the libsql driver adapter — embedded libSQL) and serverless
+// deployments such as Vercel (libsql:// URL — hosted Turso). The schema is
+// intentionally simple and standard (no platform-specific column types,
+// no JSON columns).
 
 generator client {
   provider = "prisma-client-js"
@@ -48,6 +50,11 @@ model Bot {
   enabled              Boolean @default(true)
   status               String  @default("stopped") // stopped | starting | running | stopping | error
   statusDetail         String? @map("status_detail") // last error / human-readable status info
+  // Transport resolved at the last start: "webhook" | "polling" (null: never started).
+  transport            String?
+  // Encrypted per-bot webhook secret (set on every webhook-mode start; Telegram
+  // echoes it back in X-Telegram-Bot-Api-Secret-Token). NEVER returned by APIs.
+  webhookSecretRef     String? @map("webhook_secret_reference")
   lastStartedAt        DateTime? @map("last_started_at")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
@@ -93,6 +100,8 @@ model Log {
   id        String   @id @default(cuid())
   botId     String?  @map("bot_id") // null => system-level (NURAE core) log
   level     String // info | warn | error
+  // Structured event code (Step 9): BOT_CREATED, BOT_STARTING, TELEGRAM_MESSAGE_RECEIVED, AI_REQUEST, …
+  event     String?
   message   String
   timestamp DateTime @default(now()) @map("timestamp")
 

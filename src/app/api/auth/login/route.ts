@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { ADMIN_COOKIE, adminToken } from '@/lib/nurae/api/base';
+import { ADMIN_COOKIE, adminToken, safeCompare } from '@/lib/nurae/api/base';
 
 export async function POST(req: Request): Promise<Response> {
   const expected = adminToken();
@@ -27,7 +27,8 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const presented = typeof body.token === 'string' ? body.token.trim() : '';
-  if (!presented || presented !== expected) {
+  // Timing-safe comparison: prevents token-extraction via response timing.
+  if (!presented || !safeCompare(presented, expected)) {
     return NextResponse.json({ error: 'Invalid admin token' }, { status: 401 });
   }
 

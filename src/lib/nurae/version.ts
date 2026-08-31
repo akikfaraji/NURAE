@@ -17,7 +17,7 @@ export const NURAE_NAME = 'NURAE';
 export const NURAE_VENDOR = 'FRAZIYM TECH & AI';
 export const NURAE_TAGLINE = 'Autonomous Digital Operations System';
 
-export const NURAE_VERSION = 'V00.00.000-beta-01';
+export const NURAE_VERSION = 'V00.01.000-beta-02';
 
 /** Structured representation of the FRAZIYM version format. */
 export interface FraziymVersion {
@@ -71,7 +71,7 @@ export function startupBanner(): string {
   return [`${NURAE_NAME} ${NURAE_VERSION}`, NURAE_VENDOR, NURAE_TAGLINE].join('\n');
 }
 
-/** One-line identity string, e.g. "NURAE V00.00.000-beta-01 | FRAZIYM TECH & AI". */
+/** One-line identity string, e.g. "NURAE V00.01.000-beta-02 | FRAZIYM TECH & AI". */
 export function identityLine(): string {
   return `${NURAE_NAME} ${NURAE_VERSION} | ${NURAE_VENDOR}`;
 }

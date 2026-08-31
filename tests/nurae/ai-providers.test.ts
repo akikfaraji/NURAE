@@ -140,7 +140,7 @@ describe('OpenAI-compatible provider (mocked HTTP)', () => {
     const p = makeProvider({
       timeoutMs: 80,
       fetchImpl: (_url, init) =>
-        new Promise((_resolve, reject) => {
+        new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
         }),
     });

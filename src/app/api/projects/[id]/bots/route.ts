@@ -85,6 +85,7 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
       data: {
         botId: bot.id,
         level: 'info',
+        event: 'BOT_CREATED',
         message: sanitizeForLog(`Bot "${input.name}" created (provider: ${input.provider}, model: ${input.model}).`),
       },
     });

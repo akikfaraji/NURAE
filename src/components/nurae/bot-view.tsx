@@ -38,7 +38,11 @@ function timeOf(ts: string): string {
 
 export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Catalog; onBack: () => void }) {
   const [bot, setBot] = useState<BotDTO | null>(null);
-  const [runtimeManaged, setRuntimeManaged] = useState<boolean>(false);
+  const [runtime, setRuntime] = useState<{ managed: boolean; transport: string | null; pendingUpdateCount: number | null }>({
+    managed: false,
+    transport: null,
+    pendingUpdateCount: null,
+  });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
@@ -50,7 +54,11 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
     try {
       const res = await nuraeApi.getBot(botId);
       setBot(res.bot);
-      setRuntimeManaged(res.runtime.managed);
+      setRuntime({
+        managed: res.runtime.managed,
+        transport: res.runtime.transport,
+        pendingUpdateCount: res.runtime.pendingUpdateCount,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load bot');
     }
@@ -172,8 +180,13 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
               {bot.name}
             </h2>
             <StatusBadge status={bot.status} />
-            {runtimeManaged ? null : (
-              <span className="text-xs text-zinc-400">(runtime process not holding this bot)</span>
+            {bot.transport && (
+              <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-500">
+                {bot.transport === 'webhook' ? 'webhook transport' : 'polling transport'}
+              </span>
+            )}
+            {runtime.managed && runtime.pendingUpdateCount !== null && runtime.pendingUpdateCount > 5 && (
+              <span className="text-xs text-amber-600">{runtime.pendingUpdateCount} updates queued</span>
             )}
           </div>
           {bot.statusDetail && (
@@ -218,6 +231,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
                 { label: 'AI provider', value: bot.provider },
                 { label: 'Model', value: bot.model },
                 { label: 'Status', value: <StatusBadge status={bot.status} /> },
+                { label: 'Transport', value: bot.transport === 'webhook' ? 'Webhook (Telegram → NURAE)' : bot.transport === 'polling' ? 'Polling (local dev)' : 'Not started yet' },
                 { label: 'Enabled', value: bot.enabled ? 'Yes' : 'No' },
                 {
                   label: 'Last started',
