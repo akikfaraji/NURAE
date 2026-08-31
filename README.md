@@ -299,14 +299,38 @@ the full loop (health → auth gate → create → start → real webhook check 
 verified through structured logs → stop → webhook removal check → real-401
 error path → cleanup) and exits non-zero on any failure.
 
-## 14.1 Split-deployment E2E workflow (GitHub Actions × Vercel)
+## 14.1 Gateway Link — static frontend, moving backend (beta-03)
+
+The frontend is deployed **once**; the backend finds it at runtime:
+
+1. The backend boots (with `NURAE_LINK_FRONTEND_URL` + `NURAE_GATEWAY_KEY`)
+   and POSTs its public origin to the frontend's
+   `POST /api/gateway/register` — shared key (timing-safe compare), HTTPS
+   enforced, and the frontend health-checks the endpoint for a real NURAE
+   V00-series `/api/health` before accepting. The link is re-registered
+   every 60 s (tunnel origins change per boot) and lives in a Vercel Blob
+   store.
+2. The frontend's middleware proxies every `/api/*` request (except
+   `/api/gateway/*`) to the linked backend **at request time** — same-origin
+   for the browser, cookies unchanged, no CORS, no rebuild when the backend
+   moves. Until a backend links, the API answers `503 backend-not-linked`.
+3. `GET /api/gateway/status` exposes whether a backend is linked (host only,
+   no secrets); `DELETE /api/gateway/register` unlinks (key required).
+
+One-time Vercel setup: deploy NURAE once → Project → Storage → create a
+**Blob store** → Project → Settings → Environment Variables → set
+`NURAE_GATEWAY_KEY` (generate with `openssl rand -hex 24`) → redeploy. The
+build-time `NURAE_BACKEND_URL` rewrite from beta-02 remains as a fallback
+mode (gateway link takes precedence when configured).
+
+## 14.2 Split-deployment E2E workflow (GitHub Actions × Vercel)
 
 `.github/workflows/split-e2e.yml` proves the split architecture with real
 services on every manual run (Actions tab → *Split E2E* → *Run workflow*):
 
 ```
-[Vercel preview]  ← real dashboard frontend
-      │  /api/* beforeFiles rewrite → NURAE_BACKEND_URL (baked at build)
+[Vercel frontend (stable URL, gateway mode)]  ← deployed once, never rebuilt
+      │  middleware /api/* runtime proxy → the LINKED backend
       ▼
 [trycloudflare tunnel]  ← the only public entry to a GitHub runner
       ▼
@@ -314,33 +338,34 @@ services on every manual run (Actions tab → *Split E2E* → *Run workflow*):
                   (webhook on the tunnel URL) + real AI provider API
 ```
 
-What it verifies: the rewrite proxy chain (Vercel → tunnel → backend), the
-auth gate over that chain, real `setWebhook`/`getWebhookInfo` against
-Telegram, one REAL message round trip (a human sends it — Telegram forbids
-bots from messaging first; the workflow pauses and prints `👉 NOW: send ANY
-text message to @bot`), the AI pipeline via structured log events
+Flow: tunnel up → backend boots and **registers itself** with the frontend
+→ workflow waits until `/api/gateway/status` reports the tunnel host → the
+E2E driver verifies the gateway link, the auth gate over the full chain,
+real `setWebhook`/`getWebhookInfo` against Telegram, one REAL message round
+trip (a human sends it — Telegram forbids bots from messaging first; the
+workflow pauses and prints `👉 NOW: send ANY text message to @bot`), the AI
+pipeline via structured log events
 (`TELEGRAM_MESSAGE_RECEIVED → AI_REQUEST → AI_RESPONSE → TELEGRAM_MESSAGE_SENT`),
 webhook removal on stop, and the real-401 invalid-token path.
 
 Required repository secrets: `TELEGRAM_BOT_TOKEN` (use a **dedicated test
 bot** — the workflow overwrites its webhook and removes it at the end),
-`AI_API_KEY` (for the chosen provider), and `VERCEL_TOKEN` / `VERCEL_ORG_ID`
-/ `VERCEL_PROJECT_ID` (frontend mode; `tunnel-only` skips Vercel and tests
-the backend through the tunnel directly).
+`AI_API_KEY` (for the chosen provider), and `GATEWAY_KEY` (must equal the
+Vercel deployment's `NURAE_GATEWAY_KEY`; `frontend=tunnel-only` skips the
+frontend and tests the backend through the tunnel directly).
 
-Known limitations of this workflow: the tunnel and preview URL are
-per-run and ephemeral; the round-trip step needs a human at the keyboard;
-a `push` trigger is commented out (Vercel build minutes + concurrency).
-Locally, the rewrite-proxy mechanism was verified end to end (proxy build
-vs origin build, auth + CRUD + cookie login through the proxy).
+Known limitations: the tunnel URL is per-run (the Gateway Link heartbeat
+absorbs that — that is its job); the round-trip step needs a human at the
+keyboard; a `push` trigger is commented out (concurrency + run minutes).
 
 ### Status of this release's testing
 
 | Layer | Status |
 | --- | --- |
-| Unit/integration (92 tests) | PASS (local) |
-| Rewrite-proxy split chain (health/auth/CRUD/cookie) | PASS (local, real HTTP) |
-| Split E2E in GitHub Actions | IMPLEMENTED — UNTESTED (requires real secrets + runner) |
+| Unit/integration (incl. gateway registration core) | PASS (local) |
+| Rewrite-proxy split chain (health/auth/CRUD/cookie) | PASS (local, real HTTP, beta-02) |
+| Gateway Link middleware proxy | IMPLEMENTED — UNTESTED end-to-end (needs Vercel Blob + first run) |
+| Split E2E in GitHub Actions (gateway mode) | IMPLEMENTED — UNTESTED (requires one-time Vercel setup + real secrets) |
 | Real Telegram delivery from Actions | UNTESTED until first run with secrets |
 
 ## 15. Troubleshooting

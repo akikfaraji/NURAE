@@ -3,8 +3,8 @@
  *
  * NO MOCKS, NO STUBS. Everything in this run is real:
  *
- *   real driver (here) → real Vercel frontend → /api/* proxy rewrite
- *     → real cloudflared tunnel → real backend → real api.telegram.org
+ *   real driver (here) → real frontend (Vercel or tunnel) → gateway-link
+ *     runtime proxy (optional) → real backend → real api.telegram.org
  *     → real AI provider API
  *
  * The one input that cannot be automated: a Telegram USER must send an
@@ -27,6 +27,9 @@
  *                             Default: E2E_BASE_URL
  *   E2E_ADMIN_TOKEN           Admin token of the target (enables bearer auth
  *                             and the 401 gate check). Default: open access.
+ *   E2E_GATEWAY_LINK          Set to 1 when the frontend runs in gateway mode:
+ *                             verifies /api/gateway/status reports THIS tunnel
+ *                             as the linked backend before anything else.
  *   E2E_TELEGRAM_TOKEN        REQUIRED. Real bot token. Used by this driver to
  *                             verify getMe/getWebhookInfo directly.
  *   E2E_PROVIDER / E2E_MODEL  Real AI provider id + model (default openai /
@@ -149,7 +152,7 @@ let roundTripMs = 0;
 await step('health endpoint (via frontend → backend chain)', async () => {
   const { status, body } = await api<{ status: string; version: string }>('/api/health');
   expect(status === 200, `health status ${status}`);
-  expect(body.version === 'V00.01.000-beta-02', `unexpected version ${body.version}`);
+  expect(body.version === 'V00.01.000-beta-03', `unexpected version ${body.version}`);
   return body.version;
 });
 
@@ -159,6 +162,19 @@ if (ADMIN_TOKEN) {
     expect(res.status === 401, `expected 401 without credentials, got ${res.status}`);
     const { body } = await api<{ authRequired: boolean; authenticated: boolean }>('/api/auth/status');
     expect(body.authRequired === true && body.authenticated === true, `auth status ${JSON.stringify(body)}`);
+  });
+}
+
+if (process.env.E2E_GATEWAY_LINK === '1') {
+  await step('gateway link: frontend is linked to THIS backend tunnel', async () => {
+    const res = await fetch(`${BASE}/api/gateway/status`);
+    expect(res.status === 200, `gateway status ${res.status}`);
+    const body = (await res.json()) as { gatewayMode: boolean; linked: boolean; endpoint: string | null };
+    expect(body.gatewayMode === true, 'frontend is not in gateway mode (NURAE_GATEWAY_KEY missing on it)');
+    expect(body.linked === true, 'frontend has no linked backend yet');
+    const tunnelHost = new URL(WEBHOOK_BASE).host;
+    expect(body.endpoint === tunnelHost, `linked to ${body.endpoint}, expected ${tunnelHost}`);
+    return body.endpoint as string;
   });
 }
 

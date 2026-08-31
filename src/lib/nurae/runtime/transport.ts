@@ -29,6 +29,7 @@ import { createPrismaRuntimeStore, RuntimeStore } from './store';
 import { handleBotMessage, updateToInboundMessage, TelegramUpdateLike } from './pipeline';
 import { db } from '@/lib/db';
 import { SecretManager } from '../secrets';
+import { startGatewayHeartbeat } from './gateway-link';
 
 export type Transport = 'webhook' | 'polling';
 
@@ -208,6 +209,11 @@ export async function startBot(botId: string, opts?: { publicBaseUrl?: string | 
         'BOT_STARTED',
       );
       await log(botId, 'info', 'Webhook registered with Telegram.', 'WEBHOOK_REGISTERED');
+      // Gateway Link (frontend ⇄ backend): with NURAE_LINK_FRONTEND_URL +
+      // NURAE_GATEWAY_KEY set, this deployment now registers its public
+      // origin with the frontend and refreshes it every 60 s. Fire-and-forget
+      // — it must not delay or fail the bot start.
+      startGatewayHeartbeat();
       return { ok: true, status: 'running' };
     }
 

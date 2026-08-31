@@ -103,3 +103,25 @@ Stage Summary:
 Task ID: 4
 Agent: main (Super Z)
 Task: Split-deployment E2E — Actions backend x Vercel frontend, real services only (no mocks)
+
+---
+Task ID: 5
+Agent: main (Super Z)
+Task: Gateway Link — static frontend, moving backend (user-approved design: site-native storage, professional routes)
+
+Work Log:
+- Motivation: build-time NURAE_BACKEND_URL rewrite forced a frontend redeploy every run (ephemeral tunnel URLs). Gateway Link lets a frontend deployed ONCE find the backend at runtime
+- Routes (frontend): POST /api/gateway/register (backend announces {endpoint,key}; timing-safe SHA-256 key compare, HTTPS-only, health check of <endpoint>/api/health must return NURAE V00-series before accept), GET /api/gateway/status (linked + host only), DELETE /api/gateway/register (key required)
+- Store: Vercel Blob (gateway/backend-link.json, addRandomSuffix=false; no secrets stored) behind a swappable GatewayStore interface; 10s in-process read cache for the middleware hot path
+- Middleware (src/middleware.ts): when NURAE_GATEWAY_KEY is set on the deployment, rewrites all /api/* except /api/gateway/* to the linked backend at REQUEST TIME (NextResponse.rewrite external URL) — replaces the build-time rewrite; 503 backend-not-linked until a link exists; pass-through (single-process mode) when key unset
+- Backend: src/lib/nurae/runtime/gateway-link.ts — registers NURAE_PUBLIC_BASE_URL with the frontend on boot (src/instrumentation.ts register hook) and re-registers every 60s (tunnel origins are per-boot); structured log events GATEWAY_LINKED / GATEWAY_LINK_FAILED; also triggered from webhook bot-start path (idempotent)
+- Version: V00.01.000-beta-02 -> beta-03 (new feature); version.test.ts + api.test.ts + e2e.ts assertions updated
+- Workflow rework: frontend=gateway (default) uses the stable Vercel URL + backend self-registration — ALL Vercel CLI steps removed (pull/build/deploy were the fragile part); workflow polls /api/gateway/status until the tunnel host is linked; frontend=tunnel-only mode kept; secrets now TELEGRAM_BOT_TOKEN, AI_API_KEY, GATEWAY_KEY (VERCEL_* no longer needed)
+- e2e driver: E2E_GATEWAY_LINK=1 asserts /api/gateway/status reports THIS tunnel before the rest of the chain
+- Docs: README 14.1 (Gateway Link) + 14.2 (workflow), .env.example gateway block
+- Tests: 101/101 pass (9 files; new gateway.test.ts covers 401/422/502/501/timing-safety/success+unregister paths); build passes with middleware compiled
+
+Stage Summary:
+- beta-03: static frontend + self-registering backend; per-run Vercel rebuilds eliminated from CI
+- One-time user setup for gateway mode: deploy once on Vercel + create Blob store + set NURAE_GATEWAY_KEY env + put GATEWAY_KEY in GitHub Secrets
+- Gateway Link middleware proxy and Actions gateway E2E remain honestly UNTESTED until first run with the new setup
