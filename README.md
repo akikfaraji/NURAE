@@ -26,6 +26,12 @@ NURAE is a platform where an operator can:
 
 The current release implements exactly this loop — reliably — and nothing else.
 
+> **Setup / self-hosting:** the complete step-by-step manual — local machine
+> or Termux Debian, polling vs webhook transport, and serving from your own
+> Linux server with systemd + Caddy — lives in **[SETUP.md](./SETUP.md)**.
+> All configuration is a single `.env` file (`.env.example` is the annotated
+> template). Vercel/Actions split-deployment paths are optional extras.
+
 ## 2. FRAZIYM versioning system
 
 NURAE does **not** use conventional semantic versioning. It uses the official
@@ -193,16 +199,19 @@ bun run dev              # single process: dashboard + API + runtime
 
 ## 8. Environment variables
 
-See [`.env.example`](./.env.example) for the full annotated list:
+All configuration lives in one `.env` file (`cp .env.example .env`). The
+complete annotated reference is [`.env.example`](./.env.example) and the
+self-hosting manual ([SETUP.md](./SETUP.md) §3 + §9) explains each value.
+Core variables:
 
 | Variable                   | Purpose                                                                     |
 | -------------------------- | --------------------------------------------------------------------------- |
-| `DATABASE_URL`             | `file:./db/custom.db` locally · `libsql://…` (Turso) on Vercel              |
-| `DATABASE_AUTH_TOKEN`      | Turso auth token (Vercel only)                                              |
+| `DATABASE_URL`             | SQLite file (`file:./db/custom.db`) · `libsql://…` (Turso) if you split      |
 | `NURAE_SECRET_KEY`         | Master key for encrypting bot tokens / API keys / webhook secrets at rest   |
 | `NURAE_ADMIN_TOKEN`        | When set, dashboard + admin API require this token                          |
-| `NURAE_BOT_TRANSPORT`      | `webhook` (default) or `polling` (local dev only)                           |
-| `NURAE_PUBLIC_BASE_URL`    | Override the public origin used for webhook registration                    |
+| `NURAE_BOT_TRANSPORT`      | `webhook` (default) or `polling` (local testing without a public URL)       |
+| `NURAE_PUBLIC_BASE_URL`    | Public HTTPS origin used for webhook registration                           |
+| `PORT` / `HOSTNAME`        | Standalone server binding (production)                                      |
 | `NURAE_TELEGRAM_API_BASE`  | Testing only — point the Telegram adapter at a mock server                  |
 | `OPENAI_API_KEY` …         | Optional per-provider key fallbacks                                         |
 
@@ -235,7 +244,7 @@ bun run dev
 
 Open the dashboard root URL and you are in the console.
 
-## 11. Deploying to Vercel
+## 11. Deploying to Vercel (optional — see SETUP.md Part B for self-hosting)
 
 1. Create a Turso database: `turso db create nurae` and note its URL
    (`turso db show nurae --url`) plus an auth token
