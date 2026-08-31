@@ -205,7 +205,7 @@ jobs:
           echo "Existing deployments: $count"
           [ "$count" = "0" ] && echo "NEVER_DEPLOYED=1" >> "$GITHUB_ENV" || true
 
-      - name: Deploy frontend preview to Vercel (backend URL baked into the rewrite)
+      - name: Deploy frontend preview to Vercel (backend URL baked at build time)
         if: env.FRONTEND_MODE == 'vercel'
         run: |
           mkdir -p .vercel
@@ -217,12 +217,16 @@ jobs:
             sleep 3
             tail -5 bootstrap-deploy.log
           fi
-          npx vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN" > vercel-deploy.log 2>&1 \
-            || { echo "::error::vercel pull failed"; tail -60 vercel-deploy.log; exit 1; }
-          NURAE_BACKEND_URL="$TUNNEL_URL" DATABASE_URL="file:$PWD/db/e2e.db" \
-            npx vercel@latest build --token="$VERCEL_TOKEN" >> vercel-deploy.log 2>&1 \
-            || { echo "::error::vercel build failed"; tail -60 vercel-deploy.log; exit 1; }
-          URL=$(npx vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN" 2>&1 | tee -a vercel-deploy.log | grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app' | tail -1)
+          # Remote build (NOT pull + build + deploy --prebuilt): 'vercel pull'
+          # is unreliable for projects linked only via API ("Could not retrieve
+          # Project Settings"), while remote deploy is proven to work here.
+          # The preview-scoped env var is exposed to the remote build, so
+          # next.config.ts bakes the tunnel URL into the /api/* rewrite.
+          npx vercel@latest env rm NURAE_BACKEND_URL preview --yes --token="$VERCEL_TOKEN" >> vercel-deploy.log 2>&1 || true
+          printf "%s" "$TUNNEL_URL" | npx vercel@latest env add NURAE_BACKEND_URL preview --yes --token="$VERCEL_TOKEN" >> vercel-deploy.log 2>&1 \
+            || { echo "::error::vercel env add failed"; tail -60 vercel-deploy.log; exit 1; }
+          echo "NURAE_BACKEND_URL set as preview env: $TUNNEL_URL"
+          URL=$(npx vercel@latest deploy --yes --token="$VERCEL_TOKEN" 2>&1 | tee -a vercel-deploy.log | grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app' | tail -1)
           if [ -z "$URL" ]; then
             echo "::error::Could not read the preview URL from 'vercel deploy' output"
             tail -60 vercel-deploy.log
