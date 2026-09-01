@@ -3,7 +3,6 @@
 # NURAE — one-command setup (FRAZIYM TECH & AI)
 #
 #   bash setup.sh          full auto: node + .env + db + build + start
-#                          (bun is used only if already present, never installed)
 #   bash setup.sh dev      same, but skips the heavy production build
 #                          (recommended on low-RAM phones)
 #   bash setup.sh start    start again later (builds only if no build exists)
@@ -41,22 +40,10 @@ fi
 VERSION_LINE="$(sed -n "s/^export const NURAE_VERSION = '\([^']*\)'.*/\1/p" src/lib/nurae/version.ts 2>/dev/null | head -1)"
 [[ -n "$VERSION_LINE" ]] || VERSION_LINE="NURAE"
 
-# --- 1. Runtime: Node.js required; bun optional accelerator ------------------
-# The app runs 100% on Node.js (install tooling, dev, build, db, server).
-# Bun is NEVER downloaded: if it happens to be installed it is used only to
-# speed up dependency installation (and it runs the developer test suite).
-PM=""
-
-pick_pm() {
-  if command -v bun >/dev/null 2>&1; then
-    PM="bun"
-    say "Package manager: bun $(bun --version) (found — fast path)"
-  elif command -v npm >/dev/null 2>&1; then
-    PM="npm"
-    say "Package manager: npm $(npm --version) (ships with Node.js)"
-  else
-    die "npm not found even though Node.js was just installed — install Node.js 20+ manually, then re-run."
-  fi
+# --- 1. Runtime: Node.js is the only runtime (npm ships with it) -------------
+ensure_npm() {
+  command -v npm >/dev/null 2>&1 || die "npm not found although Node.js was just installed — install Node.js 20+ manually, then re-run."
+  say "Package manager: npm $(npm --version)"
 }
 
 # --- 1b. Node.js (the required runtime — dev, build, db tooling and the
@@ -223,19 +210,24 @@ prepare_env() {
 
 # --- 3. dependencies + database ----------------------------------------------
 prepare_db() {
-  if [[ "$PM" == "bun" ]]; then
-    say "Installing dependencies (bun install)"
-    bun install
-  else
-    say "Installing dependencies (npm install — this can take a few minutes)"
+  say "Installing dependencies (npm install — this can take a few minutes)"
+  npm install --no-audit --no-fund
+  # A previously interrupted install can leave holes in node_modules (e.g. a
+  # missing prisma) while the package manager still exits 0. If a known entry
+  # point is missing, wipe and reinstall once — npm rebuilds the whole tree.
+  if [[ ! -f node_modules/prisma/build/index.js || ! -f node_modules/next/dist/bin/next ]]; then
+    warn "node_modules looks incomplete — reinstalling from scratch"
+    rm -rf node_modules
     npm install --no-audit --no-fund
   fi
+  [[ -f node_modules/prisma/build/index.js && -f node_modules/next/dist/bin/next ]] \
+    || die "node_modules is still incomplete — run: rm -rf node_modules && npm install , then re-run setup.sh"
   say "Creating the database schema (prisma db push)"
   # package.json invokes prisma/next as `node <direct entry path>` — immune to
   # .bin PATH quirks and to shebang resolution (the old bare `prisma` failed
   # with exit 127 on a node-less box). ensure_node() above has guaranteed a
   # Node.js 20+ runtime by this point.
-  "$PM" run db:push
+  npm run db:push
 }
 
 # --- 4. build -----------------------------------------------------------------
@@ -249,7 +241,7 @@ maybe_build() {
     return 0
   fi
   say "Building the production bundle (the heavy step — patience)"
-  "$PM" run build
+  npm run build
 }
 
 # --- 5. pre-flight + start ----------------------------------------------------
@@ -285,7 +277,7 @@ EOF
 }
 
 ensure_node
-pick_pm
+ensure_npm
 prepare_env
 prepare_db
 
@@ -307,7 +299,7 @@ print_box
 say "Starting NURAE (Ctrl+C stops it)"
 
 if [[ "$MODE" == "dev" ]]; then
-  exec "$PM" run dev
+  exec npm run dev
 else
-  exec "$PM" run start
+  exec npm run start
 fi

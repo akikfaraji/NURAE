@@ -18,13 +18,13 @@ The split-deployment "Gateway Link" mode exists but is optional — see §8.
 | Requirement | Minimum | Notes |
 |---|---|---|
 | Node.js | 20+ | The runtime — `setup.sh` installs it automatically (npm included) |
-| Bun | any | Optional accelerator — used only if already present (faster installs, dev test suite); `setup.sh` never downloads it |
 | Disk | ~600 MB | Dependencies + build output + database (+ ~120 MB for Node) |
 | RAM | 1 GB free | `npm run build` is the peak; dev mode needs less |
 | Outbound HTTPS | required | Telegram API + AI provider API |
 
 **Termux (Android) preparation** — run NURAE inside a Debian proot, not
-directly in Termux shell (glibc binaries like Bun/Prisma expect it):
+directly in Termux shell (glibc binaries like Node.js and Prisma's native
+engine expect it):
 
 ```bash
 pkg update && pkg install proot-distro
@@ -37,8 +37,6 @@ Inside Debian install the basics:
 ```bash
 apt update && apt install -y curl git openssl procps
 # That is all: setup.sh installs Node.js (npm included) automatically.
-# Bun is optional — if you already have it, setup.sh uses it to speed
-# up dependency installation; otherwise npm is used.
 ```
 
 > **Termux memory tip**: if `npm run build` gets killed (OOM), add swap on the
@@ -57,9 +55,8 @@ bash setup.sh
 That is the whole installation. `setup.sh` automatically: installs Node.js
 (with npm) if it is missing, generates `.env` (random `NURAE_SECRET_KEY` +
 `NURAE_ADMIN_TOKEN`, polling transport — no public URL, no tunnel), installs
-dependencies (with bun when present, otherwise npm), creates the database,
-builds, and starts the server. At the end it prints your dashboard URL and
-admin login token.
+dependencies, creates the database, builds, and starts the server. At the
+end it prints your dashboard URL and admin login token.
 
 **The only things you ever provide are your API tokens** — the Telegram bot
 token and the AI provider key, pasted in the dashboard when you create a bot
@@ -137,7 +134,7 @@ npm run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.006-beta-03",...}`
+`{"status":"ok","version":"V00.01.007-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and

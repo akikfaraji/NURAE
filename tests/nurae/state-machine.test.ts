@@ -2,7 +2,7 @@
  * NURAE — bot status state machine tests (Step 8).
  */
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { BOT_STATUSES, canTransition, isBotStatus, legalTransitions } from '../../src/lib/nurae/runtime/state-machine';
 
 describe('bot state machine (Step 8)', () => {

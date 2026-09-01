@@ -27,7 +27,7 @@ export function gatewayLinkConfigured(): boolean {
 }
 
 async function log(level: 'info' | 'warn' | 'error', message: string, event: string): Promise<void> {
-  // Mirror to stdout so server logs (CI artifacts, `bun server.js` consoles)
+  // Mirror to stdout so server logs (CI artifacts, `node server.js` consoles)
   // show the link lifecycle — the DB log stream is only visible in the UI.
   const line = `[gateway] ${event} ${message}`;
   if (level === 'error') console.error(line);

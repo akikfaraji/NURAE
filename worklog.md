@@ -226,3 +226,28 @@ Work Log:
 Stage Summary:
 - NURAE now runs 100% on Node.js + npm; bun is optional (auto-used if present for install speed; runs the dev test suite). On the user's Termux box nothing changes operationally (bun present -> bun install; server now runs under node)
 - Honest notes: pnpm deliberately NOT wired in (untested code path — npm+bun are both proven; trivial to add later); NodeSource apt path still UNTESTED on real hardware, tarball fallback remains the safety net; OpenRouter key rotation still outstanding
+
+---
+Task ID: 11
+Agent: main (Super Z)
+Task: User's re-run failed at db push with "Cannot find module node_modules/prisma/build/index.js" (node v20.19.2 got installed OK) + directive "remove bun entirely"
+
+Work Log:
+- Diagnosed the user's error: node installed fine (20.19.2, Debian apt path), the new node-entry script ran, but node_modules/prisma was MISSING on their box — a half-repaired node_modules (interrupted install / bun-vs-npm layout transition); bun install had exited 0 while trusting its lockfile instead of verifying the tree. Fix in setup.sh: after npm install, verify the two entry points (prisma/build/index.js, next/dist/bin/next); if missing -> warn + rm -rf node_modules + reinstall once; still broken -> die with the exact repair command
+- Bun REMOVED ENTIRELY per user directive:
+  - package.json: "test" = "vitest run" (vitest 4.1.11 devDep added); bun-types devDep deleted; tsx 4.23.13 devDep added (for e2e.ts/mock-telegram.ts under node); bun.lock deleted + gitignored
+  - Tests: 9 files' imports 'bun:test' -> 'vitest' (all used only describe/expect/test/afterAll/afterEach — zero bun-specific APIs); vitest.config.ts added with '@' resolve alias (mirrors tsconfig paths — Vite does NOT read tsconfig paths; the earlier audit missed the alias because src/ route handlers import via '@', reached from tests through relative imports) and fileParallelism: false (shared SQLite test DB + pushTestSchema race)
+  - Suite result: 114 tests / 9 files ALL PASS under vitest — 12 MORE than bun's 102 (the two alias-importing files now run their complete set under vitest)
+  - setup.sh: pick_pm deleted; ensure_npm() only; install path single npm install; entry-point verification + auto-repair added
+  - CI .github/workflows/split-e2e.yml: setup-bun step removed; npm ci --no-audit --no-fund; npm run db:generate/db:push/build; node .next/standalone/server.js; e2e driver via npx tsx
+  - .zscripts platform scripts converted: dev.sh, build.sh, start.sh, database-runtime-build.sh, mini-services-install.sh (bun install/run/server -> npm/node); mini-services-build.sh bun build --target bun -> npx esbuild --bundle --platform=node (UNTESTED — dormant platform path); mini-services-start.sh bun file -> node file
+  - tests/database-runtime-build.sh harness: fake bun stub -> fake npm stub (intercepts `npm run db:push` identically)
+  - scripts/mock-telegram.ts: Bun.serve rewritten to node:http createServer + web-standard Request/Response globals (Node 22+); smoke-tested: getMe OK, /__dump records calls
+  - Docs: SETUP.md + README purged of every bun mention (requirements, Termux notes, manual paths, testing section now "npm test — 114 tests across 9 files (vitest)")
+- Version V00.01.006 -> V00.01.007-beta-03; fixtures synced (version.test.ts x3, api.test.ts, .env.example, SETUP.md)
+- Verification: clean npm install from scratch (repair-path validation, exit 0, prisma+next+vitest+tsx present); npm test 114/114; mock-telegram node smoke; npm run build exit 0; node boot -> /api/health 200 V00.01.007-beta-03; whole-repo rg audit: ZERO functional bun references (only transitive "is-bun-module" eslint helper name + intentional migration-note comments)
+
+Stage Summary:
+- The repo is now 100% Node.js + npm: setup.sh installs Node (auto), npm installs deps, vitest runs tests, node serves the standalone build. No bun anywhere in toolchain, CI, platform scripts, tests, or docs
+- The user's exact failure mode (missing prisma in node_modules) is now auto-repaired by setup.sh's entry-point check + one-shot reinstall
+- Honest notes: user's box must run git pull then bash setup.sh — npm install will rebuild node_modules (takes a few minutes on the phone); mini-services esbuild path UNTESTED (dormant platform scaffolding); CI workflow npm conversion UNTESTED (needs a GitHub Actions run); OpenRouter key rotation STILL outstanding

@@ -4,7 +4,7 @@ import type { RuntimeBotRecord, RuntimeStore } from '../src/lib/nurae/runtime/st
 import type { TelegramAdapter, TelegramUpdate } from '../src/lib/nurae/telegram/adapter';
 
 // Debug harness: run one fake Telegram update through the shared pipeline.
-// Usage: bun scripts/debug-runtime.ts
+// Usage: npx tsx scripts/debug-runtime.ts
 
 const updates: TelegramUpdate[] = [
   {

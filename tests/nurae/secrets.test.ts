@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { SecretManager } from '../../src/lib/nurae/secrets';
 import { sanitizeForLog, truncateForLog } from '../../src/lib/nurae/sanitize';
 

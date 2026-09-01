@@ -41,7 +41,7 @@
  *   E2E_MESSAGE_WAIT_SECONDS  How long to wait for the human message.
  *                             Default 300.
  *
- * Usage: bun scripts/e2e.ts
+ * Usage: npx tsx scripts/e2e.ts
  */
 
 const BASE = (process.env.E2E_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');

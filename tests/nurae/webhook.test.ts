@@ -6,7 +6,7 @@
  * duplicate update suppression, malformed payloads, and non-text updates.
  */
 
-import { describe, expect, test, afterAll } from 'bun:test';
+import { describe, expect, test, afterAll } from 'vitest';
 import { installTelegramStub, STUB_TELEGRAM_TOKEN, telegramState } from './telegram-stub';
 
 await import('./helpers');

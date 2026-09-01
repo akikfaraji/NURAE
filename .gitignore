@@ -66,3 +66,6 @@ server.log
 
 # local-only diagnostics uploaded by user
 upload/
+
+# bun was removed from the toolchain — ignore any local bun lockfile
+bun.lock

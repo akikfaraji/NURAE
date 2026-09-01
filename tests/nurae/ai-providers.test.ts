@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { AIError, classifyProviderError } from '../../src/lib/nurae/ai/types';
 import { OpenAICompatibleProvider } from '../../src/lib/nurae/ai/providers/openai-compatible';
 import { PROVIDER_CATALOG, getProviderInfo, providerNeedsKey, selectProvider } from '../../src/lib/nurae/ai/registry';

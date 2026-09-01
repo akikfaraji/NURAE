@@ -182,7 +182,7 @@ start on serverless platforms, where it cannot work.
 
 ## 6. Requirements
 
-- [Node.js](https://nodejs.org) 20+ (the runtime; npm included) — [Bun](https://bun.sh) is optional and only used if already present (faster installs, test suite)
+- [Node.js](https://nodejs.org) 20+ (the runtime; npm included)
 - A Telegram bot token from [@BotFather](https://t.me/BotFather) (per bot)
 - For the built-in `zai` provider: nothing — it works out of the box
 - For external providers: an API key for the chosen provider
@@ -201,7 +201,7 @@ bash setup.sh             # modes: full (default) | dev | start | env
 Manual equivalent:
 
 ```bash
-npm install              # install dependencies (bun install also works)
+npm install              # install dependencies
 cp .env.example .env     # then edit .env (see §8)
 npm run db:push          # create/sync the local libSQL database
 npm run dev              # single process: dashboard + API + runtime
@@ -300,7 +300,7 @@ Note: Telegram webhooks require an HTTPS origin — Vercel provides one.
 ## 14. Testing
 
 ```bash
-bun test tests/nurae     # 102 tests across 9 files (bun is the test runner)
+npm test                 # 114 tests across 9 files (vitest)
 npm run lint             # ESLint
 ```
 

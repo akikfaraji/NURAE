@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { BotManager } from '../../src/lib/nurae/runtime/bot-manager';
 import { BotRuntime } from '../../src/lib/nurae/runtime/bot-runtime';
 import { TelegramApiError } from '../../src/lib/nurae/telegram/adapter';

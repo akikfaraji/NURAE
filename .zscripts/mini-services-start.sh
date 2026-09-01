@@ -81,8 +81,8 @@ main() {
         service_name=$(basename "$file" .js | sed 's/mini-service-//')
         echo "▶️  启动服务: $service_name..."
         
-        # 使用 bun 运行服务（后台运行）
-        bun "$file" &
+        # 使用 node 运行服务（后台运行）
+        node "$file" &
         pid=$!
         if [ -z "$pids" ]; then
             pids="$pid"
