@@ -148,7 +148,10 @@ prepare_db() {
   say "Installing dependencies (bun install)"
   bun install
   say "Creating the database schema (prisma db push)"
-  bun run db:push
+  # bunx resolves the local prisma binary directly and runs it on the bun
+  # runtime — no node_modules/.bin PATH magic and no Node.js required
+  # (bun 1.4 on some boxes does not put node_modules/.bin on the script PATH).
+  bunx prisma db push --accept-data-loss
 }
 
 # --- 4. build -----------------------------------------------------------------
