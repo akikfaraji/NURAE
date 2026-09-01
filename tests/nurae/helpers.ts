@@ -46,7 +46,9 @@ export function pushTestSchema(): void {
   if (schemaPushed) return;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { execSync } = require('node:child_process') as typeof import('node:child_process');
-  execSync(`bunx prisma db push --skip-generate --accept-data-loss`, {
+  // Direct entry path + explicit node: immune to `bunx` shebang resolution on
+  // node-less boxes (same reason package.json scripts use this form).
+  execSync(`node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss`, {
     cwd: '/home/z/my-project',
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: 'ignore',

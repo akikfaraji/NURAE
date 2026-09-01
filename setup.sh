@@ -2,7 +2,7 @@
 # ============================================================================
 # NURAE — one-command setup (FRAZIYM TECH & AI)
 #
-#   bash setup.sh          full auto: bun + .env + database + build + start
+#   bash setup.sh          full auto: bun + node + .env + db + build + start
 #   bash setup.sh dev      same, but skips the heavy production build
 #                          (recommended on low-RAM phones)
 #   bash setup.sh start    start again later (builds only if no build exists)
@@ -57,45 +57,80 @@ ensure_bun() {
   fi
 }
 
-# --- 1b. Node.js (build tool — Next.js/Turbopack refuses the bun runtime) -----
+# --- 1b. Node.js (build tool only — Turbopack's build spawns a real node
+# --- child process for PostCSS; everything else in the app runs on Bun) ------
+node_major() {
+  command -v node >/dev/null 2>&1 || return 9
+  local v=""
+  v="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null)" || return 9
+  [[ -n "$v" ]] && echo "$v"
+}
+
+node_ok() {
+  local m
+  m="$(node_major || true)"
+  [[ -n "$m" && "$m" -ge 20 ]]
+}
+
+# Distro-independent last resort: the official tarball. Only needs curl/wget,
+# tar and gzip — all present on any Debian/Fedora/Alpine box including proot.
+node_tarball_install() {
+  local arch="" ver="22.14.0" prefix="$HOME/.local/nurae-node"
+  case "$(uname -m)" in
+    x86_64)        arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    armv7l|armv8l) arch="armv7l" ;;
+    *) die "Unsupported CPU ($(uname -m)) — install Node.js 20+ manually, then re-run." ;;
+  esac
+  say "Falling back to the official Node.js v${ver} tarball (${arch}) -> ${prefix}"
+  local url="https://nodejs.org/dist/v${ver}/node-v${ver}-linux-${arch}.tar.gz"
+  mkdir -p "$prefix"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" | tar -xzf - --strip-components=1 -C "$prefix"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url" | tar -xzf - --strip-components=1 -C "$prefix"
+  else
+    die "Neither curl nor wget found — install Node.js 20+ manually, then re-run."
+  fi
+  export PATH="$prefix/bin:$PATH"
+  # Persist for future shells so `bun run build` keeps working after this run.
+  if ! grep -qs 'nurae-node' "$HOME/.bashrc"; then
+    { echo ''
+      echo '# added by NURAE setup.sh — Node.js used by the build toolchain'
+      echo 'export PATH="$HOME/.local/nurae-node/bin:$PATH"'
+    } >> "$HOME/.bashrc"
+  fi
+}
+
 ensure_node() {
-  local major=""
-  major="$(node_major || true)"
-  if [[ -n "$major" && "$major" -ge 20 ]]; then
-    say "Node.js $major found (build tool)"
+  if node_ok; then
+    say "Node.js $(node_major) found (build tool)"
     return 0
   fi
-  [[ -n "$major" ]] && warn "Node.js ${major} is too old for the Next.js build (20+ needed) — upgrading"
+  local have=""
+  have="$(node_major || true)"
+  [[ -n "$have" ]] && warn "Node.js ${have} is too old for the Next.js build (20+ needed) — upgrading"
   local SUDO=""
   [[ "$(id -u)" != "0" ]] && SUDO="sudo"
-  say "Installing Node.js 22.x (required by the production build)"
+  say "Installing Node.js 22.x (the production build needs it — the app itself runs on Bun)"
   if command -v apt-get >/dev/null 2>&1; then
     if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
       (command -v curl >/dev/null 2>&1 && curl -fsSL https://deb.nodesource.com/setup_22.x \
         || wget -qO- https://deb.nodesource.com/setup_22.x) | $SUDO bash - \
-        && $SUDO apt-get install -y nodejs
-    else
-      $SUDO apt-get update && $SUDO apt-get install -y nodejs
+        && $SUDO apt-get install -y nodejs || true
     fi
+    node_ok || { $SUDO apt-get update -y || true; $SUDO apt-get install -y nodejs || true; }
   elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y nodejs
+    $SUDO dnf install -y nodejs || true
   elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add --no-cache nodejs npm
+    $SUDO apk add --no-cache nodejs npm || true
   elif command -v brew >/dev/null 2>&1; then
-    brew install node@22
-  else
-    die "No supported package manager found — install Node.js 20+ manually, then re-run."
+    brew install node@22 || true
+    node_ok || export PATH="$(brew --prefix)/opt/node@22/bin:$PATH"
   fi
-  command -v node >/dev/null 2>&1 || die "Node.js install failed — install Node 20+ manually, then re-run."
-  local after=""
-  after="$(node_major || true)"
-  [[ -n "$after" && "$after" -ge 20 ]] || die "Node.js on PATH is not usable (found: ${after:-none}). Run 'node --version' — if it is not 20+, install Node.js 20+ manually and re-run."
+  node_ok || node_tarball_install || die "Node.js install failed — install Node.js 20+ manually, then re-run."
+  node_ok || die "Node.js on PATH is not usable — install Node.js 20+ manually and re-run."
   say "Node.js $(node --version) ready"
-}
-
-node_major() {
-  command -v node >/dev/null 2>&1 || return 9
-  node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0
 }
 
 # --- 2. .env -----------------------------------------------------------------
@@ -189,9 +224,11 @@ prepare_db() {
   say "Installing dependencies (bun install)"
   bun install
   say "Creating the database schema (prisma db push)"
-  # bunx resolves the local prisma binary and runs it via its node shebang;
-  # ensure_node() has guaranteed a Node.js 20+ runtime by this point.
-  bunx prisma db push --accept-data-loss
+  # package.json invokes prisma/next as `node <direct entry path>` — immune to
+  # `bun run` not putting node_modules/.bin on PATH and to shebang resolution
+  # (the old bare `prisma` failed with exit 127 on a node-less box).
+  # ensure_node() above has guaranteed a Node.js 20+ runtime by this point.
+  bun run db:push
 }
 
 # --- 4. build -----------------------------------------------------------------

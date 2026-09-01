@@ -243,7 +243,7 @@ Applying the schema to a Turso database (remote `libsql://` URLs cannot be
 pushed directly by the Prisma CLI):
 
 ```bash
-bunx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script \
+node node_modules/prisma/build/index.js migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script \
   | turso db shell $DATABASE_URL
 ```
 

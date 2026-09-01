@@ -188,3 +188,21 @@ Stage Summary:
 - User's clone flow is now exactly: git clone → bash setup.sh → open printed URL → paste admin token → create bot with Telegram token + AI key
 - Polling transport is the generated default: zero public URL/tunnel needed on Termux
 - Honest notes: Termux aarch64 still untested on real hardware (script has the proot guard); webhook/§5.2 path unchanged for later server deployment
+
+---
+Task ID: 9
+Agent: main (Super Z)
+Task: "Let's make the setup.sh install all dependency to work. Nuclear" — fix exit 127 (prisma: command not found) on the user's real Termux Debian box (Bun 1.4.0, NO Node.js installed)
+
+Work Log:
+- Root cause chain (all empirically proven): (1) `bun run <script>` does not put node_modules/.bin on the script shell's PATH -> bare `prisma` = 127; (2) bunx is NOT the fix — it resolves the binary but honors the `#!/usr/bin/env node` shebang -> silent 127 on a node-less box (proven with a poisoned node stub on PATH); (3) DIRECT-BUN (`bun node_modules/prisma/build/index.js db push`) works node-less — but (4) full `next build` under poisoned PATH dies in Turbopack's PostCSS step: "node process exited before we could connect ... exit status 127" — Next 16's build HARD-REQUIRES a real Node child process for PostCSS. Conclusion: a pure-Bun toolchain is impossible; Node must be installed
+- setup.sh: hardened ensure_node() -> Node.js 22.x via NodeSource apt (user's proot Debian runs as root, so SUDO stays empty), dnf/apk/brew alternatives, then a NEW distro-independent node_tarball_install() fallback (arch-detected x64/arm64/armv7l, pinned v22.14.0, .tar.gz + `tar -xzf` for universal gzip, installs to $HOME/.local/nurae-node, PATH exported for the run + idempotent ~/.bashrc append); node_major()/node_ok() guard >=20; every package-manager attempt fails soft (`|| true`) so the tarball is the guaranteed last resort; say messages explain node is build-tool only, app itself runs on Bun
+- package.json: ALL tool scripts rewritten from bunx to explicit `node <direct entry path>` — dev/build -> node node_modules/next/dist/bin/next, db:* -> node node_modules/prisma/build/index.js, lint -> node node_modules/eslint/bin/eslint.js; start stays node-free (`bun .next/standalone/server.js`). This form is immune to bun's missing .bin PATH AND to shebang resolution; setup.sh now calls `bun run db:push` (single source of truth) after ensure_node() guarantees node
+- tests/nurae/helpers.ts pushTestSchema(): bunx prisma -> node entry path (same immunity); README.md Turso recipe updated to the node entry form; zero bunx left in the repo
+- Version bump V00.01.004 -> V00.01.005-beta-03; fixtures synced (version.test.ts, api.test.ts health assert, .env.example header, SETUP.md §4 health example); SETUP.md requirement table now says Node 20+ is a build tool installed automatically by setup.sh (~120 MB), app runs on Bun
+- Verification: bash -n OK; ensure_node e2e test (persisted scripts/test-ensure-node.sh) — poisoned node + apt-get/dnf/apk/brew stubs exiting 1 + isolated HOME -> tarball fallback downloaded v22.14.0, "Node.js v22.14.0 ready", .bashrc persisted, tarball node --version works; run 2 with real node short-circuited ("Node.js 24 found"); bun run db:push OK; bun run build exit 0; standalone boot -> /api/health 200 V00.01.005-beta-03; 102/102 tests; stale-server cleanup (pkill -f next-server) after boot check; 200 MB test artifacts removed
+
+Stage Summary:
+- User's recovery is exactly: cd ~/nurae/NURAE && git pull && bash setup.sh — existing .env + 882 installed packages preserved; setup.sh installs Node 22 (their box lacks it — that was the whole bug), db push/build/start all proceed automatically
+- Honest note: ensure_node's apt/NodeSource path is standard but UNTESTED on the user's real device; if it ever fails the tarball fallback is the safety net (proven in sandbox); Termux aarch64 build RAM remains the known constraint (dev mode documented for low-RAM phones)
+- OpenRouter key rotation still outstanding (sk-or-v1-680e… family, pasted in chat + leaked at f5b1441)
