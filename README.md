@@ -190,12 +190,25 @@ start on serverless platforms, where it cannot work.
 
 ## 7. Installation (local development)
 
+One command — everything (Bun, `.env` with generated secrets, database,
+build, start) is automatic; you only paste your API tokens in the dashboard:
+
+```bash
+git clone https://github.com/akikfaraji/NURAE.git && cd NURAE
+bash setup.sh             # modes: full (default) | dev | start | env
+```
+
+Manual equivalent:
+
 ```bash
 bun install              # install dependencies
 cp .env.example .env     # then edit .env (see §8)
 bun run db:push          # create/sync the local libSQL database
 bun run dev              # single process: dashboard + API + runtime
 ```
+
+The full self-hosting manual (Termux Debian, own server, systemd + TLS) is
+[SETUP.md](./SETUP.md).
 
 ## 8. Environment variables
 

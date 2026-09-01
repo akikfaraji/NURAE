@@ -47,7 +47,38 @@ bun --version                                   # must print 1.2+
 
 ---
 
-## 2. Quick start (5 commands)
+## 2. Quick start (one command)
+
+```bash
+git clone https://github.com/akikfaraji/NURAE.git && cd NURAE
+bash setup.sh
+```
+
+That is the whole installation. `setup.sh` automatically: installs Bun if it
+is missing, generates `.env` (random `NURAE_SECRET_KEY` + `NURAE_ADMIN_TOKEN`,
+polling transport — no public URL, no tunnel), installs dependencies, creates
+the database, builds, and starts the server. At the end it prints your
+dashboard URL and admin login token.
+
+**The only things you ever provide are your API tokens** — the Telegram bot
+token and the AI provider key, pasted in the dashboard when you create a bot
+(§5–6). They are encrypted at rest; nothing else is manual.
+
+Modes:
+
+```bash
+bash setup.sh          # full auto (as above)
+bash setup.sh dev      # low-RAM phones: skips the production build
+bash setup.sh start    # start again later (reuses the existing build)
+bash setup.sh env      # prepare everything but do not start the server
+```
+
+Re-running is safe: an existing `.env` is never overwritten, so your secrets
+stay valid. The optional AI-key prompt only appears when a fresh `.env` is
+created; press Enter to skip it and manage keys per-bot in the dashboard.
+
+<details>
+<summary><strong>Manual path</strong> (no script — every step by hand)</summary>
 
 ```bash
 git clone https://github.com/akikfaraji/NURAE.git && cd NURAE
@@ -57,9 +88,12 @@ bun run db:push                            # create the SQLite database
 bun dev                                    # → http://localhost:3000
 ```
 
+</details>
+
 Open <http://localhost:3000>, log in with your `NURAE_ADMIN_TOKEN`, and you
 are on the dashboard. To test a real Telegram bot with zero public URL, jump
-to §5.1 (polling mode).
+to §5.1 (polling mode — already the default when `setup.sh` generated your
+`.env`).
 
 ---
 
@@ -102,7 +136,7 @@ bun run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.003-beta-03",...}`
+`{"status":"ok","version":"V00.01.004-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and
@@ -172,6 +206,10 @@ Tested layout: Ubuntu/Debian x86-64 VPS, NURAE at `/opt/nurae`, unprivileged
 user `nurae`, Caddy for TLS, systemd for service management.
 
 ### 7.1 Install
+
+The same one-command path works on a VPS — `bash setup.sh` does Bun, `.env`,
+database and build automatically; then register the systemd service below so
+it survives reboots. Manual equivalent:
 
 ```bash
 adduser --disabled-password nurae && usermod -aG sudo nurae

@@ -65,7 +65,7 @@ describe('health & metadata', () => {
     const body = (await res.json()) as Record<string, unknown>;
     expect(res.status).toBe(200);
     expect(body.status).toBe('ok');
-    expect(body.version).toBe('V00.01.003-beta-03');
+    expect(body.version).toBe('V00.01.004-beta-03');
     expect(body.vendor).toBe('FRAZIYM TECH & AI');
   });
 
