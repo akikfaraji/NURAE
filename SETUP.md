@@ -17,10 +17,10 @@ The split-deployment "Gateway Link" mode exists but is optional — see §8.
 
 | Requirement | Minimum | Notes |
 |---|---|---|
-| Bun | 1.2+ | App runtime + package manager. <https://bun.sh> |
-| Node.js | 20+ | Build tool only — `setup.sh` installs it automatically; the app itself runs on Bun |
+| Node.js | 20+ | The runtime — `setup.sh` installs it automatically (npm included) |
+| Bun | any | Optional accelerator — used only if already present (faster installs, dev test suite); `setup.sh` never downloads it |
 | Disk | ~600 MB | Dependencies + build output + database (+ ~120 MB for Node) |
-| RAM | 1 GB free | `bun run build` is the peak; dev mode needs less |
+| RAM | 1 GB free | `npm run build` is the peak; dev mode needs less |
 | Outbound HTTPS | required | Telegram API + AI provider API |
 
 **Termux (Android) preparation** — run NURAE inside a Debian proot, not
@@ -36,12 +36,12 @@ Inside Debian install the basics:
 
 ```bash
 apt update && apt install -y curl git openssl procps
-curl -fsSL https://bun.sh/install | bash       # installs to ~/.bun
-source ~/.bashrc                                # or: export PATH=$HOME/.bun/bin:$PATH
-bun --version                                   # must print 1.2+
+# That is all: setup.sh installs Node.js (npm included) automatically.
+# Bun is optional — if you already have it, setup.sh uses it to speed
+# up dependency installation; otherwise npm is used.
 ```
 
-> **Termux memory tip**: if `bun run build` gets killed (OOM), add swap on the
+> **Termux memory tip**: if `npm run build` gets killed (OOM), add swap on the
 > host Termux session or use dev mode (§4) for testing — dev mode skips the
 > heavy production build entirely.
 
@@ -54,11 +54,12 @@ git clone https://github.com/akikfaraji/NURAE.git && cd NURAE
 bash setup.sh
 ```
 
-That is the whole installation. `setup.sh` automatically: installs Bun if it
-is missing, generates `.env` (random `NURAE_SECRET_KEY` + `NURAE_ADMIN_TOKEN`,
-polling transport — no public URL, no tunnel), installs dependencies, creates
-the database, builds, and starts the server. At the end it prints your
-dashboard URL and admin login token.
+That is the whole installation. `setup.sh` automatically: installs Node.js
+(with npm) if it is missing, generates `.env` (random `NURAE_SECRET_KEY` +
+`NURAE_ADMIN_TOKEN`, polling transport — no public URL, no tunnel), installs
+dependencies (with bun when present, otherwise npm), creates the database,
+builds, and starts the server. At the end it prints your dashboard URL and
+admin login token.
 
 **The only things you ever provide are your API tokens** — the Telegram bot
 token and the AI provider key, pasted in the dashboard when you create a bot
@@ -82,10 +83,10 @@ created; press Enter to skip it and manage keys per-bot in the dashboard.
 
 ```bash
 git clone https://github.com/akikfaraji/NURAE.git && cd NURAE
-bun install
+npm install
 cp .env.example .env && nano .env          # set the 3 required values (§3)
-bun run db:push                            # create the SQLite database
-bun dev                                    # → http://localhost:3000
+npm run db:push                            # create the SQLite database
+npm run dev                                # → http://localhost:3000
 ```
 
 </details>
@@ -125,18 +126,18 @@ Rules of thumb:
 ### Dev mode (fast loop, no build step)
 
 ```bash
-bun dev            # http://localhost:3000, hot reload
+npm run dev        # http://localhost:3000, hot reload
 ```
 
 ### Production standalone (what you will serve on a real server)
 
 ```bash
-bun run build      # compiles .next/standalone (the heavy step)
-bun run start      # serves it; honors PORT / HOSTNAME from .env
+npm run build      # compiles .next/standalone (the heavy step)
+npm run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.005-beta-03",...}`
+`{"status":"ok","version":"V00.01.006-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and
@@ -207,23 +208,24 @@ user `nurae`, Caddy for TLS, systemd for service management.
 
 ### 7.1 Install
 
-The same one-command path works on a VPS — `bash setup.sh` does Bun, `.env`,
-database and build automatically; then register the systemd service below so
-it survives reboots. Manual equivalent:
+The same one-command path works on a VPS — `bash setup.sh` does Node.js,
+`.env`, database and build automatically; then register the systemd service
+below so it survives reboots. Manual equivalent:
 
 ```bash
 adduser --disabled-password nurae && usermod -aG sudo nurae
 sudo -iu nurae
-curl -fsSL https://bun.sh/install | bash        # bun (x86-64)
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y nodejs                   # Node.js 20+ (npm included)
 git clone https://github.com/akikfaraji/NURAE.git /opt/nurae && cd /opt/nurae
-bun install
+npm install
 cp .env.example .env && nano .env
 #   DATABASE_URL=file:/opt/nurae/db/nurae.db
 #   NURAE_SECRET_KEY=<openssl rand -hex 32>
 #   NURAE_ADMIN_TOKEN=<openssl rand -hex 24>
 #   NURAE_PUBLIC_BASE_URL=https://bots.your-domain.com
-bun run db:push
-bun run build
+npm run db:push
+npm run build
 ```
 
 DNS: point `bots.your-domain.com` (A/AAAA record) at the server IP **before**
@@ -243,7 +245,8 @@ Wants=network-online.target
 User=nurae
 WorkingDirectory=/opt/nurae
 EnvironmentFile=/opt/nurae/.env
-ExecStart=/home/nurae/.bun/bin/bun .next/standalone/server.js
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node .next/standalone/server.js
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -301,7 +304,7 @@ sudo ufw allow 22/tcp && sudo ufw allow 80,443/tcp && sudo ufw enable
 
 ```bash
 cd /opt/nurae && git pull
-bun install && bun run db:push && bun run build
+npm install && npm run db:push && npm run build
 sudo systemctl restart nurae      # then re-start bots from the dashboard
 ```
 
@@ -347,9 +350,9 @@ Complete, commented list: **`.env.example`** in the repo root. Summary:
 
 | Symptom | Cause → Fix |
 |---|---|
-| `bun: command not found` in a fresh shell | `export PATH=$HOME/.bun/bin:$PATH` (add to `~/.bashrc`) |
-| Build killed / frozen on the phone | OOM → add swap, or test with `bun dev` instead of building |
-| Prisma error `Failed to connect to database: ./db/custom.db` | Run `bun run db:push` first; on Termux check the path is under `$HOME`, not `/sdcard` |
+| `node: command not found` in a fresh shell | setup.sh's tarball fallback installs to `~/.local/nurae-node` and adds it to `~/.bashrc` → `source ~/.bashrc`, or re-run `bash setup.sh` |
+| Build killed / frozen on the phone | OOM → add swap, or test with `npm run dev` instead of building |
+| Prisma error `Failed to connect to database: ./db/custom.db` | Run `npm run db:push` first; on Termux check the path is under `$HOME`, not `/sdcard` |
 | `SQLite database error: unable to open database file` | Path not writable / WAL on shared storage → move `DATABASE_URL` into `$HOME` |
 | Bot starts but never receives messages (webhook) | `NURAE_PUBLIC_BASE_URL` not reachable by Telegram → re-open the tunnel, update `.env`, restart NURAE, restart the bot. Verify: `curl https://api.telegram.org/bot<TOKEN>/getWebhookInfo` |
 | `Polling transport cannot run on serverless platforms` | Polling needs a persistent process — run locally/on a VPS, not on Vercel |

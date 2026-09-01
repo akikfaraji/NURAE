@@ -29,6 +29,14 @@ async function rewrites() {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Pin the Turbopack workspace root to THIS directory. Without this, Turbopack
+  // infers the root from the nearest lockfile — if NURAE is cloned inside
+  // another JS project (or a stray lockfile sits in a parent folder), the
+  // standalone output layout breaks (server.js lands in the wrong tree) and a
+  // "multiple lockfiles" warning is printed. Pinning is what Next.js recommends.
+  turbopack: {
+    root: __dirname,
+  },
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,

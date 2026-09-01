@@ -5,13 +5,16 @@
   "scripts": {
     "dev": "node node_modules/next/dist/bin/next dev -p 3000 2>&1 | tee dev.log",
     "build": "node node_modules/next/dist/bin/next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "node node_modules/eslint/bin/eslint.js .",
     "test": "bun test tests/nurae",
     "db:push": "node node_modules/prisma/build/index.js db push --accept-data-loss",
     "db:generate": "node node_modules/prisma/build/index.js generate",
     "db:migrate": "node node_modules/prisma/build/index.js migrate dev",
     "db:reset": "node node_modules/prisma/build/index.js migrate reset"
+  },
+  "engines": {
+    "node": ">=20.9"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

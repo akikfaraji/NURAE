@@ -2,7 +2,8 @@
 # ============================================================================
 # NURAE — one-command setup (FRAZIYM TECH & AI)
 #
-#   bash setup.sh          full auto: bun + node + .env + db + build + start
+#   bash setup.sh          full auto: node + .env + db + build + start
+#                          (bun is used only if already present, never installed)
 #   bash setup.sh dev      same, but skips the heavy production build
 #                          (recommended on low-RAM phones)
 #   bash setup.sh start    start again later (builds only if no build exists)
@@ -36,29 +37,30 @@ if [[ -n "${TERMUX_VERSION:-}" || "${PREFIX:-}" == *com.termux* ]]; then
   die "This is the Termux shell, not Debian. Run:  proot-distro login debian   — then cd into the repo and run: bash setup.sh"
 fi
 
-VERSION_LINE="$(bun -e "try{console.log(require('./src/lib/nurae/version.ts').NURAE_VERSION)}catch{console.log('')}" 2>/dev/null || true)"
+# Read the version straight from the source file (no runtime needed)
+VERSION_LINE="$(sed -n "s/^export const NURAE_VERSION = '\([^']*\)'.*/\1/p" src/lib/nurae/version.ts 2>/dev/null | head -1)"
 [[ -n "$VERSION_LINE" ]] || VERSION_LINE="NURAE"
 
-# --- 1. Bun ------------------------------------------------------------------
-ensure_bun() {
+# --- 1. Runtime: Node.js required; bun optional accelerator ------------------
+# The app runs 100% on Node.js (install tooling, dev, build, db, server).
+# Bun is NEVER downloaded: if it happens to be installed it is used only to
+# speed up dependency installation (and it runs the developer test suite).
+PM=""
+
+pick_pm() {
   if command -v bun >/dev/null 2>&1; then
-    say "Bun $(bun --version) found"
+    PM="bun"
+    say "Package manager: bun $(bun --version) (found — fast path)"
+  elif command -v npm >/dev/null 2>&1; then
+    PM="npm"
+    say "Package manager: npm $(npm --version) (ships with Node.js)"
   else
-    say "Installing Bun (runtime + package manager)"
-    if command -v curl >/dev/null 2>&1; then
-      curl -fsSL https://bun.sh/install | bash
-    elif command -v wget >/dev/null 2>&1; then
-      wget -qO- https://bun.sh/install | bash
-    else
-      die "curl/wget missing — run: apt update && apt install -y curl"
-    fi
-    export PATH="$HOME/.bun/bin:$PATH"
-    command -v bun >/dev/null 2>&1 || die "Bun installed but not on PATH — open a new shell and re-run."
+    die "npm not found even though Node.js was just installed — install Node.js 20+ manually, then re-run."
   fi
 }
 
-# --- 1b. Node.js (build tool only — Turbopack's build spawns a real node
-# --- child process for PostCSS; everything else in the app runs on Bun) ------
+# --- 1b. Node.js (the required runtime — dev, build, db tooling and the
+# --- server all run on node; Turbopack additionally spawns node for PostCSS) --
 node_major() {
   command -v node >/dev/null 2>&1 || return 9
   local v=""
@@ -93,7 +95,7 @@ node_tarball_install() {
     die "Neither curl nor wget found — install Node.js 20+ manually, then re-run."
   fi
   export PATH="$prefix/bin:$PATH"
-  # Persist for future shells so `bun run build` keeps working after this run.
+  # Persist for future shells so npm/build keep working after this run.
   if ! grep -qs 'nurae-node' "$HOME/.bashrc"; then
     { echo ''
       echo '# added by NURAE setup.sh — Node.js used by the build toolchain'
@@ -104,7 +106,7 @@ node_tarball_install() {
 
 ensure_node() {
   if node_ok; then
-    say "Node.js $(node_major) found (build tool)"
+    say "Node.js $(node_major) found"
     return 0
   fi
   local have=""
@@ -112,7 +114,7 @@ ensure_node() {
   [[ -n "$have" ]] && warn "Node.js ${have} is too old for the Next.js build (20+ needed) — upgrading"
   local SUDO=""
   [[ "$(id -u)" != "0" ]] && SUDO="sudo"
-  say "Installing Node.js 22.x (the production build needs it — the app itself runs on Bun)"
+  say "Installing Node.js 22.x (required — NURAE runs entirely on Node.js)"
   if command -v apt-get >/dev/null 2>&1; then
     if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
       (command -v curl >/dev/null 2>&1 && curl -fsSL https://deb.nodesource.com/setup_22.x \
@@ -137,7 +139,7 @@ ensure_node() {
 ADMIN_TOKEN=""
 PORT_NUM="3000"
 
-gen_hex() { bun -e "console.log(require('node:crypto').randomBytes($1).toString('hex'))"; }
+gen_hex() { node -e "console.log(require('node:crypto').randomBytes($1).toString('hex'))"; }
 
 write_env() {
   local secret admin
@@ -221,14 +223,19 @@ prepare_env() {
 
 # --- 3. dependencies + database ----------------------------------------------
 prepare_db() {
-  say "Installing dependencies (bun install)"
-  bun install
+  if [[ "$PM" == "bun" ]]; then
+    say "Installing dependencies (bun install)"
+    bun install
+  else
+    say "Installing dependencies (npm install — this can take a few minutes)"
+    npm install --no-audit --no-fund
+  fi
   say "Creating the database schema (prisma db push)"
   # package.json invokes prisma/next as `node <direct entry path>` — immune to
-  # `bun run` not putting node_modules/.bin on PATH and to shebang resolution
-  # (the old bare `prisma` failed with exit 127 on a node-less box).
-  # ensure_node() above has guaranteed a Node.js 20+ runtime by this point.
-  bun run db:push
+  # .bin PATH quirks and to shebang resolution (the old bare `prisma` failed
+  # with exit 127 on a node-less box). ensure_node() above has guaranteed a
+  # Node.js 20+ runtime by this point.
+  "$PM" run db:push
 }
 
 # --- 4. build -----------------------------------------------------------------
@@ -242,7 +249,7 @@ maybe_build() {
     return 0
   fi
   say "Building the production bundle (the heavy step — patience)"
-  bun run build
+  "$PM" run build
 }
 
 # --- 5. pre-flight + start ----------------------------------------------------
@@ -277,8 +284,8 @@ print_box() {
 EOF
 }
 
-ensure_bun
 ensure_node
+pick_pm
 prepare_env
 prepare_db
 
@@ -300,7 +307,7 @@ print_box
 say "Starting NURAE (Ctrl+C stops it)"
 
 if [[ "$MODE" == "dev" ]]; then
-  exec bun run dev
+  exec "$PM" run dev
 else
-  exec bun run start
+  exec "$PM" run start
 fi

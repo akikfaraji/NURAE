@@ -206,3 +206,23 @@ Stage Summary:
 - User's recovery is exactly: cd ~/nurae/NURAE && git pull && bash setup.sh — existing .env + 882 installed packages preserved; setup.sh installs Node 22 (their box lacks it — that was the whole bug), db push/build/start all proceed automatically
 - Honest note: ensure_node's apt/NodeSource path is standard but UNTESTED on the user's real device; if it ever fails the tarball fallback is the safety net (proven in sandbox); Termux aarch64 build RAM remains the known constraint (dev mode documented for low-RAM phones)
 - OpenRouter key rotation still outstanding (sk-or-v1-680e… family, pasted in chat + leaked at f5b1441)
+
+---
+Task ID: 10
+Agent: main (Super Z)
+Task: "do we really need bun? ... If we don't need bun use node npm or npx or pnpm or all as options" — make Node.js the only required runtime
+
+Work Log:
+- Evidence audit: src/ has ZERO bun imports (portable Next.js app); tests import 'bun:test' (9 files); next.config output=standalone is designed for node. Verdict: bun is NOT required — demoted to optional accelerator
+- package.json: start = `node .next/standalone/server.js` (canonical standalone flow, was bun); added engines >=20.9; "test" stays `bun test tests/nurae` (dev-only, never in setup.sh — migrating to vitest would add ~40 MB dev deps to every install for zero deployment value)
+- setup.sh: ensure_bun() DELETED (bun is never downloaded anymore); new pick_pm() — bun if present (fast path, user's box keeps it), else npm (ships with Node); ensure_node now runs FIRST (node = the required runtime); gen_hex via node -e; VERSION_LINE read via sed from version.ts (no runtime needed at all); install = bun install OR npm install --no-audit --no-fund; db:push/build/start/dev via "$PM" run
+- npm trial (fresh copy of HEAD, isolated): npm install (exit 0; npm defers some postinstall scripts — harmless, db push regenerates the Prisma client) -> npm run db:push OK -> npm run build OK -> node server.js boot -> /api/health 200. Pure npm+node deployment path proven end-to-end
+- CRITICAL BUG FOUND BY THE TRIAL: trial copy nested inside the repo dir -> Turbopack inferred /home/z/my-project (ancestor lockfile) as workspace root -> standalone output mislaid (server.js missing, .npm-trial dir embedded in output) AND the trial build WIPED main/.next (only dev/ survived). Fix: next.config.ts pins `turbopack: { root: __dirname }` — deterministic root, silences the multiple-lockfiles warning, protects any user who clones NURAE inside another JS project. Verified: main rebuild + trial rebuild both produce correct standalone layout, warning gone
+- package-lock.json (564 KB) committed — reproducible npm installs (the guaranteed path); bun.lock stays for dev/test; both runners verified
+- Docs pass: SETUP.md (requirements: Node 20+ required / Bun optional; Termux section: no bun install step; manual path, §4 commands, §7.1 VPS, §7.2 systemd ExecStart=/usr/bin/node + NODE_ENV=production, §7.5 update flow, §10 troubleshooting — all npm now); README (§6 requirements, §7 install, §9 db, §10 run, §14 testing "102 tests across 9 files", bun test noted as the test runner)
+- Version V00.01.005 -> V00.01.006-beta-03; fixtures synced (version.test.ts x3, api.test.ts, .env.example, SETUP.md §4)
+- Verification: bun run build exit 0; node boot -> health 200 V00.01.006-beta-03; 102/102 tests; trial dir + logs cleaned; stale next-server killed after boot checks
+
+Stage Summary:
+- NURAE now runs 100% on Node.js + npm; bun is optional (auto-used if present for install speed; runs the dev test suite). On the user's Termux box nothing changes operationally (bun present -> bun install; server now runs under node)
+- Honest notes: pnpm deliberately NOT wired in (untested code path — npm+bun are both proven; trivial to add later); NodeSource apt path still UNTESTED on real hardware, tarball fallback remains the safety net; OpenRouter key rotation still outstanding
