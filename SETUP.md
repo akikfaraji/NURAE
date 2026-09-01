@@ -17,9 +17,9 @@ The split-deployment "Gateway Link" mode exists but is optional — see §8.
 
 | Requirement | Minimum | Notes |
 |---|---|---|
-| Bun | 1.2+ | Runtime + package manager. <https://bun.sh> |
-| Node.js | 20+ | Optional; Bun alone is enough to run everything |
-| Disk | ~600 MB | Dependencies + build output + database |
+| Bun | 1.2+ | App runtime + package manager. <https://bun.sh> |
+| Node.js | 20+ | Build tool only — `setup.sh` installs it automatically; the app itself runs on Bun |
+| Disk | ~600 MB | Dependencies + build output + database (+ ~120 MB for Node) |
 | RAM | 1 GB free | `bun run build` is the peak; dev mode needs less |
 | Outbound HTTPS | required | Telegram API + AI provider API |
 
@@ -136,7 +136,7 @@ bun run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.004-beta-03",...}`
+`{"status":"ok","version":"V00.01.005-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and

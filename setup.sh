@@ -57,6 +57,47 @@ ensure_bun() {
   fi
 }
 
+# --- 1b. Node.js (build tool — Next.js/Turbopack refuses the bun runtime) -----
+ensure_node() {
+  local major=""
+  major="$(node_major || true)"
+  if [[ -n "$major" && "$major" -ge 20 ]]; then
+    say "Node.js $major found (build tool)"
+    return 0
+  fi
+  [[ -n "$major" ]] && warn "Node.js ${major} is too old for the Next.js build (20+ needed) — upgrading"
+  local SUDO=""
+  [[ "$(id -u)" != "0" ]] && SUDO="sudo"
+  say "Installing Node.js 22.x (required by the production build)"
+  if command -v apt-get >/dev/null 2>&1; then
+    if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+      (command -v curl >/dev/null 2>&1 && curl -fsSL https://deb.nodesource.com/setup_22.x \
+        || wget -qO- https://deb.nodesource.com/setup_22.x) | $SUDO bash - \
+        && $SUDO apt-get install -y nodejs
+    else
+      $SUDO apt-get update && $SUDO apt-get install -y nodejs
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    $SUDO dnf install -y nodejs
+  elif command -v apk >/dev/null 2>&1; then
+    $SUDO apk add --no-cache nodejs npm
+  elif command -v brew >/dev/null 2>&1; then
+    brew install node@22
+  else
+    die "No supported package manager found — install Node.js 20+ manually, then re-run."
+  fi
+  command -v node >/dev/null 2>&1 || die "Node.js install failed — install Node 20+ manually, then re-run."
+  local after=""
+  after="$(node_major || true)"
+  [[ -n "$after" && "$after" -ge 20 ]] || die "Node.js on PATH is not usable (found: ${after:-none}). Run 'node --version' — if it is not 20+, install Node.js 20+ manually and re-run."
+  say "Node.js $(node --version) ready"
+}
+
+node_major() {
+  command -v node >/dev/null 2>&1 || return 9
+  node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0
+}
+
 # --- 2. .env -----------------------------------------------------------------
 ADMIN_TOKEN=""
 PORT_NUM="3000"
@@ -148,9 +189,8 @@ prepare_db() {
   say "Installing dependencies (bun install)"
   bun install
   say "Creating the database schema (prisma db push)"
-  # bunx resolves the local prisma binary directly and runs it on the bun
-  # runtime — no node_modules/.bin PATH magic and no Node.js required
-  # (bun 1.4 on some boxes does not put node_modules/.bin on the script PATH).
+  # bunx resolves the local prisma binary and runs it via its node shebang;
+  # ensure_node() has guaranteed a Node.js 20+ runtime by this point.
   bunx prisma db push --accept-data-loss
 }
 
@@ -201,6 +241,7 @@ EOF
 }
 
 ensure_bun
+ensure_node
 prepare_env
 prepare_db
 
