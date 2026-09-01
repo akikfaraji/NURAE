@@ -167,3 +167,24 @@ Stage Summary:
 - Test suite is now hermetic against a real populated .env (the exact state of a user clone following SETUP.md §2)
 - Sandbox .env holds generated secrets for this machine only (gitignored); on Termux the user generates their own via SETUP.md §3
 - Honest notes: real-Telegram delivery still unverified (no BotFather token here); Termux aarch64 path follows SETUP.md but was executed only in this x86 sandbox
+
+---
+Task ID: 8
+Agent: main (Super Z)
+Task: One-command setup — "make everything auto except the API tokens" (user hates complications)
+
+Work Log:
+- New setup.sh (repo root, executable): modes full (default) / dev / start / env
+- Auto: Bun install if missing (curl|wget fallback), .env generation (bun node:crypto random secrets, ABSOLUTE DATABASE_URL=$PWD/db/nurae.db, HOSTNAME=0.0.0.0, PORT=3000, NURAE_BOT_TRANSPORT=polling), bun install, prisma db push, production build, server start
+- Manual by design: only API tokens — optional AI fallback key prompt (TTY-only, fresh-.env-only, provider 1-6, Enter=skip); Telegram token explicitly NOT asked (per-bot, encrypted in DB, entered in dashboard) — final box spells out the 3 dashboard steps
+- Safety: existing .env NEVER overwritten (secrets preserved; missing keys patched in); idempotency proven (md5 .env unchanged across reruns); Termux-native guard dies with "proot-distro login debian" hint; friendly ERR trap; pre-start health check → "already running" exit 0; LAN URL shown via hostname -I when available
+- Bug caught in verification round 1: env mode fell through to build+start (linear flow) → restructured: env exits after prepare_db; also found stray next-server (pid 1095) from Task 7's final boot — earlier pkill -f 'standalone/server.js' missed the renamed next-server process; killed, port freed, cleanup pattern updated (pkill -f next-server)
+- Docs: SETUP.md §2 rewritten as "Quick start (one command)" with modes + manual path in a <details> block; §7.1 VPS notes setup.sh works there too (then systemd); README §7 leads with the one-liner
+- Version bump V00.01.003 → V00.01.004-beta-03; synced version.test.ts/api.test.ts/.env.example header/SETUP.md §4 example
+- Verification: bash -n OK; 102/102 tests; fresh tar-copy simulation (no node_modules/.next/.env/db) → env mode generated correct .env (absolute path into the copy, 64-hex secrets, polling) without build/start; rerun kept .env byte-identical; main repo rebuilt at 004 → setup.sh start mode live boot: box printed, Next Ready in 83ms, /api/health 200 V00.01.004-beta-03; ports left free, temp artifacts removed
+- Committed f2061b0, pushed; origin/main == local main; tree clean
+
+Stage Summary:
+- User's clone flow is now exactly: git clone → bash setup.sh → open printed URL → paste admin token → create bot with Telegram token + AI key
+- Polling transport is the generated default: zero public URL/tunnel needed on Termux
+- Honest notes: Termux aarch64 still untested on real hardware (script has the proot guard); webhook/§5.2 path unchanged for later server deployment
