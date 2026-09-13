@@ -1,8 +1,10 @@
 /**
  * NURAE — customer registration (public site).
  * POST /api/auth/register { name, email, password }
- *   → 200 { ok, devCode? }   devCode ONLY when Gmail SMTP is not configured
- *                            (localhost mode) so the flow stays usable.
+ *   → 200 { ok, devCode?, mailError?, mailHint? }
+ *       devCode  ONLY when Gmail SMTP is not configured (localhost mode)
+ *       mailError/mailHint ONLY when SMTP is configured but the send FAILED —
+ *       the UI must never claim a code is "on its way" when it is not.
  *   → 409 when the email is taken (verified account).
  * A 6-digit code (scrypt-hashed, 15 min TTL) is emailed via Gmail SMTP.
  */
@@ -12,7 +14,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { apiError, internalError, validationError } from '@/lib/nurae/api/base';
 import { hashPassword, numericCode } from '@/lib/nurae/auth/passwords';
-import { gmailConfig, sendVerificationMail, maskEmail } from '@/lib/nurae/auth/mailer';
+import { gmailConfig, sendVerificationMail, maskEmail, mailFailureHint } from '@/lib/nurae/auth/mailer';
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
 import { getSiteInfo } from '@/lib/nurae/auth/settings';
 
@@ -72,11 +74,15 @@ export async function POST(req: Request): Promise<Response> {
       console.warn(`[NURAE] verification code for ${maskEmail(email)} NOT emailed: ${sent.detail}`);
     }
 
-    const payload: { ok: true; devCode?: string; notice?: string } = { ok: true };
+    const payload: { ok: true; devCode?: string; notice?: string; mailError?: string; mailHint?: string } = { ok: true };
     if (!gmailConfig()) {
       // Localhost/dev mode — without this the flow would be a dead end.
       payload.devCode = code;
       payload.notice = 'Gmail SMTP is not configured (NURAE_GMAIL_USER / NURAE_GMAIL_APP_PASSWORD). Dev code shown.';
+    } else if (!sent.ok) {
+      // SMTP configured but the send failed — say so plainly. Never leak the
+      // app password; the hint names the env vars and the fix.
+      payload.mailError = mailFailureHint(sent.detail);
     }
     return NextResponse.json(payload);
   } catch (err) {

@@ -35,7 +35,12 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
   const [name, setName] = useState(bot?.name ?? '');
   const [description, setDescription] = useState(bot?.description ?? '');
   const [telegramToken, setTelegramToken] = useState('');
-  const [providerId, setProviderId] = useState(bot?.provider ?? 'openrouter');
+  const [providerId, setProviderId] = useState(
+    // Unknown/legacy provider ids (e.g. rows created before a provider was
+    // retired) would leave this undefined and hide fields — fall back to the
+    // default provider so the form stays fully editable.
+    bot && catalog.providers.some((p) => p.id === bot.provider) ? bot.provider : 'openrouter',
+  );
   const [model, setModel] = useState(bot?.model ?? 'openrouter/free');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(bot?.baseUrl ?? '');
@@ -184,6 +189,12 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
                     {m}
                   </SelectItem>
                 ))}
+                {/* Stored models outside the starter list stay visible/editable. */}
+                {!provider.models.includes(model) && model && (
+                  <SelectItem value={model}>
+                    {model}
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           ) : (

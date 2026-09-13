@@ -96,6 +96,99 @@ describe('official bot seeding', () => {
     // The DTO never carries secret material.
     expect(JSON.stringify(body)).not.toContain('v1:');
   });
+
+  test('GET exposes the official prompt rebuilt from site settings', async () => {
+    const res = await officialBotRoute.GET(jsonReq('/api/official-bot'));
+    const body = (await res.json()) as { officialPrompt?: string };
+    expect(res.status).toBe(200);
+    expect(typeof body.officialPrompt).toBe('string');
+    expect(body.officialPrompt).toContain('customer-support assistant');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Official CS prompt + legacy zai migration + mailer hardening
+// ---------------------------------------------------------------------------
+
+describe('official bot maintenance', () => {
+  test('officialBotPrompt is rich, bounded, and reflects site settings', async () => {
+    const { officialBotPrompt, DEFAULT_SITE_INFO } = await import('../../src/lib/nurae/auth/settings');
+    const { LIMITS } = await import('../../src/lib/nurae/validation');
+    const prompt = officialBotPrompt({
+      ...DEFAULT_SITE_INFO,
+      supportEmail: 'help@nurae.app',
+      telegramHandle: '@nurae_support',
+    });
+    expect(prompt.length).toBeGreaterThan(400); // substantive, not a stub
+    expect(prompt.length).toBeLessThanOrEqual(LIMITS.systemPromptMax);
+    expect(prompt).toContain('help@nurae.app'); // escalation path baked in
+    expect(prompt).toContain('@nurae_support');
+    expect(prompt).toContain('@BotFather'); // real troubleshooting knowledge
+    expect(prompt).not.toContain('undefined');
+  });
+
+  test('migrateLegacyZaiBots maps retired provider rows to openrouter', async () => {
+    const { migrateLegacyZaiBots } = await import('../../src/lib/nurae/auth/official-bot');
+    const officialBot = await db.bot.findUnique({ where: { id: (await ensureOfficialBot())! } });
+    const projectId = officialBot!.projectId;
+    const legacy = await db.bot.create({
+      data: {
+        projectId,
+        name: 'Legacy Zai Bot',
+        systemPrompt: 'legacy',
+        provider: 'zai',
+        model: 'glm-4.5-flash',
+      },
+    });
+    const kept = await db.bot.create({
+      data: {
+        projectId,
+        name: 'Custom Model Bot',
+        systemPrompt: 'kept',
+        provider: 'zai',
+        model: 'glm/my-own-model',
+      },
+    });
+    const migrated = await migrateLegacyZaiBots();
+    expect(migrated).toBeGreaterThanOrEqual(2);
+    const afterLegacy = await db.bot.findUnique({ where: { id: legacy.id } });
+    expect(afterLegacy?.provider).toBe('openrouter');
+    expect(afterLegacy?.model).toBe('openrouter/free');
+    const afterKept = await db.bot.findUnique({ where: { id: kept.id } });
+    expect(afterKept?.model).toBe('openrouter/free'); // glm/* -> free router
+    // A migration log row is written for the operator.
+    const logs = await db.log.findMany({ where: { botId: legacy.id, event: 'BOT_MIGRATED' } });
+    expect(logs.length).toBe(1);
+    // Idempotent: second run finds nothing.
+    expect(await migrateLegacyZaiBots()).toBe(0);
+    await db.bot.delete({ where: { id: legacy.id } });
+    await db.bot.delete({ where: { id: kept.id } });
+  });
+
+  test('gmailConfig strips whitespace from the app password (Google shows it grouped)', async () => {
+    const { gmailConfig } = await import('../../src/lib/nurae/auth/mailer');
+    const prevUser = process.env.NURAE_GMAIL_USER;
+    const prevPass = process.env.NURAE_GMAIL_APP_PASSWORD;
+    try {
+      process.env.NURAE_GMAIL_USER = 'owner@gmail.com';
+      process.env.NURAE_GMAIL_APP_PASSWORD = 'abcd efgh ijkl mnop';
+      expect(gmailConfig()).toEqual({ user: 'owner@gmail.com', pass: 'abcdefghijklmnop' });
+      process.env.NURAE_GMAIL_APP_PASSWORD = 'abcdefghijklmnop';
+      expect(gmailConfig()?.pass).toBe('abcdefghijklmnop');
+    } finally {
+      if (prevUser === undefined) delete process.env.NURAE_GMAIL_USER;
+      else process.env.NURAE_GMAIL_USER = prevUser;
+      if (prevPass === undefined) delete process.env.NURAE_GMAIL_APP_PASSWORD;
+      else process.env.NURAE_GMAIL_APP_PASSWORD = prevPass;
+    }
+  });
+
+  test('mailFailureHint maps raw SMTP errors to actionable guidance', async () => {
+    const { mailFailureHint } = await import('../../src/lib/nurae/auth/mailer');
+    expect(mailFailureHint('Invalid login: 535-5.7.8 Username and Password not accepted')).toContain('app password');
+    expect(mailFailureHint('getaddrinfo ENOTFOUND smtp.gmail.com')).toContain('internet connection');
+    expect(mailFailureHint('something unclassified')).toContain('server logs');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -276,6 +276,7 @@ function AuthCard({
   const [code, setCode] = useState('');
   const [devCode, setDevCode] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [mailError, setMailError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -285,6 +286,7 @@ function AuthCard({
     clearAuthError();
     setError(null);
     setNotice(null);
+    setMailError(null);
     setStep(next);
   };
 
@@ -302,21 +304,46 @@ function AuthCard({
     }
   };
 
+  // (Re-)issue a verification code. The register endpoint is idempotent for
+  // unverified accounts, so resending is just another register call with the
+  // credentials already in state. Old codes are invalidated server-side — the
+  // NEWEST email is the one that counts.
+  const issueCode = async () => {
+    const r = await nuraeApi.register(name.trim(), email.trim().toLowerCase(), password);
+    if (r.devCode) setDevCode(r.devCode);
+    else setDevCode(null);
+    setMailError(r.mailError ?? null);
+    setNotice(
+      r.devCode
+        ? 'Gmail is not configured on this server — use the dev code below to verify.'
+        : r.mailError
+          ? null
+          : `A new 6-digit code was sent to ${email}. Use the NEWEST email — older codes no longer work. It expires in 15 minutes.`,
+    );
+    return r;
+  };
+
   const submitSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const r = await nuraeApi.register(name.trim(), email.trim().toLowerCase(), password);
-      if (r.devCode) setDevCode(r.devCode);
-      setNotice(
-        r.devCode
-          ? 'Gmail is not configured on this server — use the dev code below to verify.'
-          : `A 6-digit code is on its way to ${email}. It expires in 15 minutes.`,
-      );
+      await issueCode();
       setStep('verify');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Registration failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await issueCode();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not resend the code');
     } finally {
       setBusy(false);
     }
@@ -352,6 +379,12 @@ function AuthCard({
             <h2 className="text-lg font-semibold text-foreground">Verify your email</h2>
             <p className="mt-1 text-sm text-muted-foreground">{notice ?? `Enter the 6-digit code sent to ${email}.`}</p>
           </div>
+          {mailError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive" role="alert">
+              <p className="font-medium">The email could not be sent — no code will arrive.</p>
+              <p className="mt-1 opacity-90">{mailError}</p>
+            </div>
+          )}
           {devCode && (
             <div className="rounded-md border border-border bg-muted/50 px-3 py-2.5 text-center">
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Dev verification code</div>
@@ -375,15 +408,24 @@ function AuthCard({
           <Button type="submit" className="w-full" disabled={busy || code.length !== 6}>
             {busy ? 'Verifying…' : 'Verify & continue'}
           </Button>
-          <button
-            type="button"
-            onClick={() => switchStep('signin')}
-            className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
-          >
-            Back to sign in
-          </button>
-        </form>
-      ) : (
+          <div className="flex items-center justify-between text-xs">
+            <button
+              type="button"
+              onClick={resend}
+              disabled={busy}
+              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+            >
+              Resend code
+            </button>
+            <button
+              type="button"
+              onClick={() => switchStep('signin')}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Back to sign in
+            </button>
+          </div>
+        </form>) : (
         <>
           <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1">
             {(['signin', 'signup'] as const).map((s) => (

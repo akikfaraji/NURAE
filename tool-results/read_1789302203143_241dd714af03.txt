@@ -1,0 +1,855 @@
+     1→'use client';
+     2→
+     3→/**
+     4→ * NURAE dashboard — overview & project views.
+     5→ */
+     6→
+     7→import { useCallback, useEffect, useState } from 'react';
+     8→import { Button } from '@/components/ui/button';
+     9→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+    10→import {
+    11→  Dialog,
+    12→  DialogContent,
+    13→  DialogDescription,
+    14→  DialogFooter,
+    15→  DialogHeader,
+    16→  DialogTitle,
+    17→} from '@/components/ui/dialog';
+    18→import {
+    19→  AlertDialog,
+    20→  AlertDialogAction,
+    21→  AlertDialogCancel,
+    22→  AlertDialogContent,
+    23→  AlertDialogDescription,
+    24→  AlertDialogFooter,
+    25→  AlertDialogHeader,
+    26→  AlertDialogTitle,
+    27→  AlertDialogTrigger,
+    28→} from '@/components/ui/alert-dialog';
+    29→import { Input } from '@/components/ui/input';
+    30→import { Label } from '@/components/ui/label';
+    31→import { Textarea } from '@/components/ui/textarea';
+    32→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+    33→import { EmptyState, StatCard, StatusBadge } from '@/components/nurae/bits';
+    34→import {
+    35→  ArrowRightIcon,
+    36→  BotIcon,
+    37→  CheckIcon,
+    38→  GoogleIcon,
+    39→  MailIcon,
+    40→  TrashIcon,
+    41→} from '@/components/nurae/icons';
+    42→import {
+    43→  BotDTO,
+    44→  Catalog,
+    45→  CustomerDTO,
+    46→  nuraeApi,
+    47→  OfficialBotResponse,
+    48→  ProjectSummary,
+    49→  SiteInfoDTO,
+    50→} from '@/lib/nurae-client/api';
+    51→import { toast } from 'sonner';
+    52→
+    53→// ---------------------------------------------------------------------------
+    54→// Overview (spec §15: Projects / Active Bots / Stopped Bots / Errors)
+    55→// ---------------------------------------------------------------------------
+    56→
+    57→export function OverviewView({
+    58→  catalog,
+    59→  onOpenProject,
+    60→  onGoProjects,
+    61→}: {
+    62→  catalog: Catalog;
+    63→  onOpenProject: (id: string) => void;
+    64→  onGoProjects: () => void;
+    65→}) {
+    66→  const [stats, setStats] = useState<{
+    67→    projects: number;
+    68→    activeBots: number;
+    69→    stoppedBots: number;
+    70→    errors: number;
+    71→    totalBots: number;
+    72→    users: number;
+    73→  } | null>(null);
+    74→  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+    75→
+    76→  const refresh = useCallback(async () => {
+    77→    try {
+    78→      const [s, p] = await Promise.all([nuraeApi.stats(), nuraeApi.listProjects()]);
+    79→      setStats(s.stats);
+    80→      setProjects(p.projects.slice(0, 5));
+    81→    } catch {
+    82→      /* polling errors are non-fatal */
+    83→    }
+    84→  }, []);
+    85→
+    86→  useEffect(() => {
+    87→    const kick = setTimeout(() => void refresh(), 0);
+    88→    const t = setInterval(refresh, 5000);
+    89→    return () => {
+    90→      clearTimeout(kick);
+    91→      clearInterval(t);
+    92→    };
+    93→  }, [refresh]);
+    94→
+    95→  return (
+    96→    <div className="space-y-6">
+    97→      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+    98→        <StatCard label="Projects" value={stats?.projects ?? '—'} />
+    99→        <StatCard label="Active Bots" value={stats?.activeBots ?? '—'} />
+   100→        <StatCard label="Stopped Bots" value={stats?.stoppedBots ?? '—'} />
+   101→        <StatCard label="Errors" value={stats?.errors ?? '—'} accent={stats && stats.errors > 0 ? 'red' : 'zinc'} />
+   102→        <StatCard label="Customers" value={stats?.users ?? '—'} />
+   103→      </div>
+   104→
+   105→      <Card className="border-border">
+   106→        <CardHeader className="pb-3">
+   107→          <div className="flex items-center justify-between">
+   108→            <div>
+   109→              <CardTitle className="text-base">Projects</CardTitle>
+   110→              <CardDescription>Group bots into projects.</CardDescription>
+   111→            </div>
+   112→            <Button size="sm" onClick={onGoProjects} >
+   113→              Manage projects
+   114→            </Button>
+   115→          </div>
+   116→        </CardHeader>
+   117→        <CardContent>
+   118→          {projects.length === 0 ? (
+   119→            <EmptyState
+   120→              title="No projects yet"
+   121→              description="Create your first project to start building AI-powered Telegram bots."
+   122→              action={
+   123→                <Button onClick={onGoProjects} >
+   124→                  Create project
+   125→                </Button>
+   126→              }
+   127→            />
+   128→          ) : (
+   129→            <ul className="divide-y divide-border">
+   130→              {projects.map((p) => (
+   131→                <li key={p.id}>
+   132→                  <button
+   133→                    className="flex w-full items-center justify-between rounded-md px-2 py-3 text-left hover:bg-muted/50"
+   134→                    onClick={() => onOpenProject(p.id)}
+   135→                  >
+   136→                    <div className="min-w-0">
+   137→                      <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
+   138→                      <p className="truncate text-xs text-muted-foreground">{p.description || 'No description'}</p>
+   139→                    </div>
+   140→                    <div className="ml-4 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+   141→                      <span>
+   142→                        {p.activeBots}/{p.botCount} active
+   143→                      </span>
+   144→                    </div>
+   145→                  </button>
+   146→                </li>
+   147→              ))}
+   148→            </ul>
+   149→          )}
+   150→        </CardContent>
+   151→      </Card>
+   152→    </div>
+   153→  );
+   154→}
+   155→
+   156→// ---------------------------------------------------------------------------
+   157→// Projects
+   158→// ---------------------------------------------------------------------------
+   159→
+   160→export function ProjectsView({
+   161→  catalog,
+   162→  onOpenProject,
+   163→}: {
+   164→  catalog: Catalog;
+   165→  onOpenProject: (id: string) => void;
+   166→}) {
+   167→  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+   168→  const [createOpen, setCreateOpen] = useState(false);
+   169→  const [name, setName] = useState('');
+   170→  const [description, setDescription] = useState('');
+   171→  const [busy, setBusy] = useState(false);
+   172→
+   173→  const refresh = useCallback(async () => {
+   174→    try {
+   175→      const res = await nuraeApi.listProjects();
+   176→      setProjects(res.projects);
+   177→    } catch (err) {
+   178→      toast.error(err instanceof Error ? err.message : 'Failed to load projects');
+   179→      setProjects([]);
+   180→    }
+   181→  }, []);
+   182→
+   183→  useEffect(() => {
+   184→    const kick = setTimeout(() => void refresh(), 0);
+   185→    const t = setInterval(refresh, 5000);
+   186→    return () => {
+   187→      clearTimeout(kick);
+   188→      clearInterval(t);
+   189→    };
+   190→  }, [refresh]);
+   191→
+   192→  const handleCreate = async () => {
+   193→    if (!name.trim()) {
+   194→      toast.error('Project name is required');
+   195→      return;
+   196→    }
+   197→    setBusy(true);
+   198→    try {
+   199→      await nuraeApi.createProject(name.trim(), description.trim());
+   200→      toast.success('Project created');
+   201→      setCreateOpen(false);
+   202→      setName('');
+   203→      setDescription('');
+   204→      await refresh();
+   205→    } catch (err) {
+   206→      toast.error(err instanceof Error ? err.message : 'Failed to create project');
+   207→    } finally {
+   208→      setBusy(false);
+   209→    }
+   210→  };
+   211→
+   212→  return (
+   213→    <div className="space-y-4">
+   214→      <div className="flex items-center justify-between">
+   215→        <div>
+   216→          <h2 className="text-lg font-semibold text-foreground">Projects</h2>
+   217→          <p className="text-sm text-muted-foreground">Each project groups related bots.</p>
+   218→        </div>
+   219→        <Button onClick={() => setCreateOpen(true)}  data-testid="create-project">
+   220→          Create project
+   221→        </Button>
+   222→      </div>
+   223→
+   224→      {projects === null ? (
+   225→        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   226→          {[1, 2, 3].map((i) => (
+   227→            <Card key={i} className="animate-pulse border-border p-6">
+   228→              <div className="h-4 w-1/3 rounded bg-muted" />
+   229→              <div className="mt-3 h-3 w-2/3 rounded bg-muted" />
+   230→            </Card>
+   231→          ))}
+   232→        </div>
+   233→      ) : projects.length === 0 ? (
+   234→        <EmptyState
+   235→          title="No projects yet"
+   236→          description="Create your first project to start building AI-powered Telegram bots."
+   237→          action={
+   238→            <Button onClick={() => setCreateOpen(true)} >
+   239→              Create project
+   240→            </Button>
+   241→          }
+   242→        />
+   243→      ) : (
+   244→        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   245→          {projects.map((p) => (
+   246→            <Card
+   247→              key={p.id}
+   248→              className="cursor-pointer border-border transition-shadow hover:shadow-md"
+   249→              onClick={() => onOpenProject(p.id)}
+   250→              role="button"
+   251→              tabIndex={0}
+   252→              onKeyDown={(e) => e.key === 'Enter' && onOpenProject(p.id)}
+   253→            >
+   254→              <CardHeader className="pb-2">
+   255→                <CardTitle className="text-base">{p.name}</CardTitle>
+   256→                <CardDescription className="line-clamp-2">{p.description || 'No description'}</CardDescription>
+   257→              </CardHeader>
+   258→              <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
+   259→                <span>
+   260→                  {p.botCount} bot{p.botCount === 1 ? '' : 's'}
+   261→                </span>
+   262→                <span className="inline-flex items-center gap-1">
+   263→                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-foreground" />
+   264→                  {p.activeBots} active
+   265→                </span>
+   266→              </CardContent>
+   267→            </Card>
+   268→          ))}
+   269→        </div>
+   270→      )}
+   271→
+   272→      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+   273→        <DialogContent className="sm:max-w-md">
+   274→          <DialogHeader>
+   275→            <DialogTitle>Create project</DialogTitle>
+   276→            <DialogDescription>Projects group your bots and settings.</DialogDescription>
+   277→          </DialogHeader>
+   278→          <div className="space-y-4">
+   279→            <div className="space-y-1.5">
+   280→              <Label htmlFor="project-name">Project name *</Label>
+   281→              <Input
+   282→                id="project-name"
+   283→                value={name}
+   284→                onChange={(e) => setName(e.target.value)}
+   285→                maxLength={catalog.limits.nameMax}
+   286→                placeholder="My Digital Operations"
+   287→                data-testid="project-name-input"
+   288→              />
+   289→            </div>
+   290→            <div className="space-y-1.5">
+   291→              <Label htmlFor="project-desc">Description</Label>
+   292→              <Textarea
+   293→                id="project-desc"
+   294→                value={description}
+   295→                onChange={(e) => setDescription(e.target.value)}
+   296→                rows={3}
+   297→                placeholder="What is this project about?"
+   298→              />
+   299→            </div>
+   300→          </div>
+   301→          <DialogFooter>
+   302→            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={busy}>
+   303→              Cancel
+   304→            </Button>
+   305→            <Button onClick={handleCreate} disabled={busy}  data-testid="project-submit">
+   306→              {busy ? 'Creating…' : 'Create project'}
+   307→            </Button>
+   308→          </DialogFooter>
+   309→        </DialogContent>
+   310→      </Dialog>
+   311→    </div>
+   312→  );
+   313→}
+   314→
+   315→// ---------------------------------------------------------------------------
+   316→// Project detail (bots of a project)
+   317→// ---------------------------------------------------------------------------
+   318→
+   319→export function ProjectView({
+   320→  projectId,
+   321→  catalog,
+   322→  onOpenBot,
+   323→  onBack,
+   324→}: {
+   325→  projectId: string;
+   326→  catalog: Catalog;
+   327→  onOpenBot: (botId: string) => void;
+   328→  onBack: () => void;
+   329→}) {
+   330→  const [project, setProject] = useState<ProjectSummary | null>(null);
+   331→  const [bots, setBots] = useState<BotDTO[]>([]);
+   332→  const [loaded, setLoaded] = useState(false);
+   333→  const [createOpen, setCreateOpen] = useState(false);
+   334→
+   335→  const refresh = useCallback(async () => {
+   336→    try {
+   337→      const res = await nuraeApi.getProject(projectId);
+   338→      setProject(res.project);
+   339→      setBots(res.bots);
+   340→    } catch (err) {
+   341→      toast.error(err instanceof Error ? err.message : 'Failed to load project');
+   342→    } finally {
+   343→      setLoaded(true);
+   344→    }
+   345→  }, [projectId]);
+   346→
+   347→  useEffect(() => {
+   348→    const kick = setTimeout(() => void refresh(), 0);
+   349→    const t = setInterval(refresh, 5000);
+   350→    return () => {
+   351→      clearTimeout(kick);
+   352→      clearInterval(t);
+   353→    };
+   354→  }, [refresh]);
+   355→
+   356→  return (
+   357→    <div className="space-y-4">
+   358→      <div className="flex flex-wrap items-center justify-between gap-3">
+   359→        <div className="min-w-0">
+   360→          <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={onBack}>
+   361→            ← Projects
+   362→          </Button>
+   363→          <h2 className="truncate text-lg font-semibold text-foreground">{project?.name ?? '…'}</h2>
+   364→          <p className="truncate text-sm text-muted-foreground">{project?.description || 'No description'}</p>
+   365→        </div>
+   366→        <Button onClick={() => setCreateOpen(true)}  data-testid="create-bot">
+   367→          Create bot
+   368→        </Button>
+   369→      </div>
+   370→
+   371→      {loaded && bots.length === 0 ? (
+   372→        <EmptyState
+   373→          title="No bots in this project"
+   374→          description="Create an AI-powered Telegram bot: pick a provider, paste the Telegram token, and start it."
+   375→          action={
+   376→            <Button onClick={() => setCreateOpen(true)} >
+   377→              Create bot
+   378→            </Button>
+   379→          }
+   380→        />
+   381→      ) : (
+   382→        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   383→          {bots.map((b) => (
+   384→            <Card
+   385→              key={b.id}
+   386→              className="cursor-pointer border-border transition-shadow hover:shadow-md"
+   387→              onClick={() => onOpenBot(b.id)}
+   388→              role="button"
+   389→              tabIndex={0}
+   390→              onKeyDown={(e) => e.key === 'Enter' && onOpenBot(b.id)}
+   391→              data-testid={`bot-card-${b.name}`}
+   392→            >
+   393→              <CardHeader className="pb-2">
+   394→                <div className="flex items-center justify-between gap-2">
+   395→                  <CardTitle className="truncate text-base">{b.name}</CardTitle>
+   396→                  <StatusBadge status={b.status} />
+   397→                </div>
+   398→                <CardDescription className="line-clamp-1">{b.description || 'No description'}</CardDescription>
+   399→              </CardHeader>
+   400→              <CardContent className="space-y-1 text-xs text-muted-foreground">
+   401→                <p>
+   402→                  <span className="font-medium text-foreground">{b.telegramUsername ?? 'Telegram: not verified'}</span>
+   403→                </p>
+   404→                <p>
+   405→                  {b.provider} · {b.model}
+   406→                </p>
+   407→              </CardContent>
+   408→            </Card>
+   409→          ))}
+   410→        </div>
+   411→      )}
+   412→
+   413→      <CreateBotDialog
+   414→        projectId={projectId}
+   415→        catalog={catalog}
+   416→        open={createOpen}
+   417→        onOpenChange={setCreateOpen}
+   418→        onCreated={async (bot) => {
+   419→          setCreateOpen(false);
+   420→          await refresh();
+   421→          onOpenBot(bot.id);
+   422→        }}
+   423→      />
+   424→    </div>
+   425→  );
+   426→}
+   427→
+   428→// Create dialog lives here so both Projects and Project view can use it later.
+   429→import { BotForm } from '@/components/nurae/bot-form';
+   430→
+   431→export function CreateBotDialog({
+   432→  projectId,
+   433→  catalog,
+   434→  open,
+   435→  onOpenChange,
+   436→  onCreated,
+   437→}: {
+   438→  projectId: string;
+   439→  catalog: Catalog;
+   440→  open: boolean;
+   441→  onOpenChange: (open: boolean) => void;
+   442→  onCreated: (bot: BotDTO) => void | Promise<void>;
+   443→}) {
+   444→  const [busy, setBusy] = useState(false);
+   445→  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
+   446→
+   447→  return (
+   448→    <Dialog open={open} onOpenChange={onOpenChange}>
+   449→      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+   450→        <DialogHeader>
+   451→          <DialogTitle>Create AI Telegram bot</DialogTitle>
+   452→          <DialogDescription>
+   453→            Configure the identity, AI provider, and behavior. You can change everything later.
+   454→          </DialogDescription>
+   455→        </DialogHeader>
+   456→        <BotForm
+   457→          catalog={catalog}
+   458→          submitLabel="Create bot"
+   459→          busy={busy}
+   460→          serverErrors={serverErrors}
+   461→          onCancel={() => onOpenChange(false)}
+   462→          onSubmit={async (input) => {
+   463→            setBusy(true);
+   464→            setServerErrors({});
+   465→            try {
+   466→              const res = await nuraeApi.createBot(projectId, input);
+   467→              toast.success(`Bot "${res.bot.name}" created`);
+   468→              await onCreated(res.bot);
+   469→            } catch (err) {
+   470→              const e = err as { message?: string; fields?: Record<string, string> };
+   471→              setServerErrors(e.fields ?? { _form: e.message ?? 'Failed to create bot' });
+   472→              toast.error(e.message ?? 'Failed to create bot');
+   473→            } finally {
+   474→              setBusy(false);
+   475→            }
+   476→          }}
+   477→        />
+   478→      </DialogContent>
+   479→    </Dialog>
+   480→  );
+   481→}
+   482→
+   483→// ---------------------------------------------------------------------------
+   484→// Official NURAE bot card (overview) — "fill in the keys and run"
+   485→// ---------------------------------------------------------------------------
+   486→
+   487→export function OfficialBotCard({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
+   488→  const [data, setData] = useState<OfficialBotResponse | null>(null);
+   489→
+   490→  const refresh = useCallback(async () => {
+   491→    try {
+   492→      setData(await nuraeApi.officialBot());
+   493→    } catch {
+   494→      /* non-fatal */
+   495→    }
+   496→  }, []);
+   497→
+   498→  useEffect(() => {
+   499→    const kick = setTimeout(() => void refresh(), 0);
+   500→    const t = setInterval(refresh, 10000);
+   501→    return () => {
+   502→      clearTimeout(kick);
+   503→      clearInterval(t);
+   504→    };
+   505→  }, [refresh]);
+   506→
+   507→  const o = data?.official;
+   508→  const stepsDone = o ? (o.hasApiKey ? 1 : 0) + (o.hasTelegramToken ? 1 : 0) : 0;
+   509→
+   510→  return (
+   511→    <Card className="border-border">
+   512→      <CardHeader className="pb-3">
+   513→        <div className="flex flex-wrap items-start justify-between gap-3">
+   514→          <div className="flex items-center gap-3">
+   515→            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-foreground text-background">
+   516→              <BotIcon className="h-5 w-5" />
+   517→            </span>
+   518→            <div>
+   519→              <CardTitle className="flex items-center gap-2 text-base">
+   520→                NURAE CS Bot
+   521→                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+   522→                  Official
+   523→                </span>
+   524→              </CardTitle>
+   525→              <CardDescription>
+   526→                The built-in customer-support bot for your site — fill in the keys and run it.
+   527→              </CardDescription>
+   528→            </div>
+   529→          </div>
+   530→          {o?.botId && (
+   531→            <Button size="sm" className="gap-2" onClick={() => onOpenBot(o.botId!)}>
+   532→              {o.ready ? (o.status === 'running' ? 'Manage' : 'Open & start') : 'Fill in the keys'}
+   533→              <ArrowRightIcon className="h-3.5 w-3.5" />
+   534→            </Button>
+   535→          )}
+   536→        </div>
+   537→      </CardHeader>
+   538→      <CardContent>
+   539→        <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
+   540→          <KeyStep
+   541→            label="AI provider key"
+   542→            done={Boolean(o?.hasApiKey)}
+   543→            fallback={Boolean(o && !o.hasApiKey && o.ready)}
+   544→            doneText={o?.hasApiKey ? 'Stored (encrypted)' : ''}
+   545→            fallbackText="Env fallback active"
+   546→            pendingText="Missing — chat disabled"
+   547→          />
+   548→          <KeyStep
+   549→            label="Telegram bot token"
+   550→            done={Boolean(o?.hasTelegramToken)}
+   551→            doneText={o?.telegramUsername ?? (o?.hasTelegramToken ? 'Stored (encrypted)' : '')}
+   552→            fallback={false}
+   553→            pendingText="Optional — web chat works without it"
+   554→          />
+   555→          <KeyStep
+   556→            label="Runtime"
+   557→            done={o?.status === 'running'}
+   558→            doneText={`Running on ${o?.transport ?? 'telegram'}`}
+   559→            fallback={false}
+   560→            pendingText={o?.status ? o.status : 'Not started yet'}
+   561→          />
+   562→        </div>
+   563→        <p className="mt-3 text-xs text-muted-foreground">
+   564→          Setup: {stepsDone}/2 keys · customers chat on your site with just the AI key; add a token from @BotFather to run it on Telegram.
+   565→        </p>
+   566→      </CardContent>
+   567→    </Card>
+   568→  );
+   569→}
+   570→
+   571→function KeyStep({
+   572→  label,
+   573→  done,
+   574→  fallback,
+   575→  doneText,
+   576→  fallbackText,
+   577→  pendingText,
+   578→}: {
+   579→  label: string;
+   580→  done: boolean;
+   581→  fallback: boolean;
+   582→  doneText: string;
+   583→  fallbackText?: string;
+   584→  pendingText: string;
+   585→}) {
+   586→  return (
+   587→    <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+   588→      <span
+   589→        className={
+   590→          'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ' +
+   591→          (done || fallback ? 'border-transparent bg-foreground text-background' : 'border-border text-muted-foreground')
+   592→        }
+   593→      >
+   594→        {done || fallback ? <CheckIcon className="h-2.5 w-2.5" /> : <span className="h-1 w-1 rounded-full bg-current" />}
+   595→      </span>
+   596→      <div className="min-w-0">
+   597→        <p className="font-medium text-foreground">{label}</p>
+   598→        <p className="truncate text-muted-foreground">{done ? doneText : fallback ? (fallbackText ?? 'Fallback active') : pendingText}</p>
+   599→      </div>
+   600→    </div>
+   601→  );
+   602→}
+   603→
+   604→// ---------------------------------------------------------------------------
+   605→// Customers — every account on the platform
+   606→// ---------------------------------------------------------------------------
+   607→
+   608→export function CustomersView({ onBack }: { onBack: () => void }) {
+   609→  const [customers, setCustomers] = useState<CustomerDTO[] | null>(null);
+   610→  const [confirmId, setConfirmId] = useState<string | null>(null);
+   611→
+   612→  const refresh = useCallback(async () => {
+   613→    try {
+   614→      const r = await nuraeApi.listCustomers();
+   615→      setCustomers(r.customers);
+   616→    } catch (err) {
+   617→      toast.error(err instanceof Error ? err.message : 'Failed to load customers');
+   618→      setCustomers([]);
+   619→    }
+   620→  }, []);
+   621→
+   622→  useEffect(() => {
+   623→    const kick = setTimeout(() => void refresh(), 0);
+   624→    return () => clearTimeout(kick);
+   625→  }, [refresh]);
+   626→
+   627→  const remove = async (id: string) => {
+   628→    setConfirmId(null);
+   629→    try {
+   630→      await nuraeApi.deleteCustomer(id);
+   631→      toast.success('Customer deleted');
+   632→      await refresh();
+   633→    } catch (err) {
+   634→      toast.error(err instanceof Error ? err.message : 'Delete failed');
+   635→    }
+   636→  };
+   637→
+   638→  return (
+   639→    <div className="space-y-6">
+   640→      <div className="flex items-center justify-between">
+   641→        <div>
+   642→          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Customers</h1>
+   643→          <p className="text-sm text-muted-foreground">Everyone who signed up on your site.</p>
+   644→        </div>
+   645→        <Button variant="ghost" size="sm" onClick={onBack}>
+   646→          Back to dashboard
+   647→        </Button>
+   648→      </div>
+   649→
+   650→      <Card className="border-border">
+   651→        <CardContent className="p-0">
+   652→          {customers === null ? (
+   653→            <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading customers…</div>
+   654→          ) : customers.length === 0 ? (
+   655→            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+   656→              No customers yet — they will appear here as soon as someone signs up at <span className="font-mono">/</span>.
+   657→            </div>
+   658→          ) : (
+   659→            <Table>
+   660→              <TableHeader>
+   661→                <TableRow className="hover:bg-transparent">
+   662→                  <TableHead>Customer</TableHead>
+   663→                  <TableHead>Sign-up</TableHead>
+   664→                  <TableHead>Status</TableHead>
+   665→                  <TableHead className="text-right">Chats</TableHead>
+   666→                  <TableHead className="text-right">Sessions</TableHead>
+   667→                  <TableHead>Joined</TableHead>
+   668→                  <TableHead className="w-12" />
+   669→                </TableRow>
+   670→              </TableHeader>
+   671→              <TableBody>
+   672→                {customers.map((c) => (
+   673→                  <TableRow key={c.id}>
+   674→                    <TableCell>
+   675→                      <div className="min-w-0">
+   676→                        <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
+   677→                        <p className="truncate text-xs text-muted-foreground">{c.email}</p>
+   678→                      </div>
+   679→                    </TableCell>
+   680→                    <TableCell>
+   681→                      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+   682→                        {c.signupMethod === 'google' ? <GoogleIcon className="h-3.5 w-3.5" /> : <MailIcon className="h-3.5 w-3.5" />}
+   683→                        {c.signupMethod === 'google' ? 'Google' : 'Email'}
+   684→                      </span>
+   685→                    </TableCell>
+   686→                    <TableCell>
+   687→                      <span
+   688→                        className={
+   689→                          'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ' +
+   690→                          (c.emailVerified
+   691→                            ? 'border-border bg-muted text-foreground'
+   692→                            : 'border-destructive/40 bg-destructive/10 text-destructive')
+   693→                        }
+   694→                      >
+   695→                        <span className={'h-1.5 w-1.5 rounded-full ' + (c.emailVerified ? 'bg-foreground' : 'bg-destructive')} />
+   696→                        {c.emailVerified ? 'Verified' : 'Unverified'}
+   697→                      </span>
+   698→                    </TableCell>
+   699→                    <TableCell className="text-right text-sm tabular-nums text-foreground">{c.chatMessages}</TableCell>
+   700→                    <TableCell className="text-right text-sm tabular-nums text-foreground">{c.activeSessions}</TableCell>
+   701→                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+   702→                      {new Date(c.createdAt).toLocaleDateString()}
+   703→                    </TableCell>
+   704→                    <TableCell>
+   705→                      <AlertDialog open={confirmId === c.id} onOpenChange={(open) => setConfirmId(open ? c.id : null)}>
+   706→                        <AlertDialogTrigger asChild>
+   707→                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" aria-label={`Delete ${c.email}`}>
+   708→                            <TrashIcon className="h-4 w-4" />
+   709→                          </Button>
+   710→                        </AlertDialogTrigger>
+   711→                        <AlertDialogContent>
+   712→                          <AlertDialogHeader>
+   713→                            <AlertDialogTitle>Delete customer?</AlertDialogTitle>
+   714→                            <AlertDialogDescription>
+   715→                              This permanently removes {c.email} with their sessions, verification state and support chat
+   716→                              history. This cannot be undone.
+   717→                            </AlertDialogDescription>
+   718→                          </AlertDialogHeader>
+   719→                          <AlertDialogFooter>
+   720→                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   721→                            <AlertDialogAction onClick={() => void remove(c.id)}>Delete</AlertDialogAction>
+   722→                          </AlertDialogFooter>
+   723→                        </AlertDialogContent>
+   724→                      </AlertDialog>
+   725→                    </TableCell>
+   726→                  </TableRow>
+   727→                ))}
+   728→              </TableBody>
+   729→            </Table>
+   730→          )}
+   731→        </CardContent>
+   732→      </Card>
+   733→    </div>
+   734→  );
+   735→}
+   736→
+   737→// ---------------------------------------------------------------------------
+   738→// Site settings — feeds the public site and the official bot's knowledge
+   739→// ---------------------------------------------------------------------------
+   740→
+   741→export function SiteSettingsView({ onBack }: { onBack: () => void }) {
+   742→  const [form, setForm] = useState<SiteInfoDTO | null>(null);
+   743→  const [busy, setBusy] = useState(false);
+   744→
+   745→  useEffect(() => {
+   746→    (async () => {
+   747→      try {
+   748→        const r = await nuraeApi.getSettings();
+   749→        setForm(r.settings);
+   750→      } catch (err) {
+   751→        toast.error(err instanceof Error ? err.message : 'Failed to load settings');
+   752→      }
+   753→    })();
+   754→  }, []);
+   755→
+   756→  if (!form) {
+   757→    return (
+   758→      <div className="space-y-6">
+   759→        <div className="flex items-center justify-between">
+   760→          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Site settings</h1>
+   761→        </div>
+   762→        <div className="text-sm text-muted-foreground">Loading settings…</div>
+   763→      </div>
+   764→    );
+   765→  }
+   766→
+   767→  const set = (patch: Partial<SiteInfoDTO>) => setForm({ ...form, ...patch });
+   768→
+   769→  const save = async () => {
+   770→    setBusy(true);
+   771→    try {
+   772→      const r = await nuraeApi.saveSettings(form);
+   773→      setForm(r.settings);
+   774→      toast.success('Site settings saved');
+   775→    } catch (err) {
+   776→      toast.error(err instanceof Error ? err.message : 'Save failed');
+   777→    } finally {
+   778→      setBusy(false);
+   779→    }
+   780→  };
+   781→
+   782→  return (
+   783→    <div className="space-y-6">
+   784→      <div className="flex items-center justify-between">
+   785→        <div>
+   786→          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Site settings</h1>
+   787→          <p className="text-sm text-muted-foreground">
+   788→            Shown on the public site and baked into the official bot&apos;s knowledge.
+   789→          </p>
+   790→        </div>
+   791→        <Button variant="ghost" size="sm" onClick={onBack}>
+   792→          Back to dashboard
+   793→        </Button>
+   794→      </div>
+   795→
+   796→      <Card className="border-border">
+   797→        <CardHeader className="pb-3">
+   798→          <CardTitle className="text-base">Public details</CardTitle>
+   799→          <CardDescription>Every field can be reset to its default by clearing it.</CardDescription>
+   800→        </CardHeader>
+   801→        <CardContent className="space-y-4">
+   802→          <div className="grid gap-4 sm:grid-cols-2">
+   803→            <div className="space-y-1.5">
+   804→              <Label htmlFor="set-site-name">Site name</Label>
+   805→              <Input id="set-site-name" value={form.siteName} maxLength={60} onChange={(e) => set({ siteName: e.target.value })} />
+   806→            </div>
+   807→            <div className="space-y-1.5">
+   808→              <Label htmlFor="set-telegram">Official Telegram handle</Label>
+   809→              <Input
+   810→                id="set-telegram"
+   811→                placeholder="@your_bot"
+   812→                value={form.telegramHandle}
+   813→                maxLength={60}
+   814→                onChange={(e) => set({ telegramHandle: e.target.value })}
+   815→              />
+   816→            </div>
+   817→          </div>
+   818→          <div className="space-y-1.5">
+   819→            <Label htmlFor="set-tagline">Tagline (hero text)</Label>
+   820→            <Input id="set-tagline" value={form.tagline} maxLength={200} onChange={(e) => set({ tagline: e.target.value })} />
+   821→          </div>
+   822→          <div className="space-y-1.5">
+   823→            <Label htmlFor="set-support-email">Support email</Label>
+   824→            <Input
+   825→              id="set-support-email"
+   826→              type="email"
+   827→              placeholder="support@yourdomain.com"
+   828→              value={form.supportEmail}
+   829→              onChange={(e) => set({ supportEmail: e.target.value })}
+   830→            />
+   831→          </div>
+   832→          <div className="space-y-1.5">
+   833→            <Label htmlFor="set-welcome">Support bot welcome message</Label>
+   834→            <Textarea
+   835→              id="set-welcome"
+   836→              rows={3}
+   837→              maxLength={500}
+   838→              value={form.welcomeMessage}
+   839→              onChange={(e) => set({ welcomeMessage: e.target.value })}
+   840→            />
+   841→          </div>
+   842→          <div className="flex items-center justify-between border-t border-border pt-4">
+   843→            <p className="text-xs text-muted-foreground">
+   844→              Changing the knowledge of the already-seeded bot? Edit its system prompt on the bot page.
+   845→            </p>
+   846→            <Button onClick={save} disabled={busy}>
+   847→              {busy ? 'Saving…' : 'Save settings'}
+   848→            </Button>
+   849→          </div>
+   850→        </CardContent>
+   851→      </Card>
+   852→    </div>
+   853→  );
+   854→}
+   855→

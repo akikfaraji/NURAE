@@ -12,8 +12,10 @@
 
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  const { ensureOfficialBot } = await import('./lib/nurae/auth/official-bot');
+  const { ensureOfficialBot, migrateLegacyZaiBots } = await import('./lib/nurae/auth/official-bot');
   await ensureOfficialBot();
+  const migrated = await migrateLegacyZaiBots();
+  if (migrated > 0) console.log(`[NURAE] migrated ${migrated} legacy zai bot(s) to openrouter`);
   const { gatewayLinkConfigured, startGatewayHeartbeat } = await import('./lib/nurae/runtime/gateway-link');
   if (gatewayLinkConfigured()) {
     startGatewayHeartbeat();

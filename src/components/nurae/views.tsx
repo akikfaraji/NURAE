@@ -484,8 +484,17 @@ export function CreateBotDialog({
 // Official NURAE bot card (overview) — "fill in the keys and run"
 // ---------------------------------------------------------------------------
 
-export function OfficialBotCard({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
+export function OfficialBotCard({
+  onOpenBot,
+  catalog,
+}: {
+  onOpenBot: (botId: string) => void;
+  catalog: Catalog | null;
+}) {
   const [data, setData] = useState<OfficialBotResponse | null>(null);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -503,6 +512,40 @@ export function OfficialBotCard({ onOpenBot }: { onOpenBot: (botId: string) => v
       clearInterval(t);
     };
   }, [refresh]);
+
+  const saveConfig = async (input: Parameters<typeof nuraeApi.updateConfig>[1]) => {
+    if (!data?.bot) return;
+    setBusy('config');
+    setConfigErrors({});
+    try {
+      await nuraeApi.updateConfig(data.bot.id, input);
+      setConfigOpen(false);
+      toast.success('Official bot configuration saved', {
+        description: 'The web chat uses it immediately; restart the bot to apply it on Telegram.',
+      });
+      await refresh();
+    } catch (err) {
+      const e = err as { message?: string; fields?: Record<string, string> };
+      setConfigErrors(e.fields ?? { _form: e.message ?? 'Failed to save configuration' });
+      toast.error(e.message ?? 'Failed to save configuration');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const syncPrompt = async () => {
+    if (!data?.bot) return;
+    setBusy('prompt');
+    try {
+      await nuraeApi.syncOfficialPrompt();
+      toast.success('System prompt rebuilt from the current site settings');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rebuild the prompt');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const o = data?.official;
   const stepsDone = o ? (o.hasApiKey ? 1 : 0) + (o.hasTelegramToken ? 1 : 0) : 0;
@@ -527,12 +570,19 @@ export function OfficialBotCard({ onOpenBot }: { onOpenBot: (botId: string) => v
               </CardDescription>
             </div>
           </div>
-          {o?.botId && (
-            <Button size="sm" className="gap-2" onClick={() => onOpenBot(o.botId!)}>
-              {o.ready ? (o.status === 'running' ? 'Manage' : 'Open & start') : 'Fill in the keys'}
-              <ArrowRightIcon className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {catalog && data?.bot && (
+              <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)}>
+                Configure keys &amp; prompt
+              </Button>
+            )}
+            {o?.botId && (
+              <Button size="sm" className="gap-2" onClick={() => onOpenBot(o.botId!)}>
+                {o.ready ? (o.status === 'running' ? 'Manage' : 'Open & start') : 'Open bot'}
+                <ArrowRightIcon className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -560,10 +610,46 @@ export function OfficialBotCard({ onOpenBot }: { onOpenBot: (botId: string) => v
             pendingText={o?.status ? o.status : 'Not started yet'}
           />
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Setup: {stepsDone}/2 keys · customers chat on your site with just the AI key; add a token from @BotFather to run it on Telegram.
-        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Setup: {stepsDone}/2 keys · customers chat on your site with just the AI key; add a token from @BotFather to run it on Telegram.
+          </p>
+          {data?.bot && (
+            <button
+              type="button"
+              onClick={syncPrompt}
+              disabled={busy !== null}
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+              title="Rebuild the bot's system prompt from the current site settings (site name, support email, welcome message)"
+            >
+              {busy === 'prompt' ? 'Rebuilding…' : 'Reset prompt to official'}
+            </button>
+          )}
+        </div>
       </CardContent>
+
+      {catalog && data?.bot && (
+        <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Configure the official bot</DialogTitle>
+              <DialogDescription>
+                Paste the AI key (and optionally a Telegram token from @BotFather), tune the prompt. Secrets are stored
+                encrypted and never shown again.
+              </DialogDescription>
+            </DialogHeader>
+            <BotForm
+              catalog={catalog}
+              bot={data.bot}
+              submitLabel="Save configuration"
+              busy={busy === 'config'}
+              serverErrors={configErrors}
+              onCancel={() => setConfigOpen(false)}
+              onSubmit={saveConfig}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </Card>
   );
 }

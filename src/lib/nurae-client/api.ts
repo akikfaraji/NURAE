@@ -190,6 +190,8 @@ export interface OfficialBotResponse {
     transport: string | null;
   };
   bot: BotDTO | null;
+  /** The official CS prompt rebuilt from current site settings. */
+  officialPrompt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +267,7 @@ export const nuraeApi = {
   // Public (no admin token): site info + customer auth + support chat.
   siteInfo: () => api<SiteInfoResponse>('/api/public/site-info'),
   register: (name: string, email: string, password: string) =>
-    api<{ ok: true; devCode?: string; notice?: string }>('/api/auth/register', {
+    api<{ ok: true; devCode?: string; notice?: string; mailError?: string }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({ name, email, password }),
     }),
@@ -288,6 +290,11 @@ export const nuraeApi = {
 
   // Admin-only platform endpoints.
   officialBot: () => api<OfficialBotResponse>('/api/official-bot'),
+  syncOfficialPrompt: () =>
+    api<{ bot: BotDTO; note: string }>('/api/official-bot', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'sync-prompt' }),
+    }),
   getSettings: () => api<{ settings: SiteInfoDTO }>('/api/settings'),
   saveSettings: (patch: Partial<SiteInfoDTO>) =>
     api<{ settings: SiteInfoDTO }>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),

@@ -189,14 +189,18 @@ export function NuraeConsole() {
                 Create and operate AI-powered Telegram bots. This is the {NURAE_VERSION} release.
               </p>
             </div>
-            <OfficialBotCard onOpenBot={openBotById} />
+            <OfficialBotCard onOpenBot={openBotById} catalog={catalog} />
           </div>
         )}
         {view.type === 'customers' ? (
           <CustomersView onBack={goHome} />
         ) : view.type === 'settings' ? (
           <SiteSettingsView onBack={goHome} />
-        ) : !catalog && view.type !== 'bot' ? (
+        ) : view.type === 'bot' && !catalog ? (
+          // The config dialog needs the provider catalog — never render the
+          // bot view (or its forms) with a null catalog.
+          <div className="text-sm text-muted-foreground">Loading console data…</div>
+        ) : !catalog ? (
           <div className="text-sm text-muted-foreground">Loading console data…</div>
         ) : view.type === 'overview' ? (
           <OverviewView

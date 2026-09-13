@@ -231,14 +231,33 @@ prepare_db() {
 }
 
 # --- 4. build -----------------------------------------------------------------
+# A stale build is worse than no build: after `git pull`, the old bundle keeps
+# serving OLD routes/UI while the source is new. Rebuild whenever any source
+# file is newer than the built server entry (or the version constant changed).
+build_is_stale() {
+  [[ -f .next/standalone/server.js ]] || return 0   # no build at all
+  local marker=".next/standalone/server.js"
+  # Version drift check: baked build records its version in server chunks.
+  if [[ -n "$VERSION_LINE" ]] && ! grep -rqF "$VERSION_LINE" .next/standalone 2>/dev/null; then
+    return 0
+  fi
+  # Newest source file vs build timestamp (src, prisma schema, public, config).
+  local newest
+  newest="$(find src prisma public next.config.ts package.json -type f -newer "$marker" -print -quit 2>/dev/null)"
+  [[ -n "$newest" ]]
+}
+
 maybe_build() {
   if [[ "$MODE" == "dev" ]]; then
     warn "dev mode: skipping the production build (hot reload, lighter on RAM)"
     return 0
   fi
-  if [[ "$MODE" == "start" && -f .next/standalone/server.js ]]; then
-    say "Reusing existing production build"
+  if [[ "$MODE" == "start" ]] && ! build_is_stale; then
+    say "Reusing existing production build (up to date)"
     return 0
+  fi
+  if [[ "$MODE" == "start" && -f .next/standalone/server.js ]]; then
+    warn "Existing build is STALE (source changed since it was built) — rebuilding"
   fi
   say "Building the production bundle (the heavy step — patience)"
   npm run build
@@ -248,6 +267,34 @@ maybe_build() {
 already_running() {
   command -v curl >/dev/null 2>&1 || return 1
   curl -sf --max-time 2 "http://127.0.0.1:${PORT_NUM}/api/health" >/dev/null 2>&1
+}
+
+running_version() {
+  curl -sf --max-time 2 "http://127.0.0.1:${PORT_NUM}/api/health" 2>/dev/null |
+    sed -n 's/.*"version":"\([^"]*\)".*/\1/p' | head -1
+}
+
+# A server that answers on the port is only “fine” if it is THIS version.
+# After git pull + setup.sh, a leftover old process must be replaced, or every
+# new route/UI keeps 404ing and the update looks broken.
+resolve_running_server() {
+  if ! already_running; then return 0; fi
+  local rv
+  rv="$(running_version)"
+  if [[ "x$rv" == "x$VERSION_LINE" ]]; then
+    warn "NURAE ${rv} is already running on port ${PORT_NUM} — nothing to start."
+    print_box
+    exit 0
+  fi
+  warn "Port ${PORT_NUM} is served by a STALE NURAE (${rv:-unknown}) but the source is ${VERSION_LINE}."
+  warn "Stopping the old process so the new build can take over..."
+  pkill -f 'next-server' 2>/dev/null || true
+  pkill -f 'standalone/server.js' 2>/dev/null || true
+  sleep 2
+  if already_running; then
+    die "Could not free port ${PORT_NUM} — stop the old server manually (pkill -f next-server) and re-run."
+  fi
+  say "Old server stopped. Starting ${VERSION_LINE}."
 }
 
 print_box() {
@@ -288,12 +335,7 @@ if [[ "$MODE" == "env" ]]; then
 fi
 
 maybe_build
-
-if already_running; then
-  warn "NURAE already answers on port ${PORT_NUM} — nothing to start."
-  print_box
-  exit 0
-fi
+resolve_running_server
 
 print_box
 say "Starting NURAE (Ctrl+C stops it)"

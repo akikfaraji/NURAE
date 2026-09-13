@@ -72,6 +72,35 @@ export async function ensureOfficialBot(): Promise<string | null> {
   }
 }
 
+/**
+ * One-time repair for bots created before the zai provider was removed
+ * (V00.01.008). Their rows still carry provider='zai' / glm models, which the
+ * config form cannot render (the provider is gone from the catalog) — the
+ * admin literally cannot edit those bots' API keys. Map them to openrouter.
+ * Idempotent: after the rewrite no row matches, so re-runs are no-ops.
+ */
+export async function migrateLegacyZaiBots(): Promise<number> {
+  try {
+    const stale = await db.bot.findMany({ where: { provider: 'zai' } });
+    for (const bot of stale) {
+      const model = /glm/i.test(bot.model) || bot.model === 'zai/free' ? 'openrouter/free' : bot.model;
+      await db.bot.update({ where: { id: bot.id }, data: { provider: 'openrouter', model } });
+      await db.log.create({
+        data: {
+          botId: bot.id,
+          level: 'info',
+          event: 'BOT_MIGRATED',
+          message: `Provider "zai" was retired — this bot now uses "openrouter" (model: ${model}). The AI key from OPENROUTER_API_KEY applies until you store a bot-specific key.`,
+        },
+      });
+    }
+    return stale.length;
+  } catch (err) {
+    console.error(`[NURAE] zai->openrouter migration failed: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
+}
+
 /** Get the official bot row (seeding first) or null when seeding is impossible. */
 export async function getOfficialBot() {
   const id = await ensureOfficialBot();
