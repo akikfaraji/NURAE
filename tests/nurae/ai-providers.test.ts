@@ -30,10 +30,11 @@ function makeProvider(overrides?: Partial<ConstructorParameters<typeof OpenAICom
 describe('provider registry & selector', () => {
   test('catalog covers the required provider families', () => {
     const ids = PROVIDER_CATALOG.map((p) => p.id);
-    for (const id of ['zai', 'openai', 'openrouter', 'deepseek', 'glm', 'local', 'custom']) {
+    for (const id of ['openai', 'openrouter', 'deepseek', 'glm', 'local', 'custom']) {
       expect(ids).toContain(id);
     }
-    expect(getProviderInfo('zai')?.requiresKey).toBe(false);
+    expect(ids).not.toContain('zai'); // built-in GLM removed
+    expect(getProviderInfo('openrouter')?.defaultModel).toBe('openrouter/free');
     expect(getProviderInfo('openai')?.requiresKey).toBe(true);
     expect(getProviderInfo('openai')?.defaultBaseUrl).toBe('https://api.openai.com/v1');
   });
@@ -56,8 +57,14 @@ describe('provider registry & selector', () => {
   });
 
   test('providerNeedsKey reflects the catalog', () => {
-    expect(providerNeedsKey('zai')).toBe(false);
+    expect(providerNeedsKey('openrouter')).toBe(true);
     expect(providerNeedsKey('openai')).toBe(true);
+  });
+
+  test('legacy zai provider id maps to openrouter', () => {
+    const sel = selectProvider('zai', { apiKey: 'k' });
+    expect(sel.provider.id).toBe('openrouter');
+    expect(sel.info.id).toBe('openrouter');
   });
 
   test('env var key fallback works when bot has no stored key', () => {
@@ -201,37 +208,6 @@ describe('OpenAI-compatible provider (mocked HTTP)', () => {
     const p = makeProvider({ fetchImpl: async () => jsonRes({ data: [] }) });
     const res = await p.validateCredentials(CONFIG);
     expect(res.valid).toBe(true);
-  });
-});
-
-describe('built-in zai provider', () => {
-  test('generate via mocked SDK client', async () => {
-    const fakeClient = {
-      chat: {
-        completions: {
-          create: async (args: Record<string, unknown>) => {
-            expect(Array.isArray(args.messages)).toBe(true);
-            return { choices: [{ message: { content: 'GLM says hi' } }] };
-          },
-        },
-      },
-    };
-    const p = new ZaiProvider({ factory: async () => fakeClient });
-    const out = await p.generate(MESSAGES, { model: 'glm-4.5-flash', temperature: 0.7, maxTokens: 256 });
-    expect(out).toBe('GLM says hi');
-  });
-
-  test('empty SDK response → invalid_response', async () => {
-    const fakeClient = {
-      chat: { completions: { create: async () => ({ choices: [] }) } },
-    };
-    const p = new ZaiProvider({ factory: async () => fakeClient });
-    try {
-      await p.generate(MESSAGES, { model: 'glm-4.5-flash', temperature: 0.7, maxTokens: 8 });
-      throw new Error('should have thrown');
-    } catch (err) {
-      expect((err as AIError).code).toBe('invalid_response');
-    }
   });
 });
 
