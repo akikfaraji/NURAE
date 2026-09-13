@@ -313,3 +313,21 @@ Work Log:
 Stage Summary:
 - Commits 5a0516d + d724912 pushed (V00.01.010-beta-03); user recovery: `cd ~/nurae/NURAE && git pull && bash setup.sh` — setup now auto-rebuilds stale builds and replaces a stale running server; after restart the official bot card has direct "Configure keys & prompt"
 - Honest notes: real Gmail delivery still UNTESTED end-to-end (no real app password in sandbox) — the mail-failure UI now names the exact cause if SMTP rejects; user's existing unverified account can simply register again or use Resend; OpenRouter key rotation STILL outstanding; user must re-enter their real OpenRouter key in the official bot card (the sandbox fake key was cleaned from the sandbox DB only)
+
+---
+Task ID: 15
+Agent: main (Super Z)
+Task: "AI output markdown shows raw (# and *) in Telegram" + "OTP mail never reached (log: connect ENETUNREACH 2404:…:465)" + user provided real Gmail credentials for diagnosis
+
+Work Log:
+- ROOT CAUSE (mail): nodemailer resolves smtp.gmail.com with its own resolver — c-ares dns.resolve4/resolve6 fail on Android/Termux (no readable /etc/resolv.conf), so it falls back to dns.lookup(all:true) and takes the FIRST address, which is the AAAA record → "connect ENETUNREACH 2404:6800:…:465" on networks without an IPv6 route. Fix: dns.setDefaultResultOrder('ipv4first') — process-wide in src/instrumentation.ts (runs at boot) AND defensively at mailer.ts module load; mailFailureHint gained an ENETUNREACH-specific actionable message
+- LIVE SMTP PROOF: scripts/test-smtp.js (credentials from env only, never stored) — user-supplied fraziymtech@gmail.com app password DELIVERED successfully (250 2.0.0 OK, gmail accepted); DNS before/after shown in test output (AAAA first verbatim → A first after fix). Credentials themselves were VALID all along; only the IPv6 route was broken
+- ROOT CAUSE (markdown): pipeline sent AI replies with no parse_mode (Telegram renders raw text). New src/lib/nurae/telegram/markdown.ts: dependency-free markdown → Telegram-HTML converter (# headings → <b>, **/__ → <b>, */_ → <i>, ~~ → <s>, `x` → <code>, ``` fences → <pre><code class=lang>, [t](url) + bare https URLs → <a> (safe schemes only), blockquotes → <blockquote>, bullets → •, table separator rows dropped, HR → ─ line); ALL text HTML-escaped before transforms (no entity injection possible), tags balanced by construction, unsafe schemes (javascript:) not linkified, snake_case protected
+- Delivery hardening: chunkTelegramMessage splits >4000-char replies at paragraph/line boundaries (4096 hard limit guard); pipeline.sendMarkdownReply = convert → chunk → send with parse_mode HTML + link previews disabled; on Telegram 400 (entities rejected) automatically resends the raw chunk as plain text (TELEGRAM_HTML_FALLBACK log) — the reply ALWAYS arrives; system texts (/start, /help, failures) stay plain mode unchanged
+- Tests: new tests/nurae/telegram-markdown.test.ts — 20 tests (converter, chunking incl. hard-slice, pipeline HTML send, 400 → plain fallback, /start stays plain). Tests caught 2 real bugs pre-push: bare-URL pass double-wrapped markdown-link hrefs (fixed: single combined link pass) + wrong fence expectation
+- Version V00.01.010 → V00.01.011-beta-03 (5 sync points); SETUP.md §10: ENETUNREACH + never-arrives troubleshooting rows
+- Verification: vitest 158/158 across 11 files (was 138/10); tsc clean in src (only pre-existing examples//scripts/e2e.ts scaffold errors); npm run build exit 0; standalone boot → /api/health V00.01.011-beta-03, / and /admin 200
+
+Stage Summary:
+- Commits pushed (V00.01.011-beta-03): OTP mail works on IPv6-less networks (user: git pull && bash setup.sh, then re-register); Telegram replies render markdown properly
+- Honest notes: user's Gmail app password arrived via chat — advise rotating it after testing; sandbox delivery test = self-send to fraziymtech@gmail.com (check inbox/spam); end-user inbox arrival on the user's device is expected but not observable from the sandbox; OpenRouter key rotation STILL outstanding

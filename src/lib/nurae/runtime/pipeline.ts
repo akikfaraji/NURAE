@@ -15,7 +15,11 @@
  * codes and pass through the sanitizer — secrets can never reach storage.
  */
 
-import type { TelegramAdapter } from '../telegram/adapter';
+import { TelegramApiError, type TelegramAdapter } from '../telegram/adapter';
+import {
+  chunkTelegramMessage,
+  telegramHtmlFromMarkdown,
+} from '../telegram/markdown';
 import { selectProvider } from '../ai/registry';
 import { AIError, ChatMessage } from '../ai/types';
 import type { RuntimeBotRecord, RuntimeStore } from './store';
@@ -136,7 +140,7 @@ export async function handleBotMessage(
   if (bot.memorySize > 0) {
     await store.trimConversation(bot.id, msg.chatId, bot.memorySize);
   }
-  await sendSafely(bot.id, sender, msg.chatId, reply, store, deps.signal);
+  await sendMarkdownReply(bot.id, sender, msg.chatId, reply, store, deps.signal);
 }
 
 /** Map a raw Telegram update into a pipeline message (transport helper). */
@@ -178,4 +182,47 @@ async function sendSafely(
     const detail = err instanceof Error ? err.message : String(err);
     await store.createLog(botId, 'warn', `Telegram send failed for chat ${chatId}: ${detail}`, 'TELEGRAM_SEND_FAILED');
   }
+}
+
+/**
+ * Deliver an AI reply: markdown → Telegram HTML (bold/code/links render),
+ * split into ≤4096-char chunks, and — if Telegram rejects the HTML — a
+ * plain-text retry so the user ALWAYS receives the answer.
+ */
+async function sendMarkdownReply(
+  botId: string,
+  sender: MessageSender,
+  chatId: string,
+  text: string,
+  store: RuntimeStore,
+  signal?: AbortSignal | null,
+): Promise<void> {
+  const chunks = chunkTelegramMessage(text);
+  for (const chunk of chunks) {
+    const html = telegramHtmlFromMarkdown(chunk);
+    try {
+      await sender.sendMessage(chatId, html, { signal: signal ?? undefined, parseMode: 'HTML' });
+    } catch (err) {
+      if (err instanceof TelegramApiError && err.status === 400) {
+        // Telegram refused the entity markup (should not happen — the
+        // converter only emits balanced escaped HTML) — degrade to plain.
+        await store.createLog(
+          botId,
+          'warn',
+          `Telegram rejected HTML entities for chat ${chatId}; resending as plain text.`,
+          'TELEGRAM_HTML_FALLBACK',
+        );
+        try {
+          await sender.sendMessage(chatId, chunk, { signal: signal ?? undefined });
+        } catch (fallbackErr) {
+          const detail = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          await store.createLog(botId, 'warn', `Telegram send failed for chat ${chatId}: ${detail}`, 'TELEGRAM_SEND_FAILED');
+        }
+      } else {
+        const detail = err instanceof Error ? err.message : String(err);
+        await store.createLog(botId, 'warn', `Telegram send failed for chat ${chatId}: ${detail}`, 'TELEGRAM_SEND_FAILED');
+      }
+    }
+  }
+  await store.createLog(botId, 'info', `AI reply delivered to chat ${chatId} (${text.length} chars, ${chunks.length} message(s)).`, 'TELEGRAM_MESSAGE_SENT');
 }

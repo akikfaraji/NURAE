@@ -138,7 +138,7 @@ npm run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.010-beta-03",...}`
+`{"status":"ok","version":"V00.01.011-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and
@@ -387,3 +387,5 @@ Complete, commented list: **`.env.example`** in the repo root. Summary:
 | Forgot `NURAE_ADMIN_TOKEN` | Read it from `.env`; it is not hashed (it is a bearer credential) |
 | Port already in use | `PORT=3000` taken → change `PORT` in `.env` and restart |
 | Login works but bots vanish after restart | In-memory runtime — start bots again from the dashboard; config persists in the DB |
+| `verification mail … failed: connect ENETUNREACH 2404:…:465` | Your network has no IPv6 route while DNS answered with an AAAA record → fixed in V00.01.011 (NURAE forces IPv4); `git pull`, restart, try again. If it persists, switch Wi-Fi ↔ mobile data or check VPN |
+| Verification email never arrives (no error in logs) | Check spam; codes expire in 15 min — register again and use the NEWEST mail; verify `NURAE_GMAIL_USER` / `NURAE_GMAIL_APP_PASSWORD` (16 chars, no spaces) in `.env`, then restart |

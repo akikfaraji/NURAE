@@ -14,6 +14,20 @@
  */
 
 import { createTransport, type Transporter } from 'nodemailer';
+import dns from 'node:dns';
+
+// Belt-and-braces for the ENETUNREACH IPv6 failure (the process-wide fix
+// lives in src/instrumentation.ts): nodemailer resolves smtp.gmail.com with
+// its own resolver — on Android/Termux the c-ares resolve4/resolve6 calls
+// fail (no readable /etc/resolv.conf) and it falls back to dns.lookup with
+// `all: true`, taking the FIRST address. Without this line that is the AAAA
+// record, and connecting to it dies with "connect ENETUNREACH 2404:…:465"
+// on networks without an IPv6 route. Idempotent; harmless with IPv6.
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  /* Node < 17 — verbatim order already */
+}
 
 export interface MailConfig {
   user: string;
@@ -103,6 +117,9 @@ export function mailFailureHint(detail: string): string {
   }
   if (d.includes('authentication') || d.includes('auth')) {
     return 'Gmail SMTP authentication failed — check NURAE_GMAIL_USER and NURAE_GMAIL_APP_PASSWORD (no spaces), then restart.';
+  }
+  if (d.includes('enetunreach')) {
+    return 'This device could not open a route to smtp.gmail.com (the network tried an unreachable IPv6 address). NURAE now forces IPv4 — restart the server (bash setup.sh) and try again. If it still fails, switch networks (Wi-Fi ↔ mobile data) or check any active VPN.';
   }
   if (d.includes('timeout') || d.includes('enet') || d.includes('econnrefused') || d.includes('dns') || d.includes('getaddrinfo')) {
     return 'Could not reach smtp.gmail.com — check this device\u2019s internet connection, then try again.';

@@ -209,11 +209,15 @@ export class TelegramAdapter {
     );
   }
 
-  /** Send a plain-text message. Throws TelegramApiError on failure. */
+  /**
+   * Send a message. Throws TelegramApiError on failure.
+   * With `parseMode: 'HTML'` the text must already be Telegram-HTML
+   * (see ./markdown.ts); plain mode sends raw text with no parse_mode.
+   */
   async sendMessage(
     chatId: number | string,
     text: string,
-    opts?: { replyToMessageId?: number; signal?: AbortSignal },
+    opts?: { replyToMessageId?: number; signal?: AbortSignal; parseMode?: 'HTML' },
   ): Promise<void> {
     await this.call<unknown>(
       'sendMessage',
@@ -221,7 +225,11 @@ export class TelegramAdapter {
         chat_id: chatId,
         text,
         reply_to_message_id: opts?.replyToMessageId,
-        // Plain text for this release: no parse_mode, no injection surface.
+        // HTML mode renders AI markdown (bold/code/links); link previews are
+        // disabled to keep AI answers compact. Plain mode stays untouched.
+        ...(opts?.parseMode
+          ? { parse_mode: opts.parseMode, link_preview_options: { is_disabled: true } }
+          : {}),
       },
       opts,
     );
