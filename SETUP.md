@@ -138,7 +138,7 @@ npm run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.011-beta-03",...}`
+`{"status":"ok","version":"V00.01.012-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and

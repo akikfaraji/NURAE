@@ -12,17 +12,12 @@
 
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  // Prefer IPv4 for every outbound connection in this process. Android/Termux
-  // deployments often lack an IPv6 route while DNS still answers with AAAA
-  // records first — nodemailer's resolver then picks the unreachable IPv6
-  // address and OTP mail fails with "connect ENETUNREACH 2404:…:465".
-  // Harmless on IPv6-capable networks (IPv4 simply wins the race).
-  try {
-    const dns = await import('node:dns');
-    dns.setDefaultResultOrder('ipv4first');
-  } catch {
-    /* older Node without setDefaultResultOrder — keep verbatim order */
-  }
+  // NOTE: no node:dns / nodemailer / other Node-only imports here — this file
+  // is compiled for BOTH the Node and Edge runtime targets in dev, and any
+  // Node module in it trips Turbopack's "not supported in the Edge Runtime"
+  // warning on every request. The IPv4-first DNS preference (Android/Termux
+  // ENETUNREACH fix) lives in src/lib/nurae/auth/mailer.ts, whose module-scope
+  // side effect runs on the Node-only auth routes before any SMTP call.
   const { ensureOfficialBot, migrateLegacyZaiBots } = await import('./lib/nurae/auth/official-bot');
   await ensureOfficialBot();
   const migrated = await migrateLegacyZaiBots();

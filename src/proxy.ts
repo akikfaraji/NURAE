@@ -20,15 +20,18 @@ import { readGatewayLink } from '@/lib/gateway/store';
  * backend, which carries NURAE_LINK_FRONTEND_URL + NURAE_GATEWAY_KEY) must
  * never proxy its own API — it has no link store of its own and would
  * otherwise answer 503 to its own health checks (and so would the frontend's
- * chain verification). Backend ⇒ middleware is a no-op pass-through.
+ * chain verification). Backend ⇒ proxy is a no-op pass-through.
  *
- * Precedence note: middleware runs before next.config.ts rewrites, so an
+ * Precedence note: the proxy runs before next.config.ts rewrites, so an
  * accepted gateway link wins over a build-time NURAE_BACKEND_URL. Without
- * NURAE_GATEWAY_KEY this middleware is a no-op pass-through and the app
+ * NURAE_GATEWAY_KEY this proxy is a no-op pass-through and the app
  * behaves exactly as in single-process mode (local dev, Actions runner).
+ *
+ * Next.js 16.3: the "middleware" file convention was renamed to "proxy"
+ * (file src/proxy.ts, exported function `proxy`) — same runtime behaviour.
  */
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   if (pathname === '/api' || pathname.startsWith('/api/gateway/')) {
     return NextResponse.next(); // control routes are served locally

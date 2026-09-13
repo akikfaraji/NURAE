@@ -331,3 +331,19 @@ Work Log:
 Stage Summary:
 - Commits pushed (V00.01.011-beta-03): OTP mail works on IPv6-less networks (user: git pull && bash setup.sh, then re-register); Telegram replies render markdown properly
 - Honest notes: user's Gmail app password arrived via chat — advise rotating it after testing; sandbox delivery test = self-send to fraziymtech@gmail.com (check inbox/spam); end-user inbox arrival on the user's device is expected but not observable from the sandbox; OpenRouter key rotation STILL outstanding
+
+---
+Task ID: 16
+Agent: main (Super Z)
+Task: fix dev-server warning spam ("node:dns not supported in Edge Runtime" on every request + middleware→proxy deprecation) and create bug-reports.md alongside worklog.md (user request)
+
+Work Log:
+- BR-005 first attempt FAILED: /* turbopackIgnore: true */ on await import('node:dns') did NOT silence Turbopack 16.3.4's Edge-runtime static analysis (verified by booting dev + scanning log — warning persisted). Root fix instead: instrumentation.ts is compiled for BOTH runtime targets in dev, so ALL Node-only code was removed from it; the ipv4first DNS side effect stays solely in mailer.ts (Node-only auth-route bundle, module-scope → guaranteed to run before any sendMail). instrumentation.ts carries a NOTE comment so nobody reintroduces Node imports there
+- BR-006: verified the proxy convention in the installed next 16.3.4 dist (PROXY_FILENAME, "must export a function named `proxy` or a default function") → git mv src/middleware.ts src/proxy.ts + export middleware()→proxy() + comment updates; only comment references elsewhere (gateway/store.ts), no test imports affected
+- VERIFICATION: dev boot (next dev, Turbopack) → log scanned: zero Edge-Runtime/deprecation/"Ecmascript file had an error" lines, requests flow through proxy.ts; vitest 158/158 (11 files); tsc clean in src (pre-existing skills//examples//scripts/e2e.ts scaffold errors only); npm run build exit 0 (only a pre-existing tracing hint warning); standalone boot → /api/health V00.01.012-beta-03, / and /admin 200
+- bug-reports.md created (user request): BR-001…BR-006 with symptom → root cause → fix → status/version mapping, notes on evidence, spam/newest-code guidance, credential-rotation reminders (no secrets, emails masked)
+- Version V00.01.011 → V00.01.012-beta-03 (5 sync points)
+
+Stage Summary:
+- Dev log is clean; middleware officially migrated to the Next 16.3 proxy convention; bug-reports.md is now the user-facing bug history, worklog.md stays the technical log; both committed (no secrets)
+- Honest notes: IPv4-first now applies only to the SMTP path (that is the only path that ever failed); the sandbox dev-boot warning scan is evidence, but the user should confirm their own console is clean after git pull; OpenRouter key rotation STILL outstanding
