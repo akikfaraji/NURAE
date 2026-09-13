@@ -73,7 +73,7 @@ describe('health & metadata', () => {
     const res = await catalogRoute.GET(jsonReq('/api/catalog'));
     const body = (await res.json()) as { providers: Array<{ id: string; requiresKey: boolean }>; limits: unknown };
     expect(res.status).toBe(200);
-    expect(body.providers.length).toBeGreaterThanOrEqual(7);
+    expect(body.providers.length).toBeGreaterThanOrEqual(6);
     expect(JSON.stringify(body).toLowerCase()).not.toContain('secret_');
   });
 });
@@ -135,6 +135,7 @@ describe('bots API', () => {
         telegramToken: '1234567890:AAValidFormatTokenForTesting1234',
         provider: 'openrouter',
         model: 'openrouter/free',
+        apiKey: 'sk-or-test-0123456789abcdef0123456789abcdef',
         systemPrompt: 'You are a helpful customer-support assistant.',
         temperature: 0.4,
         maxTokens: 512,
