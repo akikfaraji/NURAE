@@ -5,9 +5,8 @@
  * adding a provider later does not require rewriting the Telegram system.
  *
  *   AIProvider
- *   ├── zai        (GLM, built-in via z-ai-web-dev-sdk — zero-config)
  *   ├── openai     (OpenAI-compatible HTTP)
- *   ├── openrouter (OpenAI-compatible HTTP)
+ *   ├── openrouter (OpenAI-compatible HTTP — free models included)
  *   ├── deepseek   (OpenAI-compatible HTTP)
  *   ├── glm        (Zhipu open platform — OpenAI-compatible HTTP)
  *   ├── local      (Ollama / llama.cpp / vLLM — OpenAI-compatible HTTP)

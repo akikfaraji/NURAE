@@ -10,24 +10,24 @@ import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 const STATUS_STYLES: Record<string, { label: string; className: string }> = {
-  running: { label: 'Running', className: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-  starting: { label: 'Starting…', className: 'bg-amber-100 text-amber-800 border-amber-300' },
-  stopping: { label: 'Stopping…', className: 'bg-amber-100 text-amber-800 border-amber-300' },
-  stopped: { label: 'Stopped', className: 'bg-zinc-100 text-zinc-700 border-zinc-300' },
-  error: { label: 'Error', className: 'bg-red-100 text-red-800 border-red-300' },
+  running: { label: 'Running', className: 'bg-foreground text-background border-transparent' },
+  starting: { label: 'Starting…', className: 'bg-muted text-foreground border-border' },
+  stopping: { label: 'Stopping…', className: 'bg-muted text-foreground border-border' },
+  stopped: { label: 'Stopped', className: 'bg-muted text-foreground border-border' },
+  error: { label: 'Error', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
-  const style = STATUS_STYLES[status] ?? { label: status, className: 'bg-zinc-100 text-zinc-700 border-zinc-300' };
+  const style = STATUS_STYLES[status] ?? { label: status, className: 'bg-muted text-foreground border-border' };
   return (
     <Badge variant="outline" className={cn(style.className, className)} data-testid={`bot-status-${status}`}>
       <span
         className={cn(
           'mr-1.5 inline-block h-1.5 w-1.5 rounded-full',
-          status === 'running' && 'animate-pulse bg-emerald-500',
-          status === 'error' && 'bg-red-500',
-          (status === 'starting' || status === 'stopping') && 'animate-pulse bg-amber-500',
-          status === 'stopped' && 'bg-zinc-400',
+          status === 'running' && 'animate-pulse bg-foreground',
+          status === 'error' && 'bg-destructive',
+          (status === 'starting' || status === 'stopping') && 'animate-pulse bg-muted-foreground',
+          status === 'stopped' && 'bg-muted-foreground/60',
         )}
       />
       {style.label}
@@ -45,15 +45,15 @@ export function StatCard({
   accent?: 'emerald' | 'zinc' | 'red';
 }) {
   return (
-    <Card className="border-zinc-200 shadow-sm">
+    <Card className="border-border shadow-sm">
       <CardContent className="p-4 sm:p-6">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         <p
           className={cn(
             'mt-1 text-2xl font-semibold tabular-nums sm:text-3xl',
-            accent === 'emerald' && 'text-emerald-600',
-            accent === 'red' && 'text-red-600',
-            (!accent || accent === 'zinc') && 'text-zinc-900',
+            '' && '',
+            
+            (!accent || accent === 'zinc') && 'text-foreground',
           )}
         >
           {value}
@@ -73,9 +73,9 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 px-6 py-12 text-center">
-      <h3 className="text-sm font-semibold text-zinc-900">{title}</h3>
-      <p className="mt-1 max-w-sm text-sm text-zinc-500">{description}</p>
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );
@@ -86,8 +86,8 @@ export function BotMeta({ items }: { items: Array<{ label: string; value: React.
     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
       {items.map((item) => (
         <div key={item.label} className="min-w-0">
-          <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">{item.label}</dt>
-          <dd className="mt-0.5 truncate text-sm font-medium text-zinc-900">{item.value}</dd>
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
+          <dd className="mt-0.5 truncate text-sm font-medium text-foreground">{item.value}</dd>
         </div>
       ))}
     </dl>

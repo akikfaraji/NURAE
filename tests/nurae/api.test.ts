@@ -133,8 +133,8 @@ describe('bots API', () => {
       jsonReq(`/api/projects/${projectId}/bots`, {
         name: 'Support',
         telegramToken: '1234567890:AAValidFormatTokenForTesting1234',
-        provider: 'zai',
-        model: 'glm-4.5-flash',
+        provider: 'openrouter',
+        model: 'openrouter/free',
         systemPrompt: 'You are a helpful customer-support assistant.',
         temperature: 0.4,
         maxTokens: 512,
@@ -174,7 +174,7 @@ describe('bots API', () => {
 
   test('bot with malformed telegram token → 422', async () => {
     const res = await projectBotsRoute.POST(
-      jsonReq(`/api/projects/${projectId}/bots`, { name: 'Bad token', telegramToken: 'not-a-token', provider: 'zai', model: 'glm-4.5-flash' }),
+      jsonReq(`/api/projects/${projectId}/bots`, { name: 'Bad token', telegramToken: 'not-a-token', provider: 'openrouter', model: 'openrouter/free' }),
       ctx(projectId),
     );
     expect(res.status).toBe(422);
@@ -187,8 +187,8 @@ describe('bots API', () => {
       jsonReq(`/api/projects/${projectId}/bots`, {
         name: 'Hot',
         telegramToken: '1234567890:AAValidFormatTokenForTesting1234',
-        provider: 'zai',
-        model: 'glm-4.5-flash',
+        provider: 'openrouter',
+        model: 'openrouter/free',
         temperature: 5,
       }),
       ctx(projectId),

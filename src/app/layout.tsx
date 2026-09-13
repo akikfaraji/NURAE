@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: `${NURAE_NAME} — ${NURAE_VENDOR}`,
   description: `${NURAE_NAME} ${NURAE_VERSION} — ${NURAE_TAGLINE}. AI-powered Telegram bot creation and operation.`,
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/icon.svg",
   },
 };
 
@@ -28,10 +28,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}>
         {children}
-        <Toaster position="top-center" richColors />
+        <Toaster position="top-center" theme="dark" />
       </body>
     </html>
   );

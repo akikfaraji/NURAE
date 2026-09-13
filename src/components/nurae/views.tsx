@@ -72,14 +72,14 @@ export function OverviewView({
         <StatCard label="Errors" value={stats?.errors ?? '—'} accent={stats && stats.errors > 0 ? 'red' : 'zinc'} />
       </div>
 
-      <Card className="border-zinc-200">
+      <Card className="border-border">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-base">Projects</CardTitle>
               <CardDescription>Group bots into projects.</CardDescription>
             </div>
-            <Button size="sm" onClick={onGoProjects} className="bg-emerald-600 text-white hover:bg-emerald-700">
+            <Button size="sm" onClick={onGoProjects} >
               Manage projects
             </Button>
           </div>
@@ -90,24 +90,24 @@ export function OverviewView({
               title="No projects yet"
               description="Create your first project to start building AI-powered Telegram bots."
               action={
-                <Button onClick={onGoProjects} className="bg-emerald-600 text-white hover:bg-emerald-700">
+                <Button onClick={onGoProjects} >
                   Create project
                 </Button>
               }
             />
           ) : (
-            <ul className="divide-y divide-zinc-100">
+            <ul className="divide-y divide-border">
               {projects.map((p) => (
                 <li key={p.id}>
                   <button
-                    className="flex w-full items-center justify-between rounded-md px-2 py-3 text-left hover:bg-zinc-50"
+                    className="flex w-full items-center justify-between rounded-md px-2 py-3 text-left hover:bg-muted/50"
                     onClick={() => onOpenProject(p.id)}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-900">{p.name}</p>
-                      <p className="truncate text-xs text-zinc-500">{p.description || 'No description'}</p>
+                      <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{p.description || 'No description'}</p>
                     </div>
-                    <div className="ml-4 flex shrink-0 items-center gap-2 text-xs text-zinc-500">
+                    <div className="ml-4 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                       <span>
                         {p.activeBots}/{p.botCount} active
                       </span>
@@ -183,10 +183,10 @@ export function ProjectsView({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Projects</h2>
-          <p className="text-sm text-zinc-500">Each project groups related bots.</p>
+          <h2 className="text-lg font-semibold text-foreground">Projects</h2>
+          <p className="text-sm text-muted-foreground">Each project groups related bots.</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="create-project">
+        <Button onClick={() => setCreateOpen(true)}  data-testid="create-project">
           Create project
         </Button>
       </div>
@@ -194,9 +194,9 @@ export function ProjectsView({
       {projects === null ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="animate-pulse border-zinc-200 p-6">
-              <div className="h-4 w-1/3 rounded bg-zinc-200" />
-              <div className="mt-3 h-3 w-2/3 rounded bg-zinc-100" />
+            <Card key={i} className="animate-pulse border-border p-6">
+              <div className="h-4 w-1/3 rounded bg-muted" />
+              <div className="mt-3 h-3 w-2/3 rounded bg-muted" />
             </Card>
           ))}
         </div>
@@ -205,7 +205,7 @@ export function ProjectsView({
           title="No projects yet"
           description="Create your first project to start building AI-powered Telegram bots."
           action={
-            <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 text-white hover:bg-emerald-700">
+            <Button onClick={() => setCreateOpen(true)} >
               Create project
             </Button>
           }
@@ -215,7 +215,7 @@ export function ProjectsView({
           {projects.map((p) => (
             <Card
               key={p.id}
-              className="cursor-pointer border-zinc-200 transition-shadow hover:shadow-md"
+              className="cursor-pointer border-border transition-shadow hover:shadow-md"
               onClick={() => onOpenProject(p.id)}
               role="button"
               tabIndex={0}
@@ -225,12 +225,12 @@ export function ProjectsView({
                 <CardTitle className="text-base">{p.name}</CardTitle>
                 <CardDescription className="line-clamp-2">{p.description || 'No description'}</CardDescription>
               </CardHeader>
-              <CardContent className="flex items-center justify-between text-xs text-zinc-500">
+              <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
                   {p.botCount} bot{p.botCount === 1 ? '' : 's'}
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-foreground" />
                   {p.activeBots} active
                 </span>
               </CardContent>
@@ -272,7 +272,7 @@ export function ProjectsView({
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={busy} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="project-submit">
+            <Button onClick={handleCreate} disabled={busy}  data-testid="project-submit">
               {busy ? 'Creating…' : 'Create project'}
             </Button>
           </DialogFooter>
@@ -327,13 +327,13 @@ export function ProjectView({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <Button variant="ghost" size="sm" className="-ml-2 text-zinc-500" onClick={onBack}>
+          <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={onBack}>
             ← Projects
           </Button>
-          <h2 className="truncate text-lg font-semibold text-zinc-900">{project?.name ?? '…'}</h2>
-          <p className="truncate text-sm text-zinc-500">{project?.description || 'No description'}</p>
+          <h2 className="truncate text-lg font-semibold text-foreground">{project?.name ?? '…'}</h2>
+          <p className="truncate text-sm text-muted-foreground">{project?.description || 'No description'}</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="create-bot">
+        <Button onClick={() => setCreateOpen(true)}  data-testid="create-bot">
           Create bot
         </Button>
       </div>
@@ -343,7 +343,7 @@ export function ProjectView({
           title="No bots in this project"
           description="Create an AI-powered Telegram bot: pick a provider, paste the Telegram token, and start it."
           action={
-            <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 text-white hover:bg-emerald-700">
+            <Button onClick={() => setCreateOpen(true)} >
               Create bot
             </Button>
           }
@@ -353,7 +353,7 @@ export function ProjectView({
           {bots.map((b) => (
             <Card
               key={b.id}
-              className="cursor-pointer border-zinc-200 transition-shadow hover:shadow-md"
+              className="cursor-pointer border-border transition-shadow hover:shadow-md"
               onClick={() => onOpenBot(b.id)}
               role="button"
               tabIndex={0}
@@ -367,9 +367,9 @@ export function ProjectView({
                 </div>
                 <CardDescription className="line-clamp-1">{b.description || 'No description'}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-1 text-xs text-zinc-500">
+              <CardContent className="space-y-1 text-xs text-muted-foreground">
                 <p>
-                  <span className="font-medium text-zinc-700">{b.telegramUsername ?? 'Telegram: not verified'}</span>
+                  <span className="font-medium text-foreground">{b.telegramUsername ?? 'Telegram: not verified'}</span>
                 </p>
                 <p>
                   {b.provider} · {b.model}

@@ -23,9 +23,9 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 const LOG_COLORS: Record<LogEntry['level'], string> = {
-  info: 'text-zinc-300',
-  warn: 'text-amber-300',
-  error: 'text-red-400',
+  info: 'text-muted-foreground',
+  warn: 'text-muted-foreground',
+  error: 'text-destructive',
 };
 
 function timeOf(ts: string): string {
@@ -172,25 +172,25 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Button variant="ghost" size="sm" className="-ml-2 text-zinc-500" onClick={onBack}>
+          <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={onBack}>
             ← Back
           </Button>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="truncate text-lg font-semibold text-zinc-900" data-testid="bot-title">
+            <h2 className="truncate text-lg font-semibold text-foreground" data-testid="bot-title">
               {bot.name}
             </h2>
             <StatusBadge status={bot.status} />
             {bot.transport && (
-              <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-500">
+              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                 {bot.transport === 'webhook' ? 'webhook transport' : 'polling transport'}
               </span>
             )}
             {runtime.managed && runtime.pendingUpdateCount !== null && runtime.pendingUpdateCount > 5 && (
-              <span className="text-xs text-amber-600">{runtime.pendingUpdateCount} updates queued</span>
+              <span className="text-xs text-muted-foreground">{runtime.pendingUpdateCount} updates queued</span>
             )}
           </div>
           {bot.statusDetail && (
-            <p className="mt-1 max-w-2xl text-sm text-red-600" role="alert">
+            <p className="mt-1 max-w-2xl text-sm text-destructive" role="alert">
               {bot.statusDetail}
             </p>
           )}
@@ -199,7 +199,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
           <Button
             onClick={() => lifecycle('start')}
             disabled={busy !== null || bot.status === 'running' || !bot.enabled}
-            className="bg-emerald-600 text-white hover:bg-emerald-700"
+            
             data-testid="start-bot"
           >
             {busy === 'start' ? 'Starting…' : 'Start'}
@@ -219,7 +219,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-zinc-200">
+        <Card className="border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Overview</CardTitle>
             <CardDescription>Identity and runtime info.</CardDescription>
@@ -246,22 +246,22 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
               <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)} data-testid="edit-config">
                 Edit configuration
               </Button>
-              <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50" onClick={removeBot} disabled={busy !== null}>
+              <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={removeBot} disabled={busy !== null}>
                 Delete
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-zinc-200">
+        <Card className="border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Current configuration</CardTitle>
             <CardDescription>Secrets are encrypted and never displayed.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">System prompt</p>
-              <p className="mt-1 whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-sm text-zinc-800">{bot.systemPrompt}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">System prompt</p>
+              <p className="mt-1 whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-sm text-foreground">{bot.systemPrompt}</p>
             </div>
             <BotMeta
               items={[
@@ -278,7 +278,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
         </Card>
       </div>
 
-      <Card className="border-zinc-200">
+      <Card className="border-border">
         <CardHeader className="pb-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -291,7 +291,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
                   key={level}
                   size="sm"
                   variant={logFilter === level ? 'default' : 'ghost'}
-                  className={logFilter === level ? 'bg-zinc-900 text-white' : 'text-zinc-500'}
+                  className={logFilter === level ? 'bg-foreground text-white' : 'text-muted-foreground'}
                   onClick={() => setLogFilter(level)}
                 >
                   {level}
@@ -301,14 +301,14 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
           </div>
         </CardHeader>
         <CardContent>
-          <div className="max-h-96 overflow-y-auto rounded-md bg-zinc-950 p-3 font-mono text-xs leading-relaxed" data-testid="logs-panel">
+          <div className="max-h-96 overflow-y-auto rounded-md bg-background p-3 font-mono text-xs leading-relaxed" data-testid="logs-panel">
             {filteredLogs.length === 0 ? (
-              <p className="p-4 text-center text-zinc-500">No log entries yet. Start the bot and interact with it on Telegram.</p>
+              <p className="p-4 text-center text-muted-foreground">No log entries yet. Start the bot and interact with it on Telegram.</p>
             ) : (
               filteredLogs.map((l) => (
                 <p key={l.id} className={cn('whitespace-pre-wrap break-words py-0.5', LOG_COLORS[l.level])}>
-                  <span className="text-zinc-500">{timeOf(l.timestamp)} </span>
-                  <span className="uppercase text-zinc-400">[{l.level}] </span>
+                  <span className="text-muted-foreground">{timeOf(l.timestamp)} </span>
+                  <span className="uppercase text-muted-foreground">[{l.level}] </span>
                   {l.message}
                 </p>
               ))

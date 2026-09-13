@@ -71,7 +71,7 @@ export function NuraeConsole() {
   if (!checked) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-sm text-zinc-500">Loading NURAE console…</div>
+        <div className="text-sm text-muted-foreground">Loading NURAE console…</div>
       </div>
     );
   }
@@ -81,29 +81,29 @@ export function NuraeConsole() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50">
-      <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur">
+    <div className="flex min-h-screen flex-col bg-muted/50">
+      <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <button
             className="flex items-center gap-3 text-left"
             onClick={() => setView({ type: 'overview' })}
             aria-label="Go to overview"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-900 font-bold text-emerald-400">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground font-bold text-background">
               N
             </span>
             <span>
-              <span className="block text-sm font-semibold tracking-wide text-zinc-900">
-                NURAE <span className="font-mono text-xs text-zinc-500">{NURAE_VERSION}</span>
+              <span className="block text-sm font-semibold tracking-wide text-foreground">
+                NURAE <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
               </span>
-              <span className="block text-[11px] uppercase tracking-widest text-zinc-400">FRAZIYM TECH &amp; AI</span>
+              <span className="block text-[11px] uppercase tracking-widest text-muted-foreground">FRAZIYM TECH &amp; AI</span>
             </span>
           </button>
           <nav className="flex items-center gap-1" aria-label="Main">
             <Button
               variant="ghost"
               size="sm"
-              className={view.type === 'overview' ? 'bg-zinc-100 font-medium text-zinc-900' : 'text-zinc-500'}
+              className={view.type === 'overview' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
               onClick={() => setView({ type: 'overview' })}
             >
               Dashboard
@@ -111,7 +111,7 @@ export function NuraeConsole() {
             <Button
               variant="ghost"
               size="sm"
-              className={view.type === 'projects' || view.type === 'project' ? 'bg-zinc-100 font-medium text-zinc-900' : 'text-zinc-500'}
+              className={view.type === 'projects' || view.type === 'project' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
               onClick={() => setView({ type: 'projects' })}
             >
               Projects
@@ -120,17 +120,17 @@ export function NuraeConsole() {
               className={
                 'ml-2 hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs sm:inline-flex ' +
                 (coreUp === null
-                  ? 'border-zinc-200 text-zinc-400'
+                  ? 'border-border text-muted-foreground'
                   : coreUp
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                    : 'border-red-300 bg-red-50 text-red-700')
+                    ? 'border-border bg-muted text-foreground'
+                    : 'border-destructive/40 bg-destructive/10 text-destructive')
               }
               title={coreUp ? 'NURAE core reachable' : 'NURAE core unreachable — API calls will fail'}
             >
               <span
                 className={
                   'inline-block h-1.5 w-1.5 rounded-full ' +
-                  (coreUp === null ? 'bg-zinc-300' : coreUp ? 'bg-emerald-500' : 'bg-red-500')
+                  (coreUp === null ? 'bg-muted-foreground/40' : coreUp ? 'bg-foreground' : 'bg-destructive')
                 }
               />
               Core {coreUp === null ? '…' : coreUp ? 'online' : 'offline'}
@@ -142,14 +142,14 @@ export function NuraeConsole() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         {view.type === 'overview' && (
           <div className="mb-6">
-            <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Autonomous Digital Operations</h1>
-            <p className="text-sm text-zinc-500">
+            <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Autonomous Digital Operations</h1>
+            <p className="text-sm text-muted-foreground">
               Create and operate AI-powered Telegram bots. This is the {NURAE_VERSION} release.
             </p>
           </div>
         )}
         {!catalog && view.type !== 'bot' ? (
-          <div className="text-sm text-zinc-500">Loading console data…</div>
+          <div className="text-sm text-muted-foreground">Loading console data…</div>
         ) : view.type === 'overview' ? (
           <OverviewView
             catalog={catalog!}
@@ -174,8 +174,8 @@ export function NuraeConsole() {
         )}
       </main>
 
-      <footer className="mt-auto border-t border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-zinc-500 sm:px-6">
+      <footer className="mt-auto border-t border-border bg-background">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:px-6">
           <span>
             NURAE <span className="font-mono">{NURAE_VERSION}</span> — Autonomous Digital Operations System
           </span>
@@ -206,14 +206,14 @@ function LoginGate({ onAuthenticated }: { onAuthenticated: () => void | Promise<
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
-      <Card className="w-full max-w-sm border-zinc-200">
+    <div className="flex min-h-screen items-center justify-center bg-muted/50 px-4">
+      <Card className="w-full max-w-sm border-border">
         <CardHeader className="text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-900 text-xl font-bold text-emerald-400">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-foreground text-xl font-bold text-background">
             N
           </span>
           <CardTitle className="mt-2 text-lg">
-            NURAE <span className="font-mono text-xs text-zinc-500">{NURAE_VERSION}</span>
+            NURAE <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
           </CardTitle>
           <CardDescription>Enter the admin token to access the console.</CardDescription>
         </CardHeader>
@@ -230,11 +230,11 @@ function LoginGate({ onAuthenticated }: { onAuthenticated: () => void | Promise<
                 placeholder="NURAE_ADMIN_TOKEN"
               />
             </div>
-            <Button type="submit" className="w-full bg-emerald-600 text-white hover:bg-emerald-700" disabled={busy}>
+            <Button type="submit" className="w-full" disabled={busy}>
               {busy ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
-          <p className="mt-4 text-center text-xs text-zinc-400">FRAZIYM TECH &amp; AI</p>
+          <p className="mt-4 text-center text-xs text-muted-foreground">FRAZIYM TECH &amp; AI</p>
         </CardContent>
       </Card>
     </div>

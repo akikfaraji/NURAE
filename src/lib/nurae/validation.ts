@@ -33,7 +33,7 @@ export const LIMITS = {
 // AI providers (kept in sync with src/lib/nurae/ai/providers.ts)
 // ---------------------------------------------------------------------------
 
-export const PROVIDER_IDS = ['zai', 'openai', 'openrouter', 'deepseek', 'glm', 'local', 'custom'] as const;
+export const PROVIDER_IDS = ['openai', 'openrouter', 'deepseek', 'glm', 'local', 'custom'] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 // ---------------------------------------------------------------------------
@@ -77,8 +77,8 @@ export const createBotSchema = z.object({
     .min(1, 'Telegram bot token is required')
     .max(128, 'Telegram bot token looks invalid')
     .regex(/^\d{6,12}:[A-Za-z0-9_-]{25,}$/, 'Telegram bot token format is invalid (expected <bot_id>:<secret>)'),
-  provider: z.enum(PROVIDER_IDS).default('zai'),
-  model: z.string().trim().min(1, 'Model is required').max(LIMITS.modelMax).default('glm-4.5-flash'),
+  provider: z.enum(PROVIDER_IDS).default('openrouter'),
+  model: z.string().trim().min(1, 'Model is required').max(LIMITS.modelMax).default('openrouter/free'),
   systemPrompt: z
     .string()
     .trim()

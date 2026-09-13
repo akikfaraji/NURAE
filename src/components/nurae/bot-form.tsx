@@ -35,8 +35,8 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
   const [name, setName] = useState(bot?.name ?? '');
   const [description, setDescription] = useState(bot?.description ?? '');
   const [telegramToken, setTelegramToken] = useState('');
-  const [providerId, setProviderId] = useState(bot?.provider ?? 'zai');
-  const [model, setModel] = useState(bot?.model ?? 'glm-4.5-flash');
+  const [providerId, setProviderId] = useState(bot?.provider ?? 'openrouter');
+  const [model, setModel] = useState(bot?.model ?? 'openrouter/free');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(bot?.baseUrl ?? '');
   const [systemPrompt, setSystemPrompt] = useState(bot?.systemPrompt ?? DEFAULT_PROMPT);
@@ -121,7 +121,7 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
   return (
     <form onSubmit={handleSubmit} className="space-y-5" data-testid="bot-form">
       {(clientError || Object.keys(errors).length > 0) && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
           {clientError ?? 'Please fix the highlighted fields.'}
           {errors._form ? <div className="mt-1">{errors._form}</div> : null}
         </div>
@@ -148,7 +148,7 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
           onChange={(e) => setTelegramToken(e.target.value)}
           placeholder="1234567890:AA…  (from @BotFather)"
         />
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted-foreground">
           Create a bot with <span className="font-medium">@BotFather</span> on Telegram and paste the token here. It is
           stored encrypted and never shown again.
         </p>
@@ -169,7 +169,7 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
               ))}
             </SelectContent>
           </Select>
-          {provider && <p className="text-xs text-zinc-500">{provider.description}</p>}
+          {provider && <p className="text-xs text-muted-foreground">{provider.description}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="bot-model">AI model *</Label>
@@ -259,16 +259,16 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
             value={memorySize}
             onChange={(e) => setMemorySize(Math.max(catalog.limits.memorySizeMin, Math.min(catalog.limits.memorySizeMax, Number(e.target.value) || 0)))}
           />
-          <p className="text-xs text-zinc-500">Recent messages kept per chat.</p>
+          <p className="text-xs text-muted-foreground">Recent messages kept per chat.</p>
         </div>
       </div>
 
-      <div className="flex items-center justify-between rounded-md border border-zinc-200 p-3">
+      <div className="flex items-center justify-between rounded-md border border-border p-3">
         <div>
           <Label htmlFor="bot-enabled" className="text-sm">
             Enabled
           </Label>
-          <p className="text-xs text-zinc-500">Disabled bots refuse to start.</p>
+          <p className="text-xs text-muted-foreground">Disabled bots refuse to start.</p>
         </div>
         <Switch id="bot-enabled" checked={enabled} onCheckedChange={setEnabled} />
       </div>
@@ -279,7 +279,7 @@ export function BotForm({ catalog, bot, submitLabel, onSubmit, onCancel, busy, s
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={busy} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="bot-form-submit">
+        <Button type="submit" disabled={busy}  data-testid="bot-form-submit">
           {busy ? 'Saving…' : submitLabel}
         </Button>
       </div>

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 import { AIError, classifyProviderError } from '../../src/lib/nurae/ai/types';
 import { OpenAICompatibleProvider } from '../../src/lib/nurae/ai/providers/openai-compatible';
 import { PROVIDER_CATALOG, getProviderInfo, providerNeedsKey, selectProvider } from '../../src/lib/nurae/ai/registry';
-import { ZaiProvider } from '../../src/lib/nurae/ai/providers/zai';
 
 const MESSAGES = [{ role: 'user' as const, content: 'hello' }];
 const CONFIG = { model: 'test-model', temperature: 0.5, maxTokens: 64, apiKey: 'test-key' };

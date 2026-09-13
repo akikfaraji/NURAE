@@ -8,7 +8,6 @@
 
 import { AIProvider, AIError } from './types';
 import { OpenAICompatibleProvider } from './providers/openai-compatible';
-import { ZaiProvider } from './providers/zai';
 import type { ProviderId } from '../validation';
 
 export interface ProviderInfo {
@@ -26,18 +25,6 @@ export interface ProviderInfo {
 
 export const PROVIDER_CATALOG: ProviderInfo[] = [
   {
-    id: 'zai',
-    label: 'GLM — Built-in (zero setup)',
-    description:
-      'GLM models through the FRAZIYM built-in AI. No API key required — works out of the box.',
-    requiresKey: false,
-    requiresBaseUrl: false,
-    defaultBaseUrl: null,
-    apiKeyEnvVar: null,
-    defaultModel: 'glm-4.5-flash',
-    models: ['glm-4.5-flash', 'glm-4.5-air', 'glm-4.5', 'glm-4-flash'],
-  },
-  {
     id: 'openai',
     label: 'OpenAI',
     description: 'OpenAI ChatGPT API (OpenAI-compatible HTTP).',
@@ -50,14 +37,23 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
   },
   {
     id: 'openrouter',
-    label: 'OpenRouter',
-    description: 'Gateway to many models via a single OpenAI-compatible API.',
+    label: 'OpenRouter — free models included',
+    description:
+      'One key, many models. The "openrouter/free" router auto-picks among FREE models (no charge); the starter list below is the current free catalog — it rotates, so any model id can be typed manually.',
     requiresKey: true,
     requiresBaseUrl: false,
     defaultBaseUrl: 'https://openrouter.ai/api/v1',
     apiKeyEnvVar: 'OPENROUTER_API_KEY',
-    defaultModel: 'openai/gpt-4o-mini',
-    models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-haiku', 'meta-llama/llama-3.1-70b-instruct'],
+    defaultModel: 'openrouter/free',
+    models: [
+      'openrouter/free',
+      'thinkingmachines/inkling:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'google/gemma-4-31b-it:free',
+      'nex-agi/nex-n2.5-pro:free',
+      'inclusionai/ling-3.0-flash-vl:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+    ],
   },
   {
     id: 'deepseek',
@@ -113,7 +109,6 @@ export function getProviderInfo(id: string): ProviderInfo | undefined {
 type Factory = () => AIProvider;
 
 const FACTORIES: Record<ProviderId, Factory> = {
-  zai: () => new ZaiProvider(),
   openai: () =>
     new OpenAICompatibleProvider({ id: 'openai', defaultBaseUrl: 'https://api.openai.com/v1', apiKeyEnvVar: 'OPENAI_API_KEY' }),
   openrouter: () =>
@@ -156,6 +151,10 @@ export function selectProvider(
   providerId: string,
   opts?: { apiKey?: string | null; baseUrl?: string | null },
 ): ProviderSelection {
+  // Legacy shim: bots created before the built-in GLM provider was removed
+  // store provider='zai'. Route them to OpenRouter (free models) so they
+  // keep starting; the OPENROUTER_API_KEY env fallback covers the key.
+  if (providerId === 'zai') providerId = 'openrouter';
   const info = getProviderInfo(providerId);
   if (!info) {
     throw new AIError('provider_not_found', `Unknown AI provider: "${providerId}"`);
