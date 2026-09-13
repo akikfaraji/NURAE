@@ -113,7 +113,7 @@ export interface BotRowLike {
   name: string;
   description: string;
   telegramUsername: string | null;
-  telegramTokenRef: string;
+  telegramTokenRef: string | null;
   apiKeyRef: string | null;
   baseUrl: string | null;
   systemPrompt: string;

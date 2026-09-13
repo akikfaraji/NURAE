@@ -51,8 +51,6 @@ export function StatCard({
         <p
           className={cn(
             'mt-1 text-2xl font-semibold tabular-nums sm:text-3xl',
-            '' && '',
-            
             (!accent || accent === 'zinc') && 'text-foreground',
           )}
         >

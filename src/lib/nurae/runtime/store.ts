@@ -65,13 +65,17 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
     async getBot(botId) {
       const row = await prisma.bot.findUnique({ where: { id: botId } });
       if (!row) return null;
+      // Bots can exist before a Telegram token is added (the official NURAE bot
+      // is seeded without one). Null ref ⇒ empty token, no failure.
       let telegramToken = '';
-      try {
-        telegramToken = SecretManager.decrypt(row.telegramTokenRef);
-      } catch {
-        throw new Error(
-          'Stored Telegram token could not be decrypted (secret key mismatch?). Re-enter the token.',
-        );
+      if (row.telegramTokenRef) {
+        try {
+          telegramToken = SecretManager.decrypt(row.telegramTokenRef);
+        } catch {
+          throw new Error(
+            'Stored Telegram token could not be decrypted (secret key mismatch?). Re-enter the token.',
+          );
+        }
       }
       let apiKey: string | null = null;
       if (row.apiKeyRef) {

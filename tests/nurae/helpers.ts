@@ -39,6 +39,13 @@ process.env.NURAE_LINK_FRONTEND_URL = '';
 process.env.NURAE_GATEWAY_KEY = '';
 process.env.NURAE_TELEGRAM_API_BASE = '';
 process.env.NURAE_BACKEND_URL = '';
+// Platform layer (Task 13): keep the developer's real Gmail/Google config out
+// of tests — empty strings survive the Prisma .env refill (see above).
+process.env.NURAE_GMAIL_USER = '';
+process.env.NURAE_GMAIL_APP_PASSWORD = '';
+process.env.NURAE_GOOGLE_CLIENT_ID = '';
+process.env.NURAE_GOOGLE_CLIENT_SECRET = '';
+process.env.NURAE_PUBLIC_URL = '';
 
 /** Apply the Prisma schema to the test DB (idempotent). */
 let schemaPushed = false;

@@ -1,27 +1,32 @@
 'use client';
 
 /**
- * NURAE console — application shell.
- * Single-page dashboard: auth gate → overview → projects → project → bot.
- * (The deployment exposes only the `/` route; navigation is client-side.)
+ * NURAE admin console — application shell (lives at /admin).
+ * Single-page dashboard: auth gate → overview (with the official bot card) →
+ * projects → project → bot → customers → site settings.
+ * The public site (landing + NURAE CS chat) lives at `/`.
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { OverviewView, ProjectView, ProjectsView } from '@/components/nurae/views';
+import { OverviewView, ProjectView, ProjectsView, CustomersView, SiteSettingsView, OfficialBotCard } from '@/components/nurae/views';
 import { BotView } from '@/components/nurae/bot-view';
 import { Catalog, nuraeApi } from '@/lib/nurae-client/api';
 import { NURAE_VERSION } from '@/lib/nurae/version';
+import { ExternalIcon, SettingsIcon, UsersIcon } from '@/components/nurae/icons';
 import { toast } from 'sonner';
 
 type View =
   | { type: 'overview' }
   | { type: 'projects' }
   | { type: 'project'; id: string }
-  | { type: 'bot'; id: string; projectId: string };
+  | { type: 'bot'; id: string; projectId: string }
+  | { type: 'customers' }
+  | { type: 'settings' };
 
 export function NuraeConsole() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -68,6 +73,20 @@ export function NuraeConsole() {
     setView({ type: 'project', id });
   };
 
+  const openBotById = async (botId: string) => {
+    // The official bot card knows the bot id but not its project — resolve it.
+    try {
+      const { bot } = await nuraeApi.getBot(botId);
+      setView({ type: 'bot', id: bot.id, projectId: bot.projectId });
+    } catch {
+      setView({ type: 'projects' });
+    }
+  };
+
+  const goHome = async () => {
+    setView({ type: 'overview' });
+  };
+
   if (!checked) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -94,7 +113,7 @@ export function NuraeConsole() {
             </span>
             <span>
               <span className="block text-sm font-semibold tracking-wide text-foreground">
-                NURAE <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
+                NURAE Admin <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
               </span>
               <span className="block text-[11px] uppercase tracking-widest text-muted-foreground">FRAZIYM TECH &amp; AI</span>
             </span>
@@ -116,6 +135,28 @@ export function NuraeConsole() {
             >
               Projects
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={view.type === 'customers' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              onClick={() => setView({ type: 'customers' })}
+            >
+              <UsersIcon className="mr-1.5 h-3.5 w-3.5" /> Customers
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={view.type === 'settings' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              onClick={() => setView({ type: 'settings' })}
+            >
+              <SettingsIcon className="mr-1.5 h-3.5 w-3.5" /> Site
+            </Button>
+            <Link
+              href="/"
+              className="ml-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
+            >
+              View site <ExternalIcon className="h-3 w-3" />
+            </Link>
             <span
               className={
                 'ml-2 hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs sm:inline-flex ' +
@@ -141,14 +182,21 @@ export function NuraeConsole() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         {view.type === 'overview' && (
-          <div className="mb-6">
-            <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Autonomous Digital Operations</h1>
-            <p className="text-sm text-muted-foreground">
-              Create and operate AI-powered Telegram bots. This is the {NURAE_VERSION} release.
-            </p>
+          <div className="mb-6 space-y-4">
+            <div>
+              <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Autonomous Digital Operations</h1>
+              <p className="text-sm text-muted-foreground">
+                Create and operate AI-powered Telegram bots. This is the {NURAE_VERSION} release.
+              </p>
+            </div>
+            <OfficialBotCard onOpenBot={openBotById} />
           </div>
         )}
-        {!catalog && view.type !== 'bot' ? (
+        {view.type === 'customers' ? (
+          <CustomersView onBack={goHome} />
+        ) : view.type === 'settings' ? (
+          <SiteSettingsView onBack={goHome} />
+        ) : !catalog && view.type !== 'bot' ? (
           <div className="text-sm text-muted-foreground">Loading console data…</div>
         ) : view.type === 'overview' ? (
           <OverviewView
@@ -213,7 +261,7 @@ function LoginGate({ onAuthenticated }: { onAuthenticated: () => void | Promise<
             N
           </span>
           <CardTitle className="mt-2 text-lg">
-            NURAE <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
+            NURAE Admin <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
           </CardTitle>
           <CardDescription>Enter the admin token to access the console.</CardDescription>
         </CardHeader>

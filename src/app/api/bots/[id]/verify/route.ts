@@ -27,11 +27,15 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
       detail: 'Not checked',
     };
     try {
-      const adapter = new TelegramAdapter({ token: SecretManager.decrypt(bot.telegramTokenRef) });
-      const me = await adapter.getMe();
-      telegram.valid = true;
-      telegram.detail = 'Telegram identity verified.';
-      telegram.username = me.username ? `@${me.username}` : null;
+      if (!bot.telegramTokenRef) {
+        telegram.detail = 'No Telegram token stored yet — add the bot token in configuration.';
+      } else {
+        const adapter = new TelegramAdapter({ token: SecretManager.decrypt(bot.telegramTokenRef) });
+        const me = await adapter.getMe();
+        telegram.valid = true;
+        telegram.detail = 'Telegram identity verified.';
+        telegram.username = me.username ? `@${me.username}` : null;
+      }
     } catch (err) {
       telegram.detail = err instanceof Error ? err.message : String(err);
     }

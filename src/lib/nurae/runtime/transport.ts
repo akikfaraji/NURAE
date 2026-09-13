@@ -174,6 +174,12 @@ export async function startBot(botId: string, opts?: { publicBaseUrl?: string | 
 
   try {
     let token = '';
+    if (!bot.telegramTokenRef) {
+      const detail = 'No Telegram bot token configured — add the bot token first, then start.';
+      await log(botId, 'warn', detail, 'BOT_ERROR');
+      await transitionStatus(botId, ['starting'], 'error').catch(() => undefined);
+      return { ok: false, status: 'error', detail };
+    }
     try {
       token = SecretManager.decrypt(bot.telegramTokenRef);
     } catch {
@@ -279,7 +285,8 @@ export async function restartBot(botId: string, opts?: { publicBaseUrl?: string 
   return startBot(botId, opts);
 }
 
-async function dropWebhookQuietly(bot: { id: string; telegramTokenRef: string }): Promise<void> {
+async function dropWebhookQuietly(bot: { id: string; telegramTokenRef: string | null }): Promise<void> {
+  if (!bot.telegramTokenRef) return;
   try {
     const adapter = adapterFor(SecretManager.decrypt(bot.telegramTokenRef));
     await adapter.deleteWebhook();
@@ -322,7 +329,7 @@ export async function getBotRuntimeStatus(botId: string): Promise<BotRuntimeStat
     };
   }
 
-  if (bot.status === 'running' && bot.webhookSecretRef) {
+  if (bot.status === 'running' && bot.webhookSecretRef && bot.telegramTokenRef) {
     try {
       const adapter = adapterFor(SecretManager.decrypt(bot.telegramTokenRef));
       const info = await adapter.getWebhookInfo();

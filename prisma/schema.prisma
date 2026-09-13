@@ -35,14 +35,15 @@ model Bot {
   // Telegram username is resolved via getMe when the bot starts (e.g. "@my_bot").
   telegramUsername     String? @map("telegram_username")
   // Encrypted Telegram bot token (AES-256-GCM via SecretManager). NEVER returned by APIs.
-  telegramTokenRef     String  @map("telegram_token_reference")
+  // Null until the owner adds a token (the official NURAE bot exists before that).
+  telegramTokenRef     String? @map("telegram_token_reference")
   // Optional encrypted AI provider API key. NEVER returned by APIs.
   apiKeyRef            String? @map("api_key_reference")
   // Optional base URL override for openai-compatible providers.
   baseUrl              String? @map("base_url")
   systemPrompt         String  @default("You are a helpful assistant. Answer clearly and concisely.") @map("system_prompt")
-  provider             String  @default("zai") // zai | openai | openrouter | deepseek | glm | local | custom
-  model                String  @default("glm-4.5-flash") @map("model")
+  provider             String  @default("openrouter") // openai | openrouter | deepseek | glm | local | custom
+  model                String  @default("openrouter/free") @map("model")
   temperature          Float   @default(0.7)
   maxTokens            Int     @default(1024) @map("max_tokens")
   // Short-term conversation memory: number of recent messages kept per chat.
@@ -100,7 +101,7 @@ model Log {
   id        String   @id @default(cuid())
   botId     String?  @map("bot_id") // null => system-level (NURAE core) log
   level     String // info | warn | error
-  // Structured event code (Step 9): BOT_CREATED, BOT_STARTING, TELEGRAM_MESSAGE_RECEIVED, AI_REQUEST, …
+  // Structured event code (Step 9): BOT_CREATED, BOT_STARTING, TELEGRAM_MESSAGE_RECEIVED, …
   event     String?
   message   String
   timestamp DateTime @default(now()) @map("timestamp")
@@ -109,4 +110,71 @@ model Log {
 
   @@index([botId, timestamp])
   @@map("logs")
+}
+
+// ---------------------------------------------------------------------------
+// Platform layer — customer accounts, sessions, email verification, site data
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  // scrypt hash ("scrypt$N$r$p$salt$hash"). Null ⇒ Google-only account.
+  passwordHash  String?  @map("password_hash")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  // Google account subject id ("sub" claim) when the user signed up via Google.
+  googleId      String?  @unique @map("google_id")
+  avatarUrl     String?  @map("avatar_url")
+  // user (reserved for future roles)
+  role          String   @default("user")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  sessions           Session[]
+  verificationTokens VerificationToken[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  // Random 32-byte token (hex). Stored plain — the cookie value IS the token;
+  // compromise of the DB already implies compromise of live sessions.
+  token     String   @unique
+  // Human-readable context for the admin Customers view.
+  userAgent String?  @map("user_agent")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  // scrypt hash of the 6-digit code — a DB leak must not expose codes.
+  codeHash  String   @map("code_hash")
+  // email_verify (future: password_reset)
+  purpose   String   @default("email_verify")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("verification_tokens")
+}
+
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("site_settings")
 }

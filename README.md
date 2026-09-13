@@ -15,7 +15,7 @@ configures, starts, monitors, and stops AI-powered Telegram bots.
 
 NURAE is a platform where an operator can:
 
-1. Log into the NURAE console.
+1. Log into the NURAE console (`/admin`).
 2. Create a project.
 3. Create an **AI-powered Telegram bot**.
 4. Provide a Telegram bot token (stored encrypted).
@@ -24,7 +24,13 @@ NURAE is a platform where an operator can:
 7. Send the bot a message on Telegram and receive an **AI-generated reply**.
 8. View its **status** and **structured logs**.
 
-The current release implements exactly this loop — reliably — and nothing else.
+…and where customers can:
+
+1. Visit the public site (`/`) and **sign up** — email + 6-digit Gmail
+   verification code, or Google sign-in.
+2. Chat with the **official NURAE CS bot** right on the site.
+3. Be managed by the operator via the dashboard (**Customers**, site
+   settings) — everything persisted in the database, keys encrypted at rest.
 
 > **Setup / self-hosting:** the complete step-by-step manual — local machine
 > or Termux Debian, polling vs webhook transport, and serving from your own
@@ -221,16 +227,20 @@ Core variables:
 | -------------------------- | --------------------------------------------------------------------------- |
 | `DATABASE_URL`             | SQLite file (`file:./db/custom.db`) · `libsql://…` (Turso) if you split      |
 | `NURAE_SECRET_KEY`         | Master key for encrypting bot tokens / API keys / webhook secrets at rest   |
-| `NURAE_ADMIN_TOKEN`        | When set, dashboard + admin API require this token                          |
+| `NURAE_ADMIN_TOKEN`        | When set, `/admin` + admin API require this token                          |
 | `NURAE_BOT_TRANSPORT`      | `webhook` (default) or `polling` (local testing without a public URL)       |
 | `NURAE_PUBLIC_BASE_URL`    | Public HTTPS origin used for webhook registration                           |
 | `PORT` / `HOSTNAME`        | Standalone server binding (production)                                      |
 | `NURAE_TELEGRAM_API_BASE`  | Testing only — point the Telegram adapter at a mock server                  |
 | `OPENAI_API_KEY` …         | Optional per-provider key fallbacks                                         |
+| `NURAE_GMAIL_USER` / `NURAE_GMAIL_APP_PASSWORD` | Gmail SMTP for customer verification codes (public site sign-up) |
+| `NURAE_GOOGLE_CLIENT_ID` / `NURAE_GOOGLE_CLIENT_SECRET` | Google sign-in (OAuth); redirect URI `<origin>/api/auth/google/callback` |
+| `NURAE_PUBLIC_URL`         | Explicit origin for OAuth redirects (behind host-changing proxies)          |
 
 ## 9. Database
 
-Entities: `Project`, `Bot`, `Conversation`, `Message`, `Log` (see
+Entities: `Project`, `Bot`, `Conversation`, `Message`, `Log`, plus the
+platform layer `User`, `Session`, `VerificationToken`, `SiteSetting` (see
 `prisma/schema.prisma`). Locally the database is an embedded libSQL file;
 on Vercel it is a hosted Turso database. Both use the same Prisma schema and
 the `@prisma/adapter-libsql` driver adapter.
@@ -303,7 +313,7 @@ Note: Telegram webhooks require an HTTPS origin — Vercel provides one.
 ## 14. Testing
 
 ```bash
-npm test                 # 114 tests across 9 files (vitest)
+npm test                 # 133 tests across 10 files (vitest)
 npm run lint             # ESLint
 ```
 
@@ -313,9 +323,12 @@ malformed response, retries), Telegram adapter error mapping, the shared
 pipeline (commands, memory, AI failure recovery), bot lifecycle state
 machine, the webhook receiver (secret verification, full message flow,
 duplicate suppression, malformed payloads), API endpoints (projects, bots,
-config, lifecycle, logs), and security (secrets never returned, 401s, 422s,
-IDOR-resistant error responses). Network-dependent units use mocks — no real
-Telegram credentials are required.
+config, lifecycle, logs), the platform layer (customer registration →
+Gmail code verification → sessions, Google OAuth state/CSRF, the official
+NURAE CS bot seeding + web chat, site settings, customers directory), and
+security (secrets never returned, 401s, 422s, hashed verification codes,
+rate limiting, IDOR-resistant error responses). Network-dependent units use
+mocks — no real Telegram credentials are required.
 
 An end-to-end driver lives at `scripts/e2e.ts`. It is REAL-only: real
 Telegram Bot API, real AI provider, real HTTP chain — no mocks. It drives

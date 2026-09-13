@@ -127,6 +127,71 @@ export interface BotInput {
   enabled?: boolean;
 }
 
+// --- Platform layer (public site + admin additions) -------------------------
+
+export interface SessionUserDTO {
+  id: string;
+  email: string;
+  name: string;
+  emailVerified: boolean;
+  avatarUrl: string | null;
+  hasPassword: boolean;
+  createdAt: string;
+}
+
+export interface SiteInfoDTO {
+  siteName: string;
+  tagline: string;
+  supportEmail: string;
+  telegramHandle: string;
+  welcomeMessage: string;
+}
+
+export interface SiteInfoResponse {
+  site: SiteInfoDTO;
+  auth: { googleEnabled: boolean; gmailEnabled: boolean };
+}
+
+export interface SupportStatusResponse {
+  configured: boolean;
+  telegramUsername: string | null;
+  site: SiteInfoDTO;
+}
+
+export interface ChatMessageDTO {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
+export interface CustomerDTO {
+  id: string;
+  email: string;
+  name: string;
+  emailVerified: boolean;
+  signupMethod: 'google' | 'email';
+  hasPassword: boolean;
+  role: string;
+  chatMessages: number;
+  activeSessions: number;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface OfficialBotResponse {
+  official: {
+    botId: string | null;
+    ready: boolean;
+    hasTelegramToken: boolean;
+    hasApiKey: boolean;
+    status: string | null;
+    telegramUsername: string | null;
+    transport: string | null;
+  };
+  bot: BotDTO | null;
+}
+
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
@@ -141,7 +206,7 @@ export const nuraeApi = {
 
   stats: () =>
     api<{
-      stats: { projects: number; activeBots: number; stoppedBots: number; errors: number; totalBots: number };
+      stats: { projects: number; activeBots: number; stoppedBots: number; errors: number; totalBots: number; users: number };
     }>('/api/stats'),
 
   listProjects: () => api<{ projects: ProjectSummary[] }>('/api/projects'),
@@ -195,4 +260,37 @@ export const nuraeApi = {
     }>(`/api/bots/${id}/verify`, { method: 'POST' }),
 
   health: () => api<{ status: string; version: string; name: string; vendor: string }>('/api/health'),
+
+  // --- Platform layer -------------------------------------------------------
+  // Public (no admin token): site info + customer auth + support chat.
+  siteInfo: () => api<SiteInfoResponse>('/api/public/site-info'),
+  register: (name: string, email: string, password: string) =>
+    api<{ ok: true; devCode?: string; notice?: string }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password }),
+    }),
+  verifyEmail: (email: string, code: string) =>
+    api<{ ok: true; alreadyVerified?: boolean }>('/api/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    }),
+  userLogin: (email: string, password: string) =>
+    api<{ ok: true; user: SessionUserDTO }>('/api/auth/user-login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+  userLogout: () => api<{ ok: true }>('/api/auth/user-logout', { method: 'POST' }),
+  me: () => api<{ user: SessionUserDTO | null }>('/api/auth/me'),
+  supportStatus: () => api<SupportStatusResponse>('/api/support/status'),
+  supportHistory: () => api<{ messages: ChatMessageDTO[] }>('/api/support/history'),
+  supportChat: (message: string) =>
+    api<{ reply: string }>('/api/support/chat', { method: 'POST', body: JSON.stringify({ message }) }),
+
+  // Admin-only platform endpoints.
+  officialBot: () => api<OfficialBotResponse>('/api/official-bot'),
+  getSettings: () => api<{ settings: SiteInfoDTO }>('/api/settings'),
+  saveSettings: (patch: Partial<SiteInfoDTO>) =>
+    api<{ settings: SiteInfoDTO }>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  listCustomers: () => api<{ customers: CustomerDTO[]; total: number }>('/api/admin/customers'),
+  deleteCustomer: (id: string) => api<{ ok: true }>(`/api/admin/customers/${id}`, { method: 'DELETE' }),
 };

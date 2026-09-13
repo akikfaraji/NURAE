@@ -108,6 +108,10 @@ Everything lives in `.env` (project root). `cp .env.example .env` and set:
 | `NURAE_BOT_TRANSPORT` | no | `webhook` (default) or `polling` — see §5. |
 | `NURAE_PUBLIC_BASE_URL` | webhook only | Your public HTTPS origin (tunnel URL or your domain). |
 | `OPEN*_API_KEY` etc. | no | Per-provider fallback keys. Normally configure keys per-bot in the dashboard (encrypted at rest). |
+| `NURAE_GMAIL_USER` | no | Gmail address for sending customer verification codes (public site sign-up). Both Gmail vars unset ⇒ dev-mode codes. |
+| `NURAE_GMAIL_APP_PASSWORD` | no | 16-char Google **app password** (Account → Security → 2-Step Verification → App passwords). |
+| `NURAE_GOOGLE_CLIENT_ID` / `NURAE_GOOGLE_CLIENT_SECRET` | no | Google sign-in (OAuth). Redirect URI to register: `<origin>/api/auth/google/callback`. |
+| `NURAE_PUBLIC_URL` | no | Explicit public origin for OAuth redirects (only behind a host-changing proxy). |
 
 Rules of thumb:
 
@@ -134,7 +138,7 @@ npm run start      # serves it; honors PORT / HOSTNAME from .env
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.01.008-beta-03",...}`
+`{"status":"ok","version":"V00.01.009-beta-03",...}`
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and
@@ -193,6 +197,29 @@ Dashboard → your bot → **AI provider**: pick a provider from the catalog
 and model name. Keys are encrypted with `NURAE_SECRET_KEY` before hitting the
 database. Send your bot a message in Telegram — it should answer using the
 configured model.
+
+### 6.1 The official NURAE CS bot + customer accounts (public site)
+
+- `/` is the **public site** for your customers: landing page, sign-up
+  (email + 6-digit Gmail verification code, or Google sign-in) and a web
+  chat with the **NURAE CS Bot**.
+- `/admin` is **your** console (admin token login): projects, bots,
+  **Customers** (every account, verification state, chats, sessions) and
+  **Site** settings (name, tagline, support email, Telegram handle, welcome
+  message — these feed the landing page and the bot's knowledge).
+- The **NURAE CS Bot** is auto-seeded under the "NURAE Official" project on
+  first boot. Open it from the dashboard's official-bot card, fill in the
+  keys, and run:
+  - **AI provider key** → enables the web chat immediately (customers chat
+    on your site; OpenRouter's `openrouter/free` is the seeded default).
+  - **Telegram bot token** (optional) → also run it as a normal Telegram bot.
+- Emails are sent via Gmail SMTP — create an app password once
+  (Account → Security → 2-Step Verification → App passwords) and set
+  `NURAE_GMAIL_USER` + `NURAE_GMAIL_APP_PASSWORD`. Without them, sign-up
+  falls back to dev-mode codes shown on screen (localhost convenience only).
+- Google sign-in is optional; set `NURAE_GOOGLE_CLIENT_ID` +
+  `NURAE_GOOGLE_CLIENT_SECRET` and register the redirect URI
+  `<origin>/api/auth/google/callback` in Google Cloud Console.
 
 ---
 
@@ -336,6 +363,9 @@ Complete, commented list: **`.env.example`** in the repo root. Summary:
 | `NURAE_BOT_TRANSPORT` | bots | `webhook` (default) / `polling` |
 | `NURAE_PUBLIC_BASE_URL` | bots | Public HTTPS origin used for webhooks |
 | `OPENAI_API_KEY` … `CUSTOM_API_KEY` | AI | Account-wide fallback provider keys |
+| `NURAE_GMAIL_USER` / `NURAE_GMAIL_APP_PASSWORD` | platform | Gmail SMTP for customer verification codes |
+| `NURAE_GOOGLE_CLIENT_ID` / `NURAE_GOOGLE_CLIENT_SECRET` | platform | Google sign-in (OAuth 2.0) |
+| `NURAE_PUBLIC_URL` | platform | Explicit origin for OAuth redirect URIs (proxy setups) |
 | `NURAE_GATEWAY_KEY` | split | Shared secret for Gateway Link registration |
 | `NURAE_LINK_FRONTEND_URL` | split | Frontend the backend registers with |
 | `NURAE_BACKEND_URL` | split (legacy) | Build-time fixed proxy target |

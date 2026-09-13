@@ -11,9 +11,10 @@ export async function GET(req: Request): Promise<Response> {
   const denied = guard(req);
   if (denied) return denied;
   try {
-    const [projects, botStatuses] = await Promise.all([
+    const [projects, botStatuses, users] = await Promise.all([
       db.project.count({ where: { status: 'active' } }),
       db.bot.groupBy({ by: ['status'], _count: { status: true } }),
+      db.user.count(),
     ]);
 
     const byStatus: Record<string, number> = {};
@@ -27,6 +28,7 @@ export async function GET(req: Request): Promise<Response> {
       starting: byStatus.starting ?? 0,
       stopping: byStatus.stopping ?? 0,
       totalBots: Object.values(byStatus).reduce((a, b) => a + b, 0),
+      users,
     };
     return NextResponse.json({ stats });
   } catch (err) {

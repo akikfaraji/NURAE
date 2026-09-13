@@ -15,11 +15,39 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState, StatCard, StatusBadge } from '@/components/nurae/bits';
-import { BotDTO, Catalog, nuraeApi, ProjectSummary } from '@/lib/nurae-client/api';
+import {
+  ArrowRightIcon,
+  BotIcon,
+  CheckIcon,
+  GoogleIcon,
+  MailIcon,
+  TrashIcon,
+} from '@/components/nurae/icons';
+import {
+  BotDTO,
+  Catalog,
+  CustomerDTO,
+  nuraeApi,
+  OfficialBotResponse,
+  ProjectSummary,
+  SiteInfoDTO,
+} from '@/lib/nurae-client/api';
 import { toast } from 'sonner';
 
 // ---------------------------------------------------------------------------
@@ -41,6 +69,7 @@ export function OverviewView({
     stoppedBots: number;
     errors: number;
     totalBots: number;
+    users: number;
   } | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
 
@@ -65,11 +94,12 @@ export function OverviewView({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
         <StatCard label="Projects" value={stats?.projects ?? '—'} />
-        <StatCard label="Active Bots" value={stats?.activeBots ?? '—'} accent="emerald" />
+        <StatCard label="Active Bots" value={stats?.activeBots ?? '—'} />
         <StatCard label="Stopped Bots" value={stats?.stoppedBots ?? '—'} />
         <StatCard label="Errors" value={stats?.errors ?? '—'} accent={stats && stats.errors > 0 ? 'red' : 'zinc'} />
+        <StatCard label="Customers" value={stats?.users ?? '—'} />
       </div>
 
       <Card className="border-border">
@@ -447,5 +477,378 @@ export function CreateBotDialog({
         />
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Official NURAE bot card (overview) — "fill in the keys and run"
+// ---------------------------------------------------------------------------
+
+export function OfficialBotCard({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
+  const [data, setData] = useState<OfficialBotResponse | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setData(await nuraeApi.officialBot());
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
+
+  useEffect(() => {
+    const kick = setTimeout(() => void refresh(), 0);
+    const t = setInterval(refresh, 10000);
+    return () => {
+      clearTimeout(kick);
+      clearInterval(t);
+    };
+  }, [refresh]);
+
+  const o = data?.official;
+  const stepsDone = o ? (o.hasApiKey ? 1 : 0) + (o.hasTelegramToken ? 1 : 0) : 0;
+
+  return (
+    <Card className="border-border">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-foreground text-background">
+              <BotIcon className="h-5 w-5" />
+            </span>
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                NURAE CS Bot
+                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Official
+                </span>
+              </CardTitle>
+              <CardDescription>
+                The built-in customer-support bot for your site — fill in the keys and run it.
+              </CardDescription>
+            </div>
+          </div>
+          {o?.botId && (
+            <Button size="sm" className="gap-2" onClick={() => onOpenBot(o.botId!)}>
+              {o.ready ? (o.status === 'running' ? 'Manage' : 'Open & start') : 'Fill in the keys'}
+              <ArrowRightIcon className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
+          <KeyStep
+            label="AI provider key"
+            done={Boolean(o?.hasApiKey)}
+            fallback={Boolean(o && !o.hasApiKey && o.ready)}
+            doneText={o?.hasApiKey ? 'Stored (encrypted)' : ''}
+            fallbackText="Env fallback active"
+            pendingText="Missing — chat disabled"
+          />
+          <KeyStep
+            label="Telegram bot token"
+            done={Boolean(o?.hasTelegramToken)}
+            doneText={o?.telegramUsername ?? (o?.hasTelegramToken ? 'Stored (encrypted)' : '')}
+            fallback={false}
+            pendingText="Optional — web chat works without it"
+          />
+          <KeyStep
+            label="Runtime"
+            done={o?.status === 'running'}
+            doneText={`Running on ${o?.transport ?? 'telegram'}`}
+            fallback={false}
+            pendingText={o?.status ? o.status : 'Not started yet'}
+          />
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Setup: {stepsDone}/2 keys · customers chat on your site with just the AI key; add a token from @BotFather to run it on Telegram.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function KeyStep({
+  label,
+  done,
+  fallback,
+  doneText,
+  fallbackText,
+  pendingText,
+}: {
+  label: string;
+  done: boolean;
+  fallback: boolean;
+  doneText: string;
+  fallbackText?: string;
+  pendingText: string;
+}) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+      <span
+        className={
+          'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ' +
+          (done || fallback ? 'border-transparent bg-foreground text-background' : 'border-border text-muted-foreground')
+        }
+      >
+        {done || fallback ? <CheckIcon className="h-2.5 w-2.5" /> : <span className="h-1 w-1 rounded-full bg-current" />}
+      </span>
+      <div className="min-w-0">
+        <p className="font-medium text-foreground">{label}</p>
+        <p className="truncate text-muted-foreground">{done ? doneText : fallback ? (fallbackText ?? 'Fallback active') : pendingText}</p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Customers — every account on the platform
+// ---------------------------------------------------------------------------
+
+export function CustomersView({ onBack }: { onBack: () => void }) {
+  const [customers, setCustomers] = useState<CustomerDTO[] | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await nuraeApi.listCustomers();
+      setCustomers(r.customers);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load customers');
+      setCustomers([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    const kick = setTimeout(() => void refresh(), 0);
+    return () => clearTimeout(kick);
+  }, [refresh]);
+
+  const remove = async (id: string) => {
+    setConfirmId(null);
+    try {
+      await nuraeApi.deleteCustomer(id);
+      toast.success('Customer deleted');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Customers</h1>
+          <p className="text-sm text-muted-foreground">Everyone who signed up on your site.</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          Back to dashboard
+        </Button>
+      </div>
+
+      <Card className="border-border">
+        <CardContent className="p-0">
+          {customers === null ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading customers…</div>
+          ) : customers.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No customers yet — they will appear here as soon as someone signs up at <span className="font-mono">/</span>.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Sign-up</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Chats</TableHead>
+                  <TableHead className="text-right">Sessions</TableHead>
+                  <TableHead>Joined</TableHead>
+                  <TableHead className="w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {customers.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{c.email}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        {c.signupMethod === 'google' ? <GoogleIcon className="h-3.5 w-3.5" /> : <MailIcon className="h-3.5 w-3.5" />}
+                        {c.signupMethod === 'google' ? 'Google' : 'Email'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={
+                          'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ' +
+                          (c.emailVerified
+                            ? 'border-border bg-muted text-foreground'
+                            : 'border-destructive/40 bg-destructive/10 text-destructive')
+                        }
+                      >
+                        <span className={'h-1.5 w-1.5 rounded-full ' + (c.emailVerified ? 'bg-foreground' : 'bg-destructive')} />
+                        {c.emailVerified ? 'Verified' : 'Unverified'}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums text-foreground">{c.chatMessages}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums text-foreground">{c.activeSessions}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      {new Date(c.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <AlertDialog open={confirmId === c.id} onOpenChange={(open) => setConfirmId(open ? c.id : null)}>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" aria-label={`Delete ${c.email}`}>
+                            <TrashIcon className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete customer?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This permanently removes {c.email} with their sessions, verification state and support chat
+                              history. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => void remove(c.id)}>Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Site settings — feeds the public site and the official bot's knowledge
+// ---------------------------------------------------------------------------
+
+export function SiteSettingsView({ onBack }: { onBack: () => void }) {
+  const [form, setForm] = useState<SiteInfoDTO | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await nuraeApi.getSettings();
+        setForm(r.settings);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to load settings');
+      }
+    })();
+  }, []);
+
+  if (!form) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Site settings</h1>
+        </div>
+        <div className="text-sm text-muted-foreground">Loading settings…</div>
+      </div>
+    );
+  }
+
+  const set = (patch: Partial<SiteInfoDTO>) => setForm({ ...form, ...patch });
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await nuraeApi.saveSettings(form);
+      setForm(r.settings);
+      toast.success('Site settings saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Site settings</h1>
+          <p className="text-sm text-muted-foreground">
+            Shown on the public site and baked into the official bot&apos;s knowledge.
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          Back to dashboard
+        </Button>
+      </div>
+
+      <Card className="border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Public details</CardTitle>
+          <CardDescription>Every field can be reset to its default by clearing it.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="set-site-name">Site name</Label>
+              <Input id="set-site-name" value={form.siteName} maxLength={60} onChange={(e) => set({ siteName: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-telegram">Official Telegram handle</Label>
+              <Input
+                id="set-telegram"
+                placeholder="@your_bot"
+                value={form.telegramHandle}
+                maxLength={60}
+                onChange={(e) => set({ telegramHandle: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="set-tagline">Tagline (hero text)</Label>
+            <Input id="set-tagline" value={form.tagline} maxLength={200} onChange={(e) => set({ tagline: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="set-support-email">Support email</Label>
+            <Input
+              id="set-support-email"
+              type="email"
+              placeholder="support@yourdomain.com"
+              value={form.supportEmail}
+              onChange={(e) => set({ supportEmail: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="set-welcome">Support bot welcome message</Label>
+            <Textarea
+              id="set-welcome"
+              rows={3}
+              maxLength={500}
+              value={form.welcomeMessage}
+              onChange={(e) => set({ welcomeMessage: e.target.value })}
+            />
+          </div>
+          <div className="flex items-center justify-between border-t border-border pt-4">
+            <p className="text-xs text-muted-foreground">
+              Changing the knowledge of the already-seeded bot? Edit its system prompt on the bot page.
+            </p>
+            <Button onClick={save} disabled={busy}>
+              {busy ? 'Saving…' : 'Save settings'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
