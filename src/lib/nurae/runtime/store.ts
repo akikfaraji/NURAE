@@ -13,6 +13,7 @@
 import { PrismaClient } from '@prisma/client';
 import { SecretManager } from '../secrets';
 import type { ChatMessage } from '../ai/types';
+import { loadCapabilities, type BotCapabilities } from '../bots/capabilities';
 
 export interface RuntimeBotRecord {
   id: string;
@@ -26,6 +27,8 @@ export interface RuntimeBotRecord {
   memorySize: number;
   enabled: boolean;
   status: string;
+  /** Validated capabilities loaded from the JSON columns (degrade to empty). */
+  capabilities: BotCapabilities;
   /** Decrypted Telegram token — runtime-internal use only. */
   telegramToken: string;
   /** Decrypted AI provider API key or null. */
@@ -97,6 +100,7 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
         memorySize: row.memorySize,
         enabled: row.enabled,
         status: row.status,
+        capabilities: loadCapabilities(row),
         telegramToken,
         apiKey,
         baseUrl: row.baseUrl,

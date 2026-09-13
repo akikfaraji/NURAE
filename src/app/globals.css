@@ -202,3 +202,15 @@
   }
   .md-body th { font-weight: 600; background: color-mix(in oklab, var(--muted) 50%, transparent); }
 }
+
+/* ---------------------------------------------------------------------------
+ * NURAE — application typography helpers.
+ * .md-compact: activity feeds / smaller surfaces.
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .md-compact {
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
+  .md-compact pre, .md-compact table { font-size: 0.75rem; }
+}

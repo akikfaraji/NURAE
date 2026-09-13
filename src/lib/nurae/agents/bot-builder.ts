@@ -1,0 +1,396 @@
+/**
+ * NURAE — agent runtime: the Bot Builder (first real agent; more later).
+ *
+ * Architecture:
+ *   user turn → [model ⇄ tools loop (bounded)] → reply + activity feed
+ *
+ * The loop is provider-agnostic: it does NOT rely on native function calling
+ * (free models often lack it). Instead the model is asked for a strict JSON
+ * envelope { message, actions, done } and NURAE parses it leniently. Actions
+ * are validated + executed through the tool registry (see ./tools.ts) —
+ * identity is always the authenticated user, never the model.
+ *
+ * Persistence: entries in ChatEntry, tool invocations in AgentStep, task
+ * state (draft bot id etc.) in ChatSession.state. Agent conversations
+ * survive reloads and keep their context.
+ */
+
+import { db } from '@/lib/db';
+import { getOfficialBot } from '../auth/official-bot';
+import { selectProvider } from '../ai/registry';
+import type { ChatMessage } from '../ai/types';
+import { sanitizeForLog, truncateForLog } from '../sanitize';
+import { executeTool, toolDescriptors, type ExecRecord, type ToolContext } from './tools';
+
+const MAX_ROUNDS = 3; // model rounds per user turn
+const MAX_ACTIONS_PER_ROUND = 6;
+const HISTORY_ENTRIES = 20;
+
+// ---------------------------------------------------------------------------
+// Session state
+// ---------------------------------------------------------------------------
+
+export interface AgentState {
+  draftBotId?: string | null;
+  pendingApproval?: { tool: string; botId: string } | null;
+  lastSummary?: string | null;
+}
+
+export function parseAgentState(raw: string | null): AgentState {
+  if (!raw) return {};
+  try {
+    const s = JSON.parse(raw) as AgentState;
+    return typeof s === 'object' && s !== null ? s : {};
+  } catch {
+    return {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prompting
+// ---------------------------------------------------------------------------
+
+function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
+  const descriptors = toolDescriptors();
+  const toolLines = descriptors
+    .map(
+      (t) =>
+        `- ${t.name} (${t.kind}${t.consequential ? ', needs user approval' : ''}): ${t.description}`,
+    )
+    .join('\n');
+
+  const stateLines: string[] = [];
+  if (state.draftBotId) stateLines.push(`Current draft bot id: ${state.draftBotId}`);
+  if (state.pendingApproval) {
+    stateLines.push(
+      `Pending approval: tool "${state.pendingApproval.tool}" on bot ${state.pendingApproval.botId}.` +
+        (userApproved
+          ? ' The user HAS approved it this turn \u2014 you may re-issue the action with confirm:true.'
+          : ' Ask the user to approve it (they will see an Approve button).'),
+    );
+  }
+
+  return [
+    'You are the NURAE Bot Builder agent. You BUILD Telegram bots for the user by calling tools \u2014',
+    'you do not merely explain how things could be done. The user stays in control: publishing',
+    'always requires their explicit approval.',
+    '',
+    'TOOLS (the only capabilities you have \u2014 never invent others):',
+    toolLines,
+    '',
+    'OUTPUT PROTOCOL (strict): reply with ONE JSON object and nothing else:',
+    '{"message": "markdown text for the user (or empty while still working)",',
+    ' "actions": [{"tool": "tool_name", "args": {…}}],',
+    ' "done": true|false}',
+    'Rules:',
+    '- "actions" may contain 0 to ' + MAX_ACTIONS_PER_ROUND + ' items. Use tools to DO things, not to narrate.',
+    '- Set "done": false if you expect tool results back and want another round; otherwise true.',
+    '- Read tools first when you need information (files_list, files_read, bots_list, bot_get).',
+    '- Build in this order when creating: bot_create_draft → bot_set_commands/bot_set_replies →',
+    '  bot_add_knowledge (if documents) → ask to publish.',
+    '- bot_publish / bot_unpublish: set args.confirm=true ONLY when the user asked for it; NURAE',
+    '  still requires the user\u2019s one-click approval. If approval is missing, re-ask politely.',
+    '- Commands look like {"command":"/start","description":"Welcome","kind":"static","response":"Hi!"}.',
+    '- Replies look like {"id":"r1","name":"Menu","trigger":{"type":"command","value":"/menu"},',
+    '  "messages":[{"text":"Choose:","buttons":[[{"text":"Products","callback":"r:products"}]]}]}.',
+    '- Inline button callbacks MUST start with "r:" and a matching reply with trigger type "button"',
+    '  and the same value defines what happens when pressed.',
+    stateLines.length ? `\nSESSION STATE:\n${stateLines.join('\n')}` : '',
+    userApproved ? '\nNOTE: the user approved the pending consequential action in this turn.' : '',
+    '\nRespond in the user\u2019s language. Be concise and concrete.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Lenient JSON envelope extraction — models add prose despite instructions. */
+export function parseAgentReply(text: string): {
+  message: string;
+  actions: Array<{ tool: string; args: Record<string, unknown> }>;
+  done: boolean;
+  jsonOk: boolean;
+} {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try {
+      const parsed = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+      const actions = Array.isArray(parsed.actions) ? parsed.actions : [];
+      return {
+        message: typeof parsed.message === 'string' ? parsed.message : '',
+        actions: actions
+          .filter(
+            (a): a is { tool: string; args: Record<string, unknown> } =>
+              typeof (a as Record<string, unknown>)?.tool === 'string',
+          )
+          .slice(0, MAX_ACTIONS_PER_ROUND)
+          .map((a) => ({ tool: a.tool, args: (a.args ?? {}) as Record<string, unknown> })),
+        done: parsed.done !== false,
+        jsonOk: true,
+      };
+    } catch {
+      /* fall through to plain-text */
+    }
+  }
+  return { message: text, actions: [], done: true, jsonOk: false };
+}
+
+// ---------------------------------------------------------------------------
+// The turn
+// ---------------------------------------------------------------------------
+
+export interface AgentTurnInput {
+  userId: string;
+  sessionId: string;
+  userText: string;
+  /** True when the user clicked the explicit approval control this turn. */
+  userConfirmed?: boolean;
+}
+
+export interface AgentActivity {
+  seq: number;
+  tool: string;
+  label: string;
+  status: 'ok' | 'error' | 'confirm';
+  detail?: string;
+}
+
+export interface AgentTurnResult {
+  reply: string;
+  activity: AgentActivity[];
+  needsConfirm: boolean;
+  draftBotId?: string | null;
+  error?: string;
+}
+
+/** One full agent turn: model ⇄ tools loop, persisted. Never throws. */
+export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTurnResult> {
+  const ctx: ToolContext = {
+    userId: input.userId,
+    sessionId: input.sessionId,
+    userConfirmed: Boolean(input.userConfirmed),
+  };
+
+  const session = await db.chatSession.findFirst({
+    where: { id: input.sessionId, userId: input.userId, kind: 'agent' },
+  });
+  if (!session) {
+    return { reply: '', activity: [], needsConfirm: false, error: 'Agent session not found' };
+  }
+  const state = parseAgentState(session.state);
+
+  const platformBot = await getOfficialBot();
+  if (!platformBot) {
+    return {
+      reply: '',
+      activity: [],
+      needsConfirm: false,
+      error: 'The AI layer is not configured yet (no platform AI key).',
+    };
+  }
+  const selection = selectProvider(platformBot.provider, { apiKey: null, baseUrl: platformBot.baseUrl });
+  let apiKey: string | null = null;
+  if (platformBot.apiKeyRef) {
+    try {
+      const { SecretManager } = await import('../secrets');
+      apiKey = SecretManager.decrypt(platformBot.apiKeyRef);
+    } catch {
+      apiKey = null;
+    }
+  }
+  if (selection.info.requiresKey && !apiKey && !selection.apiKey) {
+    return {
+      reply: '',
+      activity: [],
+      needsConfirm: false,
+      error: 'The AI layer has no key configured yet. The site owner must add one first.',
+    };
+  }
+
+  // Persist the user turn.
+  await db.chatEntry.create({
+    data: {
+      sessionId: session.id,
+      role: 'user',
+      content: input.userText.slice(0, 8000),
+    },
+  });
+
+  // Recent history for continuity.
+  const historyRows = await db.chatEntry.findMany({
+    where: { sessionId: session.id },
+    orderBy: { createdAt: 'desc' },
+    take: HISTORY_ENTRIES,
+  });
+  const history: ChatMessage[] = historyRows
+    .reverse()
+    .filter((e) => e.role === 'user' || e.role === 'assistant')
+    .map((e) => ({
+      role: e.role === 'assistant' ? 'assistant' : 'user',
+      content: e.content.slice(0, 4000),
+    }));
+
+  const activity: AgentActivity[] = [];
+  let seq = (await db.agentStep.count({ where: { sessionId: session.id } })) + 1;
+  let draftBotId = state.draftBotId ?? null;
+  let pendingApproval = state.pendingApproval ?? null;
+  let finalMessage = '';
+
+  try {
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const messages: ChatMessage[] = [
+        { role: 'system', content: builderSystemPrompt({ ...state, draftBotId, pendingApproval }, Boolean(ctx.userConfirmed)) },
+        ...history,
+      ];
+
+      const text = await selection.provider.generate(messages, {
+        model: platformBot.model,
+        temperature: 0.3, // agents want precision, not poetry
+        maxTokens: Math.max(platformBot.maxTokens, 1500),
+        apiKey: apiKey ?? selection.apiKey,
+        baseUrl: selection.baseUrl,
+      });
+
+      const parsed = parseAgentReply(text);
+      finalMessage = parsed.message || finalMessage;
+
+      if (parsed.actions.length === 0 || parsed.done) {
+        if (round > 0 || parsed.actions.length === 0) break;
+      }
+
+      // Execute actions through the registry.
+      let executed = 0;
+      for (const action of parsed.actions) {
+        // Unknown tools are executed through the registry too — executeTool
+        // records them as errors so the audit trail stays complete.
+        const record: ExecRecord = await executeTool(ctx, action.tool, action.args, seq++);
+        activity.push({ seq: record.seq, tool: record.tool, label: record.label, status: record.status, detail: record.detail });
+
+        // Track state transitions.
+        if (action.tool === 'bot_create_draft' && record.status === 'ok') {
+          // The tool result carries the new bot id in the AgentStep row; read it back cheaply.
+          const step = await db.agentStep.findFirst({
+            where: { sessionId: session.id, seq: record.seq },
+            select: { resultJson: true },
+          });
+          if (step?.resultJson) {
+            try {
+              const data = JSON.parse(step.resultJson) as { botId?: string };
+              if (data.botId) draftBotId = data.botId;
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        if (action.tool === 'bot_publish' && record.status === 'confirm') {
+          pendingApproval = { tool: action.tool, botId: String((action.args as { botId?: string })?.botId ?? '') };
+        }
+        if (action.tool === 'bot_publish' && record.status === 'ok') {
+          pendingApproval = null;
+        }
+        if (action.tool === 'bot_unpublish' && record.status === 'ok') {
+          pendingApproval = null;
+        }
+        executed++;
+      }
+
+      if (executed === 0 || parsed.done) break;
+
+      // Feed results back for the next round: append a synthetic user message
+      // with the tool outcomes so the model can react.
+      const resultsText = activity
+        .slice(-executed)
+        .map((a) => `[${a.status}] ${a.tool}: ${a.label}`)
+        .join('\n');
+      history.push({ role: 'user', content: `TOOL RESULTS:\n${resultsText}\n\nContinue (JSON envelope only).` });
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    await db.log
+      .create({
+        data: {
+          botId: null,
+          level: 'error',
+          event: 'AGENT_TURN_FAILED',
+          message: truncateForLog(`session=${session.id} — ${detail}`),
+        },
+      })
+      .catch(() => undefined);
+    return {
+      reply:
+        finalMessage ||
+        'The builder agent hit an internal error mid-turn. Nothing was published; try again.',
+      activity,
+      needsConfirm: Boolean(pendingApproval),
+      draftBotId,
+      error: sanitizeForLog(detail),
+    };
+  }
+
+  // Persist task state + the assistant entry with its activity feed.
+  const needsConfirm = activity.some((a) => a.status === 'confirm');
+  const nextState: AgentState = {
+    draftBotId,
+    pendingApproval: needsConfirm ? pendingApproval : null,
+    lastSummary: finalMessage.slice(0, 500) || null,
+  };
+  await db.chatSession.update({
+    where: { id: session.id },
+    data: {
+      state: JSON.stringify(nextState),
+      lastMessageAt: new Date(),
+      title:
+        session.title === 'New chat' && input.userText.trim()
+          ? input.userText.trim().slice(0, 60)
+          : session.title,
+    },
+  });
+  await db.chatEntry.create({
+    data: {
+      sessionId: session.id,
+      role: 'assistant',
+      content: finalMessage,
+      meta: JSON.stringify({
+        activity: activity.map((a) => ({ seq: a.seq, tool: a.tool, label: a.label, status: a.status, detail: a.detail })),
+        needsConfirm,
+        draftBotId,
+      }),
+    },
+  });
+
+  return { reply: finalMessage, activity, needsConfirm, draftBotId };
+}
+
+// ---------------------------------------------------------------------------
+// Session bootstrap (used by the handoff flow and the /chats/agents UI)
+// ---------------------------------------------------------------------------
+
+export async function ensureAgentSession(
+  userId: string,
+  opts: { agent: 'bot-builder'; title?: string; task?: string; fileRefs?: Array<{ fileId: string; name: string }> },
+): Promise<string> {
+  const session = await db.chatSession.create({
+    data: {
+      userId,
+      kind: 'agent',
+      agent: opts.agent,
+      title: (opts.title || 'Bot build').slice(0, 60),
+      state: JSON.stringify({
+        fileRefs: (opts.fileRefs ?? []).slice(0, 8),
+      } satisfies AgentState & { fileRefs?: unknown }),
+    },
+  });
+  if (opts.task) {
+    const fileNote = opts.fileRefs?.length
+      ? `\n\nAttached files (use files_list/files_read): ${opts.fileRefs.map((f) => f.name).join(', ')}`
+      : '';
+    await db.chatEntry.create({
+      data: {
+        sessionId: session.id,
+        role: 'system',
+        content: `TASK from the user's chat: ${opts.task}${fileNote}`,
+      },
+    });
+  }
+  return session.id;
+}

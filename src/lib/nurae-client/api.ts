@@ -194,6 +194,87 @@ export interface OfficialBotResponse {
   officialPrompt: string;
 }
 
+// --- Chats / Agents / Files / My bots / Referral ----------------------------
+
+export interface BotCommandSpecDTO {
+  command: string;
+  description: string;
+  kind: 'static' | 'ai';
+  response: string;
+}
+
+export interface BotReplyButtonDTO {
+  text: string;
+  url?: string;
+  callback?: string;
+}
+
+export interface BotReplySpecDTO {
+  id: string;
+  name: string;
+  trigger: { type: 'command' | 'keyword' | 'button' | 'fallback'; value?: string };
+  messages: Array<{ text: string; buttons?: BotReplyButtonDTO[][] }>;
+}
+
+export interface UserBotDTO extends BotDTO {
+  ownerId: string | null;
+  archived: boolean;
+  commands: BotCommandSpecDTO[];
+  replies: BotReplySpecDTO[];
+}
+
+export interface SessionDTO {
+  id: string;
+  kind: 'chat' | 'agent';
+  agent: string | null;
+  title: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string | null;
+  preview: string | null;
+}
+
+export interface ActivityStepDTO {
+  seq: number;
+  tool: string;
+  label: string;
+  status: 'ok' | 'error' | 'confirm';
+  detail?: string;
+}
+
+export interface EntryDTO {
+  id: string;
+  role: string;
+  content: string;
+  attachments: Array<{ fileId: string; name: string; kind: string }>;
+  activity: ActivityStepDTO[];
+  needsConfirm: boolean;
+  draftBotId: string | null;
+  handoff: { agent: string; sessionId: string; task?: string } | null;
+  createdAt: string;
+}
+
+export interface FileDTO {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  kind: string;
+  status: string;
+}
+
+export interface CapturedSendDTO {
+  text: string;
+  parseMode?: 'HTML';
+  buttons?: Array<Array<{ text: string; url?: string; callback?: string }>>;
+}
+
+export interface ReferralResponse {
+  referral: { code: string; invited: number; qualified: number; rewardDaysTotal: number };
+  reward: { days: number; feature: string };
+}
+
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
@@ -266,10 +347,10 @@ export const nuraeApi = {
   // --- Platform layer -------------------------------------------------------
   // Public (no admin token): site info + customer auth + support chat.
   siteInfo: () => api<SiteInfoResponse>('/api/public/site-info'),
-  register: (name: string, email: string, password: string) =>
+  register: (name: string, email: string, password: string, ref?: string) =>
     api<{ ok: true; devCode?: string; notice?: string; mailError?: string }>('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, ...(ref ? { ref } : {}) }),
     }),
   verifyEmail: (email: string, code: string) =>
     api<{ ok: true; alreadyVerified?: boolean }>('/api/auth/verify', {
@@ -300,4 +381,65 @@ export const nuraeApi = {
     api<{ settings: SiteInfoDTO }>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   listCustomers: () => api<{ customers: CustomerDTO[]; total: number }>('/api/admin/customers'),
   deleteCustomer: (id: string) => api<{ ok: true }>(`/api/admin/customers/${id}`, { method: 'DELETE' }),
+
+  // --- Chats + agents -------------------------------------------------------
+  listSessions: (kind?: 'chat' | 'agent') =>
+    api<{ sessions: SessionDTO[] }>(`/api/chats${kind ? `?kind=${kind}` : ''}`),
+  createSession: (input: { kind?: 'chat' | 'agent'; title?: string }) =>
+    api<{ session: SessionDTO }>('/api/chats', { method: 'POST', body: JSON.stringify(input) }),
+  getSession: (id: string) => api<{ session: SessionDTO; entries: EntryDTO[] }>(`/api/chats/${id}`),
+  patchSession: (id: string, patch: { title?: string; status?: 'active' | 'archived' }) =>
+    api<{ ok?: boolean }>(`/api/chats/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteSession: (id: string) => api<{ ok: true }>(`/api/chats/${id}`, { method: 'DELETE' }),
+  sendChatMessage: (id: string, text: string, attachmentIds?: string[]) =>
+    api<{ reply: string; handoff: { agent: string; sessionId: string; task: string } | null }>(
+      `/api/chats/${id}/messages`,
+      { method: 'POST', body: JSON.stringify({ text, attachmentIds }) },
+    ),
+
+  listAgentSessions: () => api<{ sessions: SessionDTO[] }>('/api/agents/sessions'),
+  createAgentSession: (title?: string) =>
+    api<{ session: SessionDTO }>('/api/agents/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    }),
+  sendAgentMessage: (id: string, text: string, approve = false) =>
+    api<{ reply: string; activity: ActivityStepDTO[]; needsConfirm: boolean; draftBotId: string | null }>(
+      `/api/agents/sessions/${id}/messages`,
+      { method: 'POST', body: JSON.stringify({ text, approve }) },
+    ),
+
+  // --- Files ----------------------------------------------------------------
+  uploadFile: async (file: File, sessionId?: string): Promise<{ file: FileDTO }> => {
+    const form = new FormData();
+    form.append('file', file);
+    if (sessionId) form.append('sessionId', sessionId);
+    const res = await fetch('/api/files', { method: 'POST', body: form });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) throw new ApiError(typeof data.error === 'string' ? data.error : 'Upload failed', res.status);
+    return data as { file: FileDTO };
+  },
+  listFiles: () => api<{ files: FileDTO[] }>('/api/files'),
+
+  // --- My bots --------------------------------------------------------------
+  listMyBots: (includeArchived = false) =>
+    api<{ bots: UserBotDTO[] }>(`/api/my/bots${includeArchived ? '?archived=1' : ''}`),
+  getMyBot: (id: string) => api<{ bot: UserBotDTO }>(`/api/my/bots/${id}`),
+  createMyBot: (input: Record<string, unknown>) =>
+    api<{ bot: UserBotDTO }>('/api/my/bots', { method: 'POST', body: JSON.stringify(input) }),
+  updateMyBot: (id: string, patch: Record<string, unknown>) =>
+    api<{ bot: UserBotDTO }>(`/api/my/bots/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteMyBot: (id: string) => api<{ ok: true }>(`/api/my/bots/${id}`, { method: 'DELETE' }),
+  publishMyBot: (id: string) =>
+    api<{ bot: UserBotDTO }>(`/api/my/bots/${id}/publish`, { method: 'POST', body: JSON.stringify({ confirm: true }) }),
+  unpublishMyBot: (id: string) =>
+    api<{ bot: UserBotDTO }>(`/api/my/bots/${id}/publish`, { method: 'DELETE' }),
+  testMyBot: (id: string, input: { text?: string; callback?: string }) =>
+    api<{ sends: CapturedSendDTO[]; error: string | null }>(`/api/my/bots/${id}/test`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // --- Referral -------------------------------------------------------------
+  referral: () => api<ReferralResponse>('/api/referral'),
 };

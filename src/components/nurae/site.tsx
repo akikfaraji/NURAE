@@ -1,15 +1,17 @@
 'use client';
 
 /**
- * NURAE — public site HOME page (localhost:3000 for normal users).
+ * NURAE — public site HOME.
  *
- * Logged out: hero + features + auth card
- *   • email + password sign-up → 6-digit Gmail verification code
- *   • Google sign-in (when configured)
- * Logged in: welcome strip + quick cards (open the CS chat, help, about).
+ * Signed out: a quiet typographic hero + the account form
+ * (email + 6-digit Gmail code, Google when configured).
+ * Signed in: the product is three links away — Chats, Agents, Bots.
  *
- * The chat itself lives at /chat; other user pages: /help, /about.
- * Design language: premium black, monochrome SVG icons only.
+ * Referral links (?ref=CODE) are captured here and stored until the
+ * sign-up call — the code travels with registration, never displayed.
+ *
+ * Design language: premium black, typography and spacing only — no gradient
+ * blobs, no card grids, no pills.
  */
 
 import { useEffect, useState } from 'react';
@@ -30,16 +32,7 @@ import {
   SiteInfoResponse,
   nuraeApi,
 } from '@/lib/nurae-client/api';
-import {
-  ArrowRightIcon,
-  BoltIcon,
-  BotIcon,
-  CheckIcon,
-  GoogleIcon,
-  MailIcon,
-  ShieldIcon,
-  TelegramIcon,
-} from '@/components/nurae/icons';
+import { GoogleIcon, MailIcon } from '@/components/nurae/icons';
 
 export function SiteHome() {
   const params = useSearchParams();
@@ -54,19 +47,21 @@ export function SiteHome() {
       const err = params.get('auth_error');
       if (err) setAuthError(err.replace(/-/g, ' '));
       if (params.get('welcome')) setWelcome(true);
+
+      // Referral capture: keep the code until sign-up. Nothing is shown.
+      const ref = params.get('ref');
+      if (ref) {
+        try {
+          localStorage.setItem('nurae:ref', ref.trim().toUpperCase().slice(0, 32));
+        } catch {
+          /* private mode */
+        }
+      }
+
       try {
         setSiteInfo(await nuraeApi.siteInfo());
       } catch {
-        setSiteInfo({
-          site: {
-            siteName: 'NURAE',
-            tagline: 'Launch your own AI Telegram bot in minutes — no code, no servers, no hassle.',
-            supportEmail: '',
-            telegramHandle: '',
-            welcomeMessage: '',
-          },
-          auth: { googleEnabled: false, gmailEnabled: false },
-        });
+        setSiteInfo(null);
       }
     })();
   }, [params]);
@@ -77,104 +72,86 @@ export function SiteHome() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <SiteHeader siteName={siteName} user={user} onSignOut={signOut} />
+      <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
       <main className="flex-1">
-        {/* Hero */}
-        <section className="relative overflow-hidden">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_50%_60%_at_50%_-10%,hsl(0_0%_100%/0.07),transparent)]"
-          />
-          <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-2 lg:items-center">
-            <div>
-              <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-[11px] uppercase tracking-widest text-muted-foreground">
-                <BoltIcon className="h-3.5 w-3.5" /> FRAZIYM TECH &amp; AI
-              </p>
-              <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
-                Your own AI Telegram bot,
-                <br />
-                <span className="text-muted-foreground">live in minutes.</span>
-              </h1>
-              <p className="mt-4 max-w-lg text-base leading-relaxed text-muted-foreground">{siteInfo?.site.tagline}</p>
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                {user ? (
-                  <Link href="/chat" className="inline-flex">
-                    <Button size="lg" className="gap-2">
-                      Open the chat <ArrowRightIcon className="h-4 w-4" />
+        {/* Hero — typography and space, nothing else */}
+        <section>
+          <div className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24">
+            {user ? (
+              <SignedInPanel email={user.email} welcome={welcome} siteName={siteName} />
+            ) : (
+              <div className="grid gap-12 lg:grid-cols-[1.2fr_1fr] lg:gap-20">
+                <div>
+                  <h1 className="max-w-xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl">
+                    Chat is the interface.
+                    <br />
+                    <span className="text-muted-foreground">Agents are the workers.</span>
+                  </h1>
+                  <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground">
+                    {siteInfo?.site.tagline ??
+                      'Build, run and improve AI-powered Telegram bots — talk to NURAE, hand real work to its agents, publish with one approval.'}
+                  </p>
+                  <div className="mt-8 flex flex-wrap items-center gap-3">
+                    <Button
+                      size="sm"
+                      onClick={() => document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })}
+                    >
+                      Get started free
                     </Button>
-                  </Link>
-                ) : (
-                  <Button
-                    size="lg"
-                    className="gap-2"
-                    onClick={() => document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })}
-                  >
-                    Get started free <ArrowRightIcon className="h-4 w-4" />
-                  </Button>
-                )}
-                <Link href="/help" className="inline-flex">
-                  <Button size="lg" variant="outline">
-                    Help &amp; FAQ
-                  </Button>
-                </Link>
-                {siteInfo?.site.telegramHandle && (
-                  <a
-                    href={`https://t.me/${siteInfo.site.telegramHandle.replace('@', '')}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex"
-                  >
-                    <Button size="lg" variant="outline" className="gap-2">
-                      <TelegramIcon className="h-4 w-4" /> Telegram
-                    </Button>
-                  </a>
-                )}
+                    <Link href="/featured">
+                      <Button size="sm" variant="ghost">See the featured chat →</Button>
+                    </Link>
+                  </div>
+                  {siteInfo?.site.supportEmail && (
+                    <p className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
+                      <MailIcon className="h-3.5 w-3.5" /> {siteInfo.site.supportEmail}
+                    </p>
+                  )}
+                </div>
+                <div id="auth" className="scroll-mt-24">
+                  <AuthCard
+                    googleEnabled={siteInfo?.auth.googleEnabled ?? false}
+                    authError={authError}
+                    clearAuthError={() => setAuthError(null)}
+                    onAuthenticated={(u) => {
+                      setUser(u);
+                      router.push('/chats');
+                    }}
+                  />
+                </div>
               </div>
-              {siteInfo?.site.supportEmail && (
-                <p className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
-                  <MailIcon className="h-3.5 w-3.5" /> Support: {siteInfo.site.supportEmail}
-                </p>
-              )}
-            </div>
-
-            {/* Auth card (signed-out only) — signed-in users get quick links */}
-            <div id="auth" className="scroll-mt-24">
-              {user ? (
-                <SignedInCard siteName={siteName} email={user.email} welcome={welcome} />
-              ) : (
-                <AuthCard
-                  siteInfo={siteInfo}
-                  siteName={siteName}
-                  authError={authError}
-                  clearAuthError={() => setAuthError(null)}
-                  onAuthenticated={(u) => {
-                    setUser(u);
-                    router.push('/chat');
-                  }}
-                />
-              )}
-            </div>
+            )}
           </div>
         </section>
 
-        {/* Features */}
-        <section className="border-t border-border">
-          <div className="mx-auto grid max-w-6xl gap-6 px-4 py-14 sm:grid-cols-3 sm:px-6">
-            <Feature
-              icon={<BotIcon className="h-5 w-5" />}
-              title="No-code bot builder"
-              body="Name your bot, pick a provider, paste the token from @BotFather — the dashboard does the rest, from Telegram webhooks to conversation memory."
-            />
-            <Feature
-              icon={<BoltIcon className="h-5 w-5" />}
-              title="Free AI included"
-              body="OpenRouter free models are the default brain. One free key runs your bots — upgrade to any provider whenever you want."
-            />
-            <Feature
-              icon={<ShieldIcon className="h-5 w-5" />}
-              title="Keys stay secret"
-              body="Tokens and API keys are encrypted at rest (AES-256-GCM), never logged, never returned by any API. You stay in control."
-            />
+        {/* What NURAE is — three statements, no cards */}
+        <section className="border-t border-border/60">
+          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+            <dl className="grid gap-10 sm:grid-cols-3">
+              <div>
+                <dt className="text-sm font-medium text-foreground">Talk, or delegate</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  Ask questions in <Link href="/chats" className="text-foreground underline-offset-4 hover:underline">Chats</Link>.
+                  When something needs real work — building or changing a bot — it goes to an
+                  <Link href="/chats/agents" className="text-foreground underline-offset-4 hover:underline"> agent</Link> that
+                  actually does it, with your approval before anything goes live.
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm font-medium text-foreground">Bots that do more than chat</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  Menu commands, inline buttons, keyword replies and mini-workflows — configured by
+                  you or by the agent, tested against the real pipeline before publishing.
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm font-medium text-foreground">Yours, and private</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  Tokens and keys are encrypted at rest and never returned by any API. Agents run
+                  inside your account with audited, permission-checked tools.
+                </dd>
+              </div>
+            </dl>
           </div>
         </section>
       </main>
@@ -183,55 +160,41 @@ export function SiteHome() {
   );
 }
 
-/** Signed-in view of the auth-card slot: quick links instead of the form. */
-function SignedInCard({
-  siteName,
+/** Signed-in hero: the product, three links. */
+function SignedInPanel({
   email,
   welcome,
+  siteName,
 }: {
-  siteName: string;
   email: string;
   welcome: boolean;
+  siteName: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-lg shadow-black/40">
+    <div className="max-w-xl">
       {welcome && (
-        <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-foreground">
-          <CheckIcon className="h-3.5 w-3.5" /> Signed in with Google — welcome to {siteName}.
-        </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Signed in with Google — welcome to {siteName}.
+        </p>
       )}
-      <h2 className="text-lg font-semibold text-foreground">You are signed in</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{email}</p>
-      <div className="mt-5 grid gap-3">
-        <Link href="/chat" className="block">
-          <Button className="w-full gap-2">
-            <BotIcon className="h-4 w-4" /> Chat with the NURAE CS Bot
-          </Button>
+      <h1 className="text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl">
+        Welcome back.
+      </h1>
+      <p className="mt-4 text-sm text-muted-foreground">{email}</p>
+      <div className="mt-8 grid gap-px border-t border-l border-border/60 sm:grid-cols-3">
+        <Link href="/chats" className="group block border-b border-r border-border/60 p-4 transition-colors hover:bg-muted/40">
+          <span className="block text-sm text-foreground">Chats</span>
+          <span className="mt-1 block text-xs text-muted-foreground">Talk with the AI</span>
         </Link>
-        <div className="grid grid-cols-2 gap-3">
-          <Link href="/help" className="block">
-            <Button variant="outline" className="w-full">Help &amp; FAQ</Button>
-          </Link>
-          <Link href="/about" className="block">
-            <Button variant="outline" className="w-full">About</Button>
-          </Link>
-        </div>
+        <Link href="/chats/agents" className="group block border-b border-r border-border/60 p-4 transition-colors hover:bg-muted/40">
+          <span className="block text-sm text-foreground">Agents</span>
+          <span className="mt-1 block text-xs text-muted-foreground">Hand over real work</span>
+        </Link>
+        <Link href="/bots" className="group block border-b border-r border-border/60 p-4 transition-colors hover:bg-muted/40">
+          <span className="block text-sm text-foreground">Bots</span>
+          <span className="mt-1 block text-xs text-muted-foreground">Run what was built</span>
+        </Link>
       </div>
-      <p className="mt-5 border-t border-border pt-4 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-        {siteName} · FRAZIYM TECH &amp; AI
-      </p>
-    </div>
-  );
-}
-
-function Feature({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-6">
-      <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted/50 text-foreground">
-        {icon}
-      </span>
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
     </div>
   );
 }
@@ -243,14 +206,12 @@ function Feature({ icon, title, body }: { icon: React.ReactNode; title: string; 
 type AuthStep = 'signin' | 'signup' | 'verify';
 
 function AuthCard({
-  siteInfo,
-  siteName,
+  googleEnabled,
   authError,
   clearAuthError,
   onAuthenticated,
 }: {
-  siteInfo: SiteInfoResponse | null;
-  siteName: string;
+  googleEnabled: boolean;
   authError: string | null;
   clearAuthError: () => void;
   onAuthenticated: (user: SessionUserDTO) => void;
@@ -265,8 +226,6 @@ function AuthCard({
   const [mailError, setMailError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const googleEnabled = siteInfo?.auth.googleEnabled ?? false;
 
   const switchStep = (next: AuthStep) => {
     clearAuthError();
@@ -291,11 +250,22 @@ function AuthCard({
   };
 
   // (Re-)issue a verification code. The register endpoint is idempotent for
-  // unverified accounts, so resending is just another register call with the
-  // credentials already in state. Old codes are invalidated server-side — the
-  // NEWEST email is the one that counts.
+  // unverified accounts, so resending is just another register call. Old
+  // codes are invalidated server-side — the NEWEST email is the one that counts.
   const issueCode = async () => {
-    const r = await nuraeApi.register(name.trim(), email.trim().toLowerCase(), password);
+    let ref: string | null = null;
+    try {
+      ref = localStorage.getItem('nurae:ref');
+      localStorage.removeItem('nurae:ref');
+    } catch {
+      ref = null;
+    }
+    const r = await nuraeApi.register(
+      name.trim(),
+      email.trim().toLowerCase(),
+      password,
+      ref ?? undefined,
+    );
     if (r.devCode) setDevCode(r.devCode);
     else setDevCode(null);
     setMailError(r.mailError ?? null);
@@ -341,7 +311,6 @@ function AuthCard({
     setError(null);
     try {
       await nuraeApi.verifyEmail(email.trim().toLowerCase(), code.trim());
-      // Verified + session cookie set — load the fresh identity.
       const me = await nuraeApi.me();
       if (me.user) onAuthenticated(me.user);
     } catch (err) {
@@ -352,9 +321,9 @@ function AuthCard({
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-lg shadow-black/40">
+    <div>
       {authError && (
-        <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs capitalize text-destructive">
+        <div className="mb-4 border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs capitalize text-destructive">
           Google sign-in failed: {authError}
         </div>
       )}
@@ -362,23 +331,23 @@ function AuthCard({
       {step === 'verify' ? (
         <form onSubmit={submitVerify} className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Verify your email</h2>
+            <h2 className="text-lg font-medium text-foreground">Verify your email</h2>
             <p className="mt-1 text-sm text-muted-foreground">{notice ?? `Enter the 6-digit code sent to ${email}.`}</p>
           </div>
-          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-            Not in your inbox? Check the <span className="font-medium text-foreground">SPAM / Promotions</span> folder —
-            Gmail sometimes files verification mail there. Use the NEWEST email; older codes stop working.
-          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Not in your inbox? Check the <span className="text-foreground">spam / Promotions</span> folder — Gmail
+            sometimes files verification mail there. Use the newest email; older codes stop working.
+          </p>
           {mailError && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive" role="alert">
+            <div className="border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive" role="alert">
               <p className="font-medium">The email could not be sent — no code will arrive.</p>
               <p className="mt-1 opacity-90">{mailError}</p>
             </div>
           )}
           {devCode && (
-            <div className="rounded-md border border-border bg-muted/50 px-3 py-2.5 text-center">
+            <div className="border border-border px-3 py-2.5 text-center">
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Dev verification code</div>
-              <div className="mt-1 font-mono text-2xl font-bold tracking-[0.4em] text-foreground">{devCode}</div>
+              <div className="mt-1 font-mono text-2xl tracking-[0.4em] text-foreground">{devCode}</div>
             </div>
           )}
           <div className="space-y-1.5">
@@ -394,8 +363,8 @@ function AuthCard({
               className="text-center font-mono text-lg tracking-[0.5em]"
             />
           </div>
-          {error && <FormError message={error} />}
-          <Button type="submit" className="w-full" disabled={busy || code.length !== 6}>
+          {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+          <Button type="submit" className="w-full" size="sm" disabled={busy || code.length !== 6}>
             {busy ? 'Verifying…' : 'Verify & continue'}
           </Button>
           <div className="flex items-center justify-between text-xs">
@@ -407,25 +376,24 @@ function AuthCard({
             >
               Resend code
             </button>
-            <button
-              type="button"
-              onClick={() => switchStep('signin')}
-              className="text-muted-foreground hover:text-foreground"
-            >
+            <button type="button" onClick={() => switchStep('signin')} className="text-muted-foreground hover:text-foreground">
               Back to sign in
             </button>
           </div>
-        </form>) : (
+        </form>
+      ) : (
         <>
-          <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1">
+          <div className="mb-5 flex gap-6 border-b border-border/60 text-xs">
             {(['signin', 'signup'] as const).map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => switchStep(s)}
                 className={
-                  'rounded-md px-3 py-1.5 text-sm transition-colors ' +
-                  (step === s ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')
+                  '-mb-px border-b pb-2 transition-colors ' +
+                  (step === s
+                    ? 'border-foreground font-medium text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground')
                 }
               >
                 {s === 'signin' ? 'Sign in' : 'Create account'}
@@ -436,7 +404,7 @@ function AuthCard({
           {googleEnabled && (
             <>
               <a href="/api/auth/google/start" className="block">
-                <Button type="button" variant="outline" className="w-full gap-2">
+                <Button type="button" variant="outline" className="w-full gap-2" size="sm">
                   <GoogleIcon className="h-4 w-4" />
                   {step === 'signin' ? 'Sign in with Google' : 'Sign up with Google'}
                 </Button>
@@ -459,6 +427,7 @@ function AuthCard({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  className="bg-transparent"
                 />
               </div>
               <div className="space-y-1.5">
@@ -470,10 +439,11 @@ function AuthCard({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  className="bg-transparent"
                 />
               </div>
-              {error && <FormError message={error} />}
-              <Button type="submit" className="w-full" disabled={busy}>
+              {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+              <Button type="submit" className="w-full" size="sm" disabled={busy}>
                 {busy ? 'Signing in…' : 'Sign in'}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
@@ -487,7 +457,7 @@ function AuthCard({
             <form onSubmit={submitSignup} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="signup-name">Name</Label>
-                <Input id="signup-name" autoComplete="name" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} />
+                <Input id="signup-name" autoComplete="name" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} className="bg-transparent" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="signup-email">Email</Label>
@@ -499,6 +469,7 @@ function AuthCard({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  className="bg-transparent"
                 />
               </div>
               <div className="space-y-1.5">
@@ -512,10 +483,11 @@ function AuthCard({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  className="bg-transparent"
                 />
               </div>
-              {error && <FormError message={error} />}
-              <Button type="submit" className="w-full" disabled={busy}>
+              {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+              <Button type="submit" className="w-full" size="sm" disabled={busy}>
                 {busy ? 'Creating…' : 'Create account'}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
@@ -525,18 +497,6 @@ function AuthCard({
           )}
         </>
       )}
-
-      <p className="mt-5 border-t border-border pt-4 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-        {siteName} · FRAZIYM TECH &amp; AI
-      </p>
-    </div>
-  );
-}
-
-function FormError({ message }: { message: string }) {
-  return (
-    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
-      {message}
     </div>
   );
 }

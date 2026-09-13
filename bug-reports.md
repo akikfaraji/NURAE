@@ -18,11 +18,13 @@ this file is the user-facing history of what broke and how it was resolved.
 | BR-009 | Page has "2 heads" — two stacked header bars (site header + chat card header with its own Sign out) | The chat card duplicated brand tile, account email and Sign out below the site header | Single-head layout: account controls (email + Sign out) moved into the site header; the chat card is now one slim toolbar (bot name + online dot) | FIXED — V00.01.013 |
 | BR-010 | Web chat shows raw markdown (`**bold**`, `###`, `[links](…)`) in AI answers | Bubbles rendered plain text; `react-markdown` was never wired into the chat | Assistant bubbles render through react-markdown + remark-gfm with new monochrome `.md-body` styles (headings, bold, code, links, lists, tables, quotes); verified in-browser — zero raw markers visible | FIXED — V00.01.013 |
 | BR-011 | "Where are the other pages for users? Chat is only one of the many pages" | The public site was a single page (landing + auth + chat jammed together) | Real multi-page user site: `/` (home + auth), `/chat` (dedicated full-height chat, sign-in-guarded), `/help` (FAQ + contact from site settings), `/about` (about + contact); shared nav header + footer; sign-in redirects into `/chat` | FIXED — V00.01.013 |
+| BR-012 | The /about page shows a duplicate footer (page-level version strip + site footer) | The About page rendered its own bordered version/vendor strip in addition to `SiteFooter` | In-page strip removed — the footer alone carries version + vendor; verified one `contentinfo` per page | FIXED — V00.02.000 |
+| BR-013 | The product "looks like an AI-generated SaaS template": everything boxed in cards, giant header, prominent Sign out, one boxed chat page | Structural, not cosmetic: the UI had no product model behind it | Full product round (see worklog Task 18): compact 48px chrome with the account menu (Sign out behind it) and small N mark top-right; `/chats` rebuilt as a full-page conversation environment (typography, not bubbles); new `/chats/agents` (real Bot Builder agent over an audited tool layer), `/bots` (user-owned bots, commands/buttons/workflows, real-pipeline test console), `/featured`; file uploads with PDF/DOCX extraction; chat → agent handoff; server-side referral + entitlements; design language is typography and spacing — no gradient/card clutter | FIXED — V00.02.000 |
 
 ## Notes
 
 - Every fix above ships with regression coverage in `tests/nurae/` — the
-  suite count is 158/158 as of V00.01.013-beta-03 (page-level UI changes are
+  suite count is 188/188 as of V00.02.000-beta-03 (page-level UI changes are
   additionally verified in a real browser; React components have no vitest
   harness yet).
 - BR-004 evidence: with the owner-provided Gmail app password, a real

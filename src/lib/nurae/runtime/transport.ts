@@ -26,7 +26,8 @@ import { TelegramAdapter, TelegramApiError, WebhookInfo } from '../telegram/adap
 import { BotManager } from './bot-manager';
 import { BotRuntime } from './bot-runtime';
 import { createPrismaRuntimeStore, RuntimeStore } from './store';
-import { handleBotMessage, updateToInboundMessage, TelegramUpdateLike } from './pipeline';
+import { handleBotMessage, handleBotCallback, updateToCallback, updateToInboundMessage, TelegramUpdateLike } from './pipeline';
+import { loadCapabilities, telegramMenuCommands } from '../bots/capabilities';
 import { db } from '@/lib/db';
 import { SecretManager } from '../secrets';
 import { startGatewayHeartbeat } from './gateway-link';
@@ -197,6 +198,13 @@ export async function startBot(botId: string, opts?: { publicBaseUrl?: string | 
 
       const secret = randomBytes(32).toString('base64url');
       await adapter.setWebhook(url, { secretToken: secret });
+      // Register the bot menu (custom commands) — best-effort, never blocks.
+      try {
+        const menu = telegramMenuCommands(loadCapabilities(bot).commands);
+        if (menu.length) await adapter.setMyCommands(menu);
+      } catch {
+        await log(botId, 'warn', 'setMyCommands failed — the menu was not registered (bot still runs).', 'WEBHOOK_REGISTERED');
+      }
       await db.bot.update({
         where: { id: botId },
         data: {
@@ -406,17 +414,30 @@ export async function verifyWebhookSecret(botId: string, presented: string | nul
 /** Process a webhook update end-to-end. Returns false when the update was a duplicate. */
 export async function ingestWebhookUpdate(botId: string, update: TelegramUpdateLike): Promise<boolean> {
   if (seenUpdate(botId, update.update_id)) return false;
-  const msg = updateToInboundMessage(update);
-  if (!msg) return true; // nothing this release handles (non-text updates are ignored)
-
   const store = createStore();
   const record = await store.getBot(botId);
   if (!record) throw new Error('Bot not found');
 
+  // Callback queries (inline button presses) take precedence when present.
+  const callback = updateToCallback(update);
+  if (callback) {
+    await store.createLog(
+      botId,
+      'info',
+      `Button press received from chat ${callback.chatId} (data: ${callback.data.slice(0, 64)}).`,
+      'TELEGRAM_CALLBACK_RECEIVED',
+    );
+    await handleBotCallback(record, adapterFor(record.telegramToken), callback, { store });
+    return true;
+  }
+
+  const msg = updateToInboundMessage(update);
+  if (!msg) return true; // nothing this release handles (non-text updates are ignored)
+
   await store.createLog(
     botId,
     'info',
-    `Message received from chat ${msg.chatId} (${msg.text.length} chars).`,
+    `Message received from chat ${msg.chatId} (${msg.text.length} chars${msg.hasPhoto ? ', photo' : ''}).`,
     'TELEGRAM_MESSAGE_RECEIVED',
   );
   await handleBotMessage(record, adapterFor(record.telegramToken), msg, { store });

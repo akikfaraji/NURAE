@@ -1,6 +1,6 @@
-import { ChatPage } from '@/components/nurae/chat-page';
+import { redirect } from 'next/navigation';
 
-/** NURAE public site — the official CS bot web chat (signed-in customers). */
+/** /chat moved to /chats — old links keep working. */
 export default function Page() {
-  return <ChatPage />;
+  redirect('/chats');
 }

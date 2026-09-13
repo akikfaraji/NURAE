@@ -12,6 +12,7 @@ import { apiError, internalError, validationError } from '@/lib/nurae/api/base';
 import { verifyPassword } from '@/lib/nurae/auth/passwords';
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
 import { createUserSession } from '@/lib/nurae/auth/sessions';
+import { qualifyReferralForUser } from '@/lib/nurae/referral';
 
 const BodySchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -64,6 +65,10 @@ export async function POST(req: Request): Promise<Response> {
       db.verificationToken.deleteMany({ where: { userId: user.id, purpose: 'email_verify' } }),
       db.user.update({ where: { id: user.id }, data: { emailVerified: true, lastLoginAt: new Date() } }),
     ]);
+
+    // The invited account is now real — qualify any pending referral reward
+    // and grant the inviter's entitlement (2 days of premium features).
+    await qualifyReferralForUser(user.id).catch(() => undefined);
 
     const res = NextResponse.json({ ok: true });
     await createUserSession(res, user.id, req.headers.get('user-agent'));

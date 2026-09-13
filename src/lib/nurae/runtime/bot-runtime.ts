@@ -21,6 +21,7 @@ import { TelegramAdapter, TelegramApiError } from '../telegram/adapter';
 import { handleBotMessage, updateToInboundMessage } from './pipeline';
 import { RuntimeBotRecord, RuntimeStore } from './store';
 import { BotStatus } from './state-machine';
+import { telegramMenuCommands } from '../bots/capabilities';
 import type { selectProvider } from '../ai/registry';
 
 export type { BotStatus };
@@ -83,6 +84,13 @@ export class BotRuntime {
     try {
       const me = await adapter.getMe({ signal: this.abortController.signal });
       await adapter.deleteWebhook({ signal: this.abortController.signal });
+      // Register the bot menu (custom commands) — best-effort, never blocks.
+      try {
+        const menu = telegramMenuCommands(this.record.capabilities.commands);
+        if (menu.length) await adapter.setMyCommands(menu, { signal: this.abortController.signal });
+      } catch {
+        await this.store.createLog(this.botId, 'warn', 'setMyCommands failed — the menu was not registered (bot still runs).');
+      }
       this._status = 'running';
       await this.store.updateBotRuntimeState(this.botId, {
         status: 'running',

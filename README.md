@@ -3,50 +3,80 @@
 **NURAE — Autonomous Digital Operations System**
 **FRAZIYM TECH & AI**
 
-NURAE is an autonomous digital-operations platform that is being built incrementally.
-Its long-term ambition is to create, deploy, operate, monitor, and improve digital
-services with minimal human intervention. This repository currently contains the
-**minimal but genuinely functional core** of that vision: a platform that creates,
-configures, starts, monitors, and stops AI-powered Telegram bots.
+> Chat is the interface. Agents are the workers. Tools/MCP are the hands.
+> Files are knowledge/input. Bots are what gets built. The user stays in control.
+
+NURAE is a platform where customers **talk to an AI, hand real work to agents, and run
+their own AI-powered Telegram bots** — no code, no servers, no DevOps. This release
+contains the genuinely functional core of that vision: a multi-conversation chat
+environment, a secure agent + tool layer with a real Bot Builder agent, user-owned bots
+with commands/buttons/workflows, file uploads with text extraction, and a
+server-side referral/entitlement system.
 
 ---
 
 ## 1. What NURAE is
 
-NURAE is a platform where an operator can:
+### For customers (the product, at `/`)
 
-1. Log into the NURAE console (`/admin`).
-2. Create a project.
-3. Create an **AI-powered Telegram bot**.
-4. Provide a Telegram bot token (stored encrypted).
-5. Configure the bot (AI provider, model, system prompt, generation settings, memory).
-6. **Start / stop / restart** the bot.
-7. Send the bot a message on Telegram and receive an **AI-generated reply**.
-8. View its **status** and **structured logs**.
+1. **Sign up** — email + 6-digit Gmail verification code (check spam!) or Google sign-in.
+2. **`/chats`** — a full-page conversation environment: multiple chats, a slim session
+   sidebar, markdown/GFM answers, file attachments (PDF, Markdown, TXT, CSV, DOCX,
+   images), Enter/Shift+Enter composer, mobile drawer. Conversations persist.
+3. **`/chats/agents`** — where agents DO work. The **Bot Builder agent** turns a
+   description (and any attached files) into a real bot configuration: identity,
+   instructions, menu commands, inline buttons, keyword replies, workflows and document
+   knowledge. Every tool step shows as understandable progress (✓ Created bot …) and is
+   written to an audit trail. Publishing always requires the user's explicit approval.
+4. **`/bots`** — manage what was built: create manually ("Create bot") or by
+   description ("Create with AI"), configure AI providers, edit commands/replies,
+   **test against the real pipeline** (captured output — exactly what Telegram would
+   receive), publish/unpublish, archive/delete. Ownership is enforced at the query
+   level; a user can never touch another account's bot.
+5. **`/featured`** — the featured conversation, kept deliberately small.
+6. **Invite** — every account has a referral link (`/?ref=CODE`). When an invited
+   friend signs up through it and verifies their email, the inviter gets **2 days of
+   premium** — tracked server-side, one reward per invited user, self-referrals
+   refused. The UI is a single quiet dialog in the account menu.
 
-…and where customers can:
+### For the operator (`/admin`)
 
-1. Visit the public site (`/`) and **sign up** — email + 6-digit Gmail
-   verification code (check spam!), or Google sign-in.
-2. Browse a real multi-page site: **Home** (`/`), **Chat** (`/chat`),
-   **Help & FAQ** (`/help`), **About/Contact** (`/about`) — one shared
-   header, no admin links exposed.
-3. Chat with the **official NURAE CS bot** on the site (web chat) or on
-   Telegram — AI replies render as proper markdown in both places.
-4. Be managed by the operator via the dashboard (**Customers**, site
-   settings) — everything persisted in the database, keys encrypted at rest.
+The admin console (login via `NURAE_ADMIN_TOKEN`, deliberately **not linked** from the
+customer site) manages the platform: the official NURAE CS bot (which also powers the
+web chat + agent AI), site settings, and the customers directory.
 
-The operator console lives at `/admin` (login via `NURAE_ADMIN_TOKEN`) and
-is deliberately **not linked** from the customer site — the owner reaches
-it by URL.
+### The product model
 
-> **Setup / self-hosting:** the complete step-by-step manual — local machine
-> or Termux Debian, polling vs webhook transport, and serving from your own
-> Linux server with systemd + Caddy — lives in **[SETUP.md](./SETUP.md)**.
-> All configuration is a single `.env` file (`.env.example` is the annotated
-> template). Vercel/Actions split-deployment paths are optional extras.
+```text
+Chat AI  — conversational front layer; answers, or recognizes agent tasks
+Agents   — do the work (Bot Builder today; the registry grows only with real agents)
+Tools    — a restricted, audited capability layer (the only way agents touch the world)
+Files    — uploaded knowledge, extracted server-side, passed to agents BY REFERENCE
+Bots     — user-owned Telegram bots: commands, buttons, workflows, AI replies
+```
 
-## 2. FRAZIYM versioning system
+## 2. The agent tool layer (security model)
+
+Agents never see the database, filesystem or Prisma. They call named tools from
+`src/lib/nurae/agents/tools.ts`:
+
+- **Identity** — `ToolContext.userId` comes from the authenticated session of the
+  request driving the agent turn. It is never taken from model output, bodies or URLs;
+  the tool argument shapes have no user-id field at all.
+- **Ownership** — every bot/file query filters on `ownerId = ctx.userId` at the query
+  level. Cross-user access is impossible by construction.
+- **Read/write split** — every tool declares `kind`; discovery exposes it.
+- **Confirmation** — consequential actions (`bot_publish`, `bot_unpublish`) require
+  the model to pass `confirm: true` AND the human to have pressed the explicit
+  approval control in that turn. One without the other fails.
+- **Validation** — arguments are zod-validated before anything executes.
+- **Auditability** — every invocation writes a session-scoped `AgentStep` row (the
+  user-facing progress feed) and a sanitized platform `Log` row (`AGENT_TOOL`).
+- **MCP-compatible discovery** — `GET /api/agents/tools` advertises every tool with
+  its JSON schema, kind and consequential flag (the envelope MCP servers publish),
+  so external MCP clients can enumerate NURAE capabilities.
+
+## 3. FRAZIYM versioning system
 
 NURAE does **not** use conventional semantic versioning. It uses the official
 **FRAZIYM versioning format**:
@@ -61,168 +91,138 @@ VPP.FF.BBB-STAGE-RR
 └─────────────────── Platform generation (V00, V01, …)
 ```
 
-Examples:
+The **single authoritative version source** is `src/lib/nurae/version.ts`
+(`NURAE_VERSION`). Five sync points carry the string for tests/docs:
+`src/lib/nurae/version.ts`, `tests/nurae/version.test.ts`, `tests/nurae/api.test.ts`,
+`.env.example`, `SETUP.md`.
 
-| Version                 | Meaning                                          |
-| ----------------------- | ------------------------------------------------ |
-| `V00.00.000-beta-01`    | Initial beta foundation                          |
-| `V00.01.000-beta-02`    | First feature release — working bot platform (this release) |
-| `V00.01.003-beta-04`    | Feature release, 3 bug fixes, 4th beta revision  |
-| `V01.00.000`            | Stable release (stage omitted)                   |
+## 4. Current release
 
-The **single authoritative version source** is
-`src/lib/nurae/version.ts` (`NURAE_VERSION`). Every component — dashboard, API,
-health endpoint, logs, release metadata — imports the version from there. Do
-not duplicate version strings elsewhere.
+**NURAE V00.02.000-beta-03** — feature release 02: the product layer.
 
-## 3. Current release
-
-**NURAE V00.01.013-beta-03** — feature release 01, bug-fix round 13.
-
-> «Small release. Real functionality. Clean architecture. Continuous evolution.»
-
-## 4. Current scope
+> «Chat is the interface. Agents are the workers. The user stays in control.»
 
 ### IMPLEMENTED
 
-- Dashboard (responsive single-page console): overview stats, projects, bot
-  cards (name, Telegram username, provider, model, status, created), bot
-  detail with controls (Start / Stop / Restart / Edit / Logs / Delete / Verify).
-- REST API (Next.js App Router) with zod input validation on every endpoint.
-- **Telegram integration, webhook transport (primary)**: `setWebhook` on start
-  (with a per-bot random secret verified via `X-Telegram-Bot-Api-Secret-Token`),
-  `deleteWebhook` on stop, `/start`, `/help`, unknown-command handling,
-  AI replies, Telegram-side status reconciliation
-  (`getWebhookInfo`).
-- **Polling transport (local fallback)**: in-process long-poll loop for local
-  development without a public URL (`NURAE_BOT_TRANSPORT=polling`).
-- **Markdown answers in both channels**: Telegram replies are converted from
-  AI markdown to Telegram HTML (headings, bold/italic, code blocks, links,
-  lists, quotes, tables) with ≤4096-char chunking and an automatic plain-text
-  fallback; the web chat renders markdown through react-markdown + GFM with
-  monochrome styles.
-- **Bot status state machine**: `stopped → starting → running → stopping →
-  stopped`, with `error` reachable from `starting`/`running`/`stopping`.
-  Nonsense transitions are rejected — the check is enforced in the database,
-  not just in memory.
-- **Provider-agnostic AI layer** (`AIProvider` interface + registry):
-  - `openrouter` — one key, many models; `openrouter/free` auto-routes among
-    FREE models (no charge) — the recommended default
-  - `openai`, `deepseek`, `glm` (Zhipu), `local` (Ollama/vLLM), `custom` —
-    all through one OpenAI-compatible HTTP implementation
-  - Credential validation, timeouts, error classification, bounded retries
-    with backoff, `Retry-After` support
-- **Structured bot logs** with event codes (`BOT_CREATED`, `BOT_STARTING`,
-  `BOT_STARTED`, `TELEGRAM_MESSAGE_RECEIVED`, `AI_REQUEST`, `AI_RESPONSE`,
-  `TELEGRAM_MESSAGE_SENT`, `BOT_STOPPING`, `BOT_STOPPED`, `BOT_ERROR`, …) —
-  never containing tokens, API keys, or other secrets (sanitized at write and
-  read time).
-- **Short-term conversation memory**: configurable number of recent messages
-  kept per chat (no vectors, no RAG).
-- **Secrets**: Telegram tokens, AI API keys, and webhook secrets encrypted at
-  rest (AES-256-GCM, key from `NURAE_SECRET_KEY` or an auto-generated local
-  key file); never returned by any API, never logged.
-- **Customer accounts + public site**: registration with scrypt-hashed
-  passwords, 6-digit Gmail-verified email codes (hashed at rest, 15-min TTL,
-  newest-code-wins), Google sign-in (OAuth 2.0, state-CSRF protected),
-  30-day sessions. Multi-page user site (Home / Chat / Help / About) with a
-  shared header — no admin links in public view.
-- **Official NURAE CS bot**: auto-seeded on first boot; configurable (AI key,
-  Telegram token, system prompt) directly from the admin overview card;
-  powers both the web chat and the Telegram support bot; ships with a
-  crafted official support prompt including escalation guidance.
-- **Transactional email** via Gmail SMTP app password (`NURAE_GMAIL_USER` /
-  `NURAE_GMAIL_APP_PASSWORD`); IPv4-first DNS (fixes unreachable-IPv6
-  networks, e.g. Termux/Android); actionable failure hints surfaced in the UI.
-- **Admin authentication**: set `NURAE_ADMIN_TOKEN` to require an admin token
-  for the dashboard and all administrative endpoints (timing-safe comparison).
-- **Persistence** via the Prisma libSQL driver adapter: the SAME schema serves
-  local development (`file:` — embedded libSQL) and serverless deployment
-  (`libsql://` — hosted Turso).
-- **Vercel-compatible**: no second process, no long-running loops, no local
-  filesystem dependency when `NURAE_SECRET_KEY` + Turso are configured.
-- Health endpoint, automated tests (158), lint-clean, type-clean in `src/`.
+**Product surfaces**
+- Redesigned application chrome: one 48px hairline header — compact text navigation,
+  the account menu (sign out lives behind it, not as a giant button), the small N mark
+  top-right, a proper mobile sheet menu. Public pages and the authenticated app share
+  the identity but not the layout (app pages run full-height, footer-free).
+- `/chats` — full-page conversation environment: session sidebar (desktop) / drawer
+  (mobile), new/rename/archive/delete chats, typography-led messages (no giant
+  bubbles), markdown + GFM rendering, auto-growing composer with Enter/Shift+Enter,
+  file attach chips, honest loading/error states, human empty state.
+- `/chats/agents` — the agent workbench: persistent agent sessions with durable task
+  state, activity feed sourced from the audit trail, "Approve & publish" control,
+  deep link into the built bot.
+- `/bots` — list + create (manual form, or "Create with AI" via the agent), bot detail
+  with configuration (provider/model/prompt/limits, token + key write-only fields),
+  structured command editor, reply-rule editor (triggers, inline buttons, multi-message
+  workflows), **real-pipeline test console**, publish/unpublish with explicit
+  confirmation, archive/delete.
+- `/featured` — small featured-conversation page; curated questions prefill a new chat.
+- Home redesigned: typographic hero, statement-based features, referral capture
+  (`?ref=CODE` stored until sign-up), Google/email auth.
+- `/about` duplicate footer fixed; `/help` updated to the new product model.
 
-### EXPERIMENTAL
+**Chat → Agent routing**
+- The chat AI answers questions directly and detects build/modify requests; on
+  handoff NURAE creates an agent session, seeds it with the task and the referenced
+  files **by reference** (no re-upload), runs the agent's first turn, and offers
+  [Open in Agent].
 
-- The `openrouter/free` router and other `:free` model ids rotate as model
-  providers come and go — if one disappears, pick another from the dropdown
-  or type any current model id.
-- Duplicate-update suppression (Telegram retry safety) is per server
-  instance; on horizontally scaled deployments a timed-out webhook could
-  rarely be processed twice.
+**Files**
+- Upload API (multipart, ownership-checked, 10 MB cap, extension allowlist) with
+  dependency-free text extraction: text/MD/CSV/JSON inline, **PDF** (zlib stream
+  parsing + text operators), **DOCX** (ZIP inflate + `w:t` runs); images and
+  unreadable binaries are stored and reported honestly as binary.
+- Retrieval is bounded: files enter model context as head+tail slices with the middle
+  elided — documents are never dumped wholesale.
 
-### PLANNED (NOT in this release — do not assume these exist)
+**Telegram**
+- Custom menu commands (`setMyCommands` on start; static or AI-guided responses).
+- Inline keyboards + **callback queries** (`answerCallbackQuery`, namespaced
+  `r:` callback data, unknown-callback honesty).
+- Reply rules: command / keyword / button / fallback triggers; multi-message
+  **mini-workflows**; buttons on the first message of any rule.
+- Media: photo messages read the caption (no vision model — documented, honest).
+- Deep-link start payloads logged; markdown → Telegram HTML with chunking and
+  plain-text fallback everywhere.
 
-Autonomous code generation, automatic bot creation from natural language,
-marketplace, billing, payments, multi-user teams, complex analytics, RAG,
-vector databases, fine-tuning, agent swarms, streaming responses, Discord /
-WhatsApp / Facebook / Instagram / Web channels, mobile application, dozens of
-additional AI providers. These are future roadmap items and are intentionally
-excluded.
+**Referrals + entitlements**
+- Lazy per-user invite codes; pending reward at sign-up; qualification at email
+  verification; 2-day `premium` entitlement granted to the inviter (extending an
+  active one). Entitlements are per-feature with expiry — future rewards (extra agent
+  runs, storage, models) fit without migration. All server-side; unique-index guards
+  against duplicate claims.
+
+**Carried from V00.01.x (unchanged, still real)**
+- Webhook (primary) + polling (local) transports; per-bot webhook secrets.
+- Provider-agnostic AI layer (OpenRouter free default, OpenAI/DeepSeek/GLM/local/custom),
+  credential validation, retries, error classification.
+- Secrets encrypted at rest (AES-256-GCM), never returned by APIs, never logged.
+- Customer auth (scrypt, Gmail OTP with hashed codes, Google OAuth), sessions.
+- Structured logs with event codes; bot status state machine enforced in the DB.
+- 188 tests (vitest), lint-clean src, type-clean src.
+
+### NOT in this release (do not assume these exist)
+
+- Streaming responses; vector search/RAG (file knowledge currently distills into the
+  bot prompt, ≤3000 chars per `bot_add_knowledge` call); multi-step visual workflow
+  editor (workflows are sequential message lists); payments/billing (entitlements are
+  the foundation); additional agents (the registry has exactly one real agent);
+  Discord/WhatsApp channels; reply-keyboard (bottom keyboard) UI — the pipeline
+  accepts and routes callbacks, but NURAE does not yet SEND `reply_keyboard` markups;
+  horizontal scaling guarantees (duplicate-update suppression is per instance).
 
 ## 5. Architecture
 
 ```text
-                Browser (SPA at /)
-                        │  fetch /api/* (relative paths)
-                        ▼
-        ┌────────────────────────────────────┐
-        │      Next.js app (:3000)           │
-        │   Dashboard ─ API routes           │  auth guard · zod · DTOs
-        │        │                           │
-        │   Transport layer                  │  webhook (primary) | polling (dev)
-        │        │        └── BotManager ── BotRuntime (in-process poll loop)
-        │        │
-        │   /api/telegram/webhook/{botId}  ◀── Telegram POSTs updates here
-        │        │
-        │   Shared pipeline (transport-agnostic):
-        │   commands → conversation memory →
-        │   Provider Selector → AIProvider → reply
-        └───────┬────────────────────────────┘
-                │
-     libSQL database (Prisma driver adapter)
-     local: file:./db/custom.db   |   Vercel: libsql://… (Turso)
+   Browser (App Router pages: / /chats /chats/agents /bots /featured /help /about /admin)
+        │  fetch /api/* (relative, cookie sessions)
+        ▼
+   ┌───────────────────────────────────────────────┐
+   │  Next.js (:3000)                              │
+   │  API routes ── zod validation ── session auth │
+   │     │ chats │ files │ agents │ my/bots │ …    │
+   │     │                │                        │
+   │     │        Tool layer (tools.ts)             │
+   │     │        identity · ownership · audit     │
+   │     │                │                        │
+   │     │        Bot Builder agent loop           │
+   │     │                │                        │
+   │  Shared bot pipeline (transport-agnostic):    │
+   │  commands → buttons/callbacks → workflows →   │
+   │  memory → AI provider → reply (HTML+fallback) │
+   │     │                                         │
+   │  /api/telegram/webhook/{botId} ◀── Telegram   │
+   └──────┬────────────────────────────────────────┘
+          │
+   libSQL database (Prisma driver adapter) — local file: or Turso libsql://
+   Tables: Project Bot Conversation Message Log User Session VerificationToken
+           SiteSetting ChatSession ChatEntry AgentStep UserFile Referral
+           ReferralReward Entitlement
 ```
 
-Key boundaries (kept modular for future releases):
-`AIProvider` · `TelegramAdapter` (channel boundary) · `handleBotMessage`
-pipeline · `BotRuntime` (polling) · `transport` layer (webhook lifecycle,
-state machine, status merge) · `RuntimeStore` (storage) · `SecretManager`.
-
-The message flow (transport-independent):
-
-```text
-Telegram → Telegram Adapter → NURAE pipeline → conversation context
-→ AI Provider interface → selected provider → response → Telegram
-```
-
-No specific AI provider is hard-coded into the pipeline; no Telegram API call
-exists outside the Telegram adapter.
-
-### Why webhook is the primary transport (and polling the fallback)
-
-Webhook mode is stateless: Telegram delivers each update as an HTTPS request,
-NURAE processes it (AI call included) and responds. That makes the whole bot
-runtime compatible with serverless hosting (Vercel), immune to redeploys
-(no in-memory state to lose), and more reliable — Telegram automatically
-redelivers updates when NURAE fails to acknowledge them. The per-bot
-`secret_token` mechanism authenticates every delivery. Polling is kept only
-because `localhost` has no public URL for Telegram to call; it refuses to
-start on serverless platforms, where it cannot work.
+Key boundaries: `AIProvider` · `TelegramAdapter` · `handleBotMessage`/
+`handleBotCallback` pipeline · `RuntimeStore` · `ToolSpec` registry ·
+`runBotBuilderTurn` · `chatTurn` · `SecretManager` · `referral` entitlement gates.
 
 ## 6. Requirements
 
-- [Node.js](https://nodejs.org) 20+ (the runtime; npm included)
-- A Telegram bot token from [@BotFather](https://t.me/BotFather) (per bot)
-- An AI provider API key — [OpenRouter](https://openrouter.ai) recommended:
-  one free key unlocks the `:free` model tier (`openrouter/free` default)
+- [Node.js](https://nodejs.org) 20+ (npm included)
+- Per user bot: a Telegram bot token from [@BotFather](https://t.me/BotFather)
+- AI: an [OpenRouter](https://openrouter.ai) key (free tier works; `openrouter/free`
+  is the default model) — one platform key powers chat + agents
+- Gmail app password (customer verification mail) — `NURAE_GMAIL_USER` /
+  `NURAE_GMAIL_APP_PASSWORD`
 - On Vercel: a [Turso](https://turso.tech) database (free tier works)
 
 ## 7. Installation (local development)
 
 One command — everything (Node.js, `.env` with generated secrets, database,
-build, start) is automatic; you only paste your API tokens in the dashboard:
+build, start) is automatic:
 
 ```bash
 git clone https://github.com/akikfaraji/NURAE.git && cd NURAE
@@ -232,10 +232,10 @@ bash setup.sh             # modes: full (default) | dev | start | env
 Manual equivalent:
 
 ```bash
-npm install              # install dependencies
-cp .env.example .env     # then edit .env (see §8)
+npm install
+cp .env.example .env     # then edit .env (§8)
 npm run db:push          # create/sync the local libSQL database
-npm run dev              # single process: dashboard + API + runtime
+npm run dev              # single process: site + API + agents + runtime
 ```
 
 The full self-hosting manual (Termux Debian, own server, systemd + TLS) is
@@ -243,231 +243,119 @@ The full self-hosting manual (Termux Debian, own server, systemd + TLS) is
 
 ## 8. Environment variables
 
-All configuration lives in one `.env` file (`cp .env.example .env`). The
-complete annotated reference is [`.env.example`](./.env.example) and the
-self-hosting manual ([SETUP.md](./SETUP.md) §3 + §9) explains each value.
-Core variables:
+The complete annotated reference is [`.env.example`](./.env.example). Core variables:
 
-| Variable                   | Purpose                                                                     |
-| -------------------------- | --------------------------------------------------------------------------- |
-| `DATABASE_URL`             | SQLite file (`file:./db/custom.db`) · `libsql://…` (Turso) if you split      |
-| `NURAE_SECRET_KEY`         | Master key for encrypting bot tokens / API keys / webhook secrets at rest   |
-| `NURAE_ADMIN_TOKEN`        | When set, `/admin` + admin API require this token                          |
-| `NURAE_BOT_TRANSPORT`      | `webhook` (default) or `polling` (local testing without a public URL)       |
-| `NURAE_PUBLIC_BASE_URL`    | Public HTTPS origin used for webhook registration                           |
-| `PORT` / `HOSTNAME`        | Standalone server binding (production)                                      |
-| `NURAE_TELEGRAM_API_BASE`  | Testing only — point the Telegram adapter at a mock server                  |
-| `OPENAI_API_KEY` …         | Optional per-provider key fallbacks                                         |
-| `NURAE_GMAIL_USER` / `NURAE_GMAIL_APP_PASSWORD` | Gmail SMTP for customer verification codes (public site sign-up) |
-| `NURAE_GOOGLE_CLIENT_ID` / `NURAE_GOOGLE_CLIENT_SECRET` | Google sign-in (OAuth); redirect URI `<origin>/api/auth/google/callback` |
-| `NURAE_PUBLIC_URL`         | Explicit origin for OAuth redirects (behind host-changing proxies)          |
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | SQLite file (`file:./db/custom.db`) · `libsql://…` (Turso) |
+| `NURAE_SECRET_KEY` | Master key for encrypting tokens / keys / webhook secrets |
+| `NURAE_ADMIN_TOKEN` | When set, `/admin` + admin API require this token |
+| `NURAE_BOT_TRANSPORT` | `webhook` (default) or `polling` (local testing) |
+| `NURAE_PUBLIC_BASE_URL` | Public HTTPS origin used for webhook registration |
+| `NURAE_GMAIL_USER` / `NURAE_GMAIL_APP_PASSWORD` | Gmail SMTP for verification codes |
+| `NURAE_GOOGLE_CLIENT_ID` / `NURAE_GOOGLE_CLIENT_SECRET` | Google sign-in (redirect `<origin>/api/auth/google/callback`) |
+| `OPENROUTER_API_KEY` … | Optional per-provider key fallbacks (chat, agents, bots) |
+| `NURAE_TELEGRAM_API_BASE` | Testing only — point the adapter at a mock server |
 
 ## 9. Database
 
-Entities: `Project`, `Bot`, `Conversation`, `Message`, `Log`, plus the
-platform layer `User`, `Session`, `VerificationToken`, `SiteSetting` (see
-`prisma/schema.prisma`). Locally the database is an embedded libSQL file;
-on Vercel it is a hosted Turso database. Both use the same Prisma schema and
-the `@prisma/adapter-libsql` driver adapter.
+Entities (see `prisma/schema.prisma`): `Project`, `Bot` (now with `ownerId`,
+`commands_json`, `replies_json`, `archived`), `Conversation`, `Message`, `Log`,
+`User`, `Session`, `VerificationToken`, `SiteSetting`, plus the product layer:
+`ChatSession`, `ChatEntry`, `AgentStep`, `UserFile`, `Referral`, `ReferralReward`,
+`Entitlement`.
 
 ```bash
-npm run db:push          # apply the schema to the local file database
+npm run db:push          # apply the schema locally
 ```
 
-Applying the schema to a Turso database (remote `libsql://` URLs cannot be
-pushed directly by the Prisma CLI):
+Turso (remote `libsql://` cannot be pushed directly):
 
 ```bash
 node node_modules/prisma/build/index.js migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script \
   | turso db shell $DATABASE_URL
 ```
 
-## 10. Running NURAE
+## 10. A typical first session
 
-Local development needs a single process:
+1. Sign up at `/` (or use Google) → verify the 6-digit code (check spam).
+2. In **Chats**, ask "What can NURAE do?" — or attach a restaurant-menu PDF and say
+   *"Make me a Telegram bot using this."*
+3. The chat hands the task to the **Bot Builder agent** — press **Open in Agent**.
+4. Watch the activity feed (✓ Created bot ✓ Added commands …), then **Approve &
+   publish** when you are ready (publishing needs the bot's Telegram token and an
+   HTTPS origin — the agent will ask).
+5. Open the bot under **Bots**: edit commands/buttons, press things in the **test
+   console**, then publish for real. Message the bot on Telegram.
 
-```bash
-npm run dev
-```
-
-Open the dashboard root URL and you are in the console.
-
-## 11. Deploying to Vercel (optional — see SETUP.md Part B for self-hosting)
-
-1. Create a Turso database: `turso db create nurae` and note its URL
-   (`turso db show nurae --url`) plus an auth token
-   (`turso db tokens create nurae`).
-2. Apply the schema (§9, Turso command).
-3. Push this repository to GitHub and import it in Vercel (framework:
-   Next.js — detected automatically; Prisma generates in `postinstall`).
-4. Configure the environment variables: `DATABASE_URL` (`libsql://…`),
-   `DATABASE_AUTH_TOKEN`, `NURAE_SECRET_KEY` (long random string),
-   `NURAE_ADMIN_TOKEN`. Leave `NURAE_BOT_TRANSPORT` unset (webhook default).
-5. Deploy, then open `https://your-app.vercel.app`, log in, and create a bot.
-6. Press **Start** — NURAE registers `https://your-app.vercel.app/api/telegram/webhook/{botId}`
-   with Telegram automatically (the public origin is derived from request
-   headers, or set `NURAE_PUBLIC_BASE_URL` explicitly).
-
-Note: Telegram webhooks require an HTTPS origin — Vercel provides one.
-
-## 12. Creating a Telegram bot
-
-1. In Telegram, talk to **@BotFather** → `/newbot` → choose a name and username.
-2. Copy the token (format `1234567890:AA…`).
-3. In the NURAE dashboard: **Projects → Create project → Create bot**.
-4. Paste the token, pick provider + model, write the system prompt, save.
-5. Press **Start**. NURAE verifies the token (`getMe`), registers the webhook,
-   and the bot shows `running` with the `webhook transport` badge.
-6. In Telegram, send `/start` to your bot, then send a normal message —
-   you receive an AI-generated reply.
-7. Return to the dashboard to watch status and logs live; press **Stop** to
-   take the bot offline (webhook removed), **Restart** to reload config.
-
-## 13. Configuring AI providers
-
-- **OpenRouter (recommended)**: create a free key at openrouter.ai, paste it
-  on the bot (or set `OPENROUTER_API_KEY` in `.env` as the account fallback).
-  The default model `openrouter/free` auto-routes among FREE models — no
-  charge, no model picking required.
-- **OpenAI-compatible providers** (`openai`, `deepseek`, `glm`, `local`,
-  `custom`): store the API key on the bot (encrypted) or provide it via the
-  matching environment variable.
-- Use **Verify connections** on a bot page to check Telegram identity and
-  provider credentials without starting the bot.
-
-## 14. Testing
+## 11. Testing
 
 ```bash
-npm test                 # 158 tests across 11 files (vitest)
+npm test                 # 188 tests across 12 files (vitest)
 npm run lint             # ESLint
 ```
 
-The suite covers: FRAZIYM version format, secret vault, log sanitizer,
-AI providers (mocked HTTP: success, auth failure, timeout, rate limit,
-malformed response, retries), Telegram adapter error mapping, the shared
-pipeline (commands, memory, AI failure recovery), bot lifecycle state
-machine, the webhook receiver (secret verification, full message flow,
-duplicate suppression, malformed payloads), API endpoints (projects, bots,
-config, lifecycle, logs), the platform layer (customer registration →
-Gmail code verification → sessions, Google OAuth state/CSRF, the official
-NURAE CS bot seeding + web chat, site settings, customers directory), the
-Telegram markdown → HTML conversion (entity escaping, chunking, plain-text
-fallback), and security (secrets never returned, 401s, 422s, hashed
-verification codes, rate limiting, IDOR-resistant error responses). Network-
-dependent units use mocks — no real Telegram credentials are required.
+The suite covers: FRAZIYM version format, secrets, sanitizer, AI providers (mocked
+HTTP), Telegram adapter error mapping, the pipeline (built-in + custom commands,
+memory, AI failure recovery), webhook receiver (secret verification, duplicates),
+API endpoints, the platform layer (registration → verification → sessions, official
+bot, settings), Telegram markdown → HTML, and the product layer: bot capabilities
+validation + corrupt-row resilience, the tool registry (descriptors, ownership,
+confirmation gating, audit rows, argument validation), the Bot Builder agent (JSON
+envelope parsing, full tool-executing turn, invalid-output degradation, cross-user
+isolation), chat sessions (CRUD ownership, platform-AI turns, handoff with files by
+reference, foreign-attachment rejection), file extraction (text/CSV, PDF plain +
+zlib, DOCX ZIP, binary honesty, bounded retrieval), user bots (draft creation,
+token validation, the real-pipeline test console, deep links, photo captions,
+callback honesty), and referrals (full flow, self-referral/unknown/duplicate guards,
+entitlement extension).
 
-An end-to-end driver lives at `scripts/e2e.ts`. It is REAL-only: real
-Telegram Bot API, real AI provider, real HTTP chain — no mocks. It drives
-the full loop (health → auth gate → create → start → real webhook check via
-`getWebhookInfo` → **you send one real Telegram message** → AI round trip
-verified through structured logs → stop → webhook removal check → real-401
-error path → cleanup) and exits non-zero on any failure.
+## 12. Vercel deployment (optional)
 
-## 14.1 Gateway Link — static frontend, moving backend (beta-03)
+1. Create a Turso database + auth token; apply the schema (§9).
+2. Import the repo in Vercel; set `DATABASE_URL` (`libsql://…`), `DATABASE_AUTH_TOKEN`,
+   `NURAE_SECRET_KEY`, `NURAE_ADMIN_TOKEN`, and the AI/Gmail/Google keys. Leave
+   `NURAE_BOT_TRANSPORT` unset (webhook default).
+3. Deploy. Publishing a user bot registers
+   `https://your-app.vercel.app/api/telegram/webhook/{botId}` with Telegram.
 
-The frontend is deployed **once**; the backend finds it at runtime:
+Note: uploaded binaries live on the server filesystem — on Vercel this is ephemeral;
+extracted text (what agents and chats actually read) is durable in the database.
 
-1. The backend boots (with `NURAE_LINK_FRONTEND_URL` + `NURAE_GATEWAY_KEY`)
-   and POSTs its public origin to the frontend's
-   `POST /api/gateway/register` — shared key (timing-safe compare), HTTPS
-   enforced, and the frontend health-checks the endpoint for a real NURAE
-   V00-series `/api/health` before accepting. The link is re-registered
-   every 60 s (tunnel origins change per boot) and lives in a Vercel Blob
-   store.
-2. The frontend's middleware proxies every `/api/*` request (except
-   `/api/gateway/*`) to the linked backend **at request time** — same-origin
-   for the browser, cookies unchanged, no CORS, no rebuild when the backend
-   moves. Until a backend links, the API answers `503 backend-not-linked`.
-3. `GET /api/gateway/status` exposes whether a backend is linked (host only,
-   no secrets); `DELETE /api/gateway/register` unlinks (key required).
-
-One-time Vercel setup: deploy NURAE once → Project → Storage → create a
-**Blob store** → Project → Settings → Environment Variables → set
-`NURAE_GATEWAY_KEY` (generate with `openssl rand -hex 24`) → redeploy. The
-build-time `NURAE_BACKEND_URL` rewrite from beta-02 remains as a fallback
-mode (gateway link takes precedence when configured).
-
-## 14.2 Split-deployment E2E workflow (GitHub Actions × Vercel)
-
-`.github/workflows/split-e2e.yml` proves the split architecture with real
-services on every manual run (Actions tab → *Split E2E* → *Run workflow*):
-
-```
-[Vercel frontend (stable URL, gateway mode)]  ← deployed once, never rebuilt
-      │  middleware /api/* runtime proxy → the LINKED backend
-      ▼
-[trycloudflare tunnel]  ← the only public entry to a GitHub runner
-      ▼
-[Actions runner]  real backend (:3000, admin auth on) → real api.telegram.org
-                  (webhook on the tunnel URL) + real AI provider API
-```
-
-Flow: tunnel up → backend boots and **registers itself** with the frontend
-→ workflow waits until `/api/gateway/status` reports the tunnel host → the
-E2E driver verifies the gateway link, the auth gate over the full chain,
-real `setWebhook`/`getWebhookInfo` against Telegram, one REAL message round
-trip (a human sends it — Telegram forbids bots from messaging first; the
-workflow pauses and prints `👉 NOW: send ANY text message to @bot`), the AI
-pipeline via structured log events
-(`TELEGRAM_MESSAGE_RECEIVED → AI_REQUEST → AI_RESPONSE → TELEGRAM_MESSAGE_SENT`),
-webhook removal on stop, and the real-401 invalid-token path.
-
-Required repository secrets: `TELEGRAM_BOT_TOKEN` (use a **dedicated test
-bot** — the workflow overwrites its webhook and removes it at the end),
-`AI_API_KEY` (for the chosen provider), and `GATEWAY_KEY` (must equal the
-Vercel deployment's `NURAE_GATEWAY_KEY`; `frontend=tunnel-only` skips the
-frontend and tests the backend through the tunnel directly).
-
-Known limitations: the tunnel URL is per-run (the Gateway Link heartbeat
-absorbs that — that is its job); the round-trip step needs a human at the
-keyboard; a `push` trigger is commented out (concurrency + run minutes).
-
-### Status of this release's testing
+## 13. Status of this release's verification
 
 | Layer | Status |
 | --- | --- |
-| Unit/integration (incl. gateway registration core) | PASS (local) |
-| Rewrite-proxy split chain (health/auth/CRUD/cookie) | PASS (local, real HTTP, beta-02) |
-| Gateway Link middleware proxy | IMPLEMENTED — UNTESTED end-to-end (needs Vercel Blob + first run) |
-| Split E2E in GitHub Actions (gateway mode) | IMPLEMENTED — UNTESTED (requires one-time Vercel setup + real secrets) |
-| Real Telegram delivery from Actions | UNTESTED until first run with secrets |
+| Unit/integration suite (188 tests, incl. product layer) | PASS (local) |
+| Type check (`src/` + tests via tsc) | PASS (pre-existing examples/scripts exclusions) |
+| ESLint (`src/`) | PASS |
+| Production build (`next build`) | PASS |
+| Browser verification (desktop + mobile, all pages, auth + ownership) | PASS (see worklog) |
+| Real Telegram round trip with a user token | MANUAL — run the test console or a real bot |
 
-## 15. Troubleshooting
+## 14. Troubleshooting
 
-| Symptom                                        | Likely cause / fix                                                            |
-| ---------------------------------------------- | ----------------------------------------------------------------------------- |
-| Start fails with “Telegram rejected… 401”      | Bot token invalid — re-check the token from @BotFather                        |
-| Start fails with “No public base URL…”         | Set `NURAE_PUBLIC_BASE_URL` to your HTTPS origin (or run locally with polling) |
-| Bot shows “no active webhook”                  | Webhook was deleted out-of-band; start the bot again                          |
-| “Polling transport cannot run on serverless…”  | Set `NURAE_BOT_TRANSPORT=webhook` (or run locally)                            |
-| “No API key configured for provider …”         | Store a key on the bot or set the provider’s env var                          |
-| Bot in `error` state                           | Check the bot’s Logs panel; `statusDetail` shows the last error               |
-| Stored token “could not be decrypted”          | `NURAE_SECRET_KEY` changed — re-enter the bot’s secrets                       |
-| Login loop on the dashboard                    | `NURAE_ADMIN_TOKEN` changed — log in again with the new token                 |
+| Symptom | Likely cause / fix |
+| --- | --- |
+| Verification code never arrives | Check spam/Promotions; newest code wins; 15-min expiry |
+| Start fails with "Telegram rejected… 401" | Bot token invalid — re-check @BotFather |
+| Start fails with "No public base URL…" | Set `NURAE_PUBLIC_BASE_URL` to your HTTPS origin (or polling locally) |
+| Agent says the AI layer has no key | Platform AI key missing — set it on the official bot (`/admin`) or `OPENROUTER_API_KEY` |
+| Publish fails for a user bot | The bot needs a Telegram token + an HTTPS public origin |
+| Stored token "could not be decrypted" | `NURAE_SECRET_KEY` changed — re-enter the bot's secrets |
+| PDF file shows as binary | The PDF uses an exotic encoding — extraction refused to guess; the file is still stored |
 
-## 16. Current limitations
+## 15. Current limitations
 
-- Telegram only (one channel); the adapter boundary exists but no other
-  channels are implemented.
-- Short-term memory only (recent-message window per chat).
-- Polling transport is local-development only; one NURAE instance should own
-  a bot token at a time (Telegram enforces this per token anyway).
-- Duplicate-update suppression is per instance (see §4 — EXPERIMENTAL).
-- Admin auth is a single shared token (adequate for the beta; not a full
-  identity system). Bots are owned by the single admin — there is no
-  multi-tenancy yet, so cross-user isolation reduces to authentication.
-- `maxDuration` of the webhook function is capped (60 s); extremely slow AI
-  providers could exceed it on the Vercel Hobby plan.
-
-## 17. Future roadmap
-
-Kept deliberately out of this release (see §4 — PLANNED): additional channels,
-streaming responses, RAG and long-term memory, multi-user teams with per-user
-bot ownership, workflow automation, and the broader autonomous-operations
-vision. The interfaces (`AIProvider`, `TelegramAdapter`, pipeline,
-`RuntimeStore`, `SecretManager`) are structured so these can be added without
-rewrites.
+- One real agent (Bot Builder); the registry is designed for more, but no fake agents
+  are exposed.
+- File knowledge is prompt-distilled (bounded), not vector-searched.
+- Photo messages: caption-only (no vision model).
+- Duplicate-update suppression is per instance (see §4).
+- Referral rewards are per invited user id; multiple accounts of the same person are
+  not fingerprinted (documented, deliberate scope).
+- `maxDuration` of the webhook function is capped (60 s) on Vercel Hobby.
 
 ---
 
-NURAE V00.01.000-beta-02 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.02.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

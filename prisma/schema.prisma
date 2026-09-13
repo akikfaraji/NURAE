@@ -30,6 +30,10 @@ model Project {
 model Bot {
   id          String   @id @default(cuid())
   projectId   String   @map("project_id")
+  // Owner: null = platform-owned (the official NURAE bot, admin-managed).
+  // A user id = a customer-built bot; every API touching the bot must derive
+  // ownership from the session, never from a client-supplied id.
+  ownerId     String?  @map("owner_id")
   name        String
   description String   @default("")
   // Telegram username is resolved via getMe when the bot starts (e.g. "@my_bot").
@@ -48,6 +52,15 @@ model Bot {
   maxTokens            Int     @default(1024) @map("max_tokens")
   // Short-term conversation memory: number of recent messages kept per chat.
   memorySize           Int     @default(10) @map("memory_size")
+  // Bot capabilities (JSON, SQLite has no JSON type):
+  // commands_json = [{ command, description, kind: "static"|"ai", response }]
+  // replies_json  = [{ id, name, trigger: {type: "command"|"keyword"|"button"|"fallback", value},
+  //                    messages: [{ text, buttons: [[{ text, url?|callback? }]] }] }]
+  // A reply with multiple messages is a mini workflow (sent in order).
+  commandsJson         String? @map("commands_json")
+  repliesJson          String? @map("replies_json")
+  // Archived bots stay runnable-but-hidden for their owner; delete removes rows.
+  archived             Boolean @default(false)
   enabled              Boolean @default(true)
   status               String  @default("stopped") // stopped | starting | running | stopping | error
   statusDetail         String? @map("status_detail") // last error / human-readable status info
@@ -65,6 +78,7 @@ model Bot {
   logs          Log[]
 
   @@index([projectId])
+  @@index([ownerId])
   @@map("bots")
 }
 
@@ -177,4 +191,158 @@ model SiteSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("site_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Chats + Agents — conversation sessions for the user-facing product
+// ---------------------------------------------------------------------------
+
+// One conversation in /chats (kind="chat") or one agent workspace thread
+// (kind="agent"). Agent sessions carry durable task state in `state` (JSON):
+// draft bot id, pending confirmation, referenced file ids, last plan.
+model ChatSession {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  // chat | agent
+  kind           String   @default("chat")
+  // For agent sessions: "bot-builder" (more agents planned, never faked).
+  agent          String?
+  title          String   @default("New chat")
+  // Free-form JSON task state owned by the agent runtime.
+  state          String?
+  // active | archived
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  lastMessageAt  DateTime? @map("last_message_at")
+
+  entries   ChatEntry[]
+  steps     AgentStep[]
+  files     UserFile[]
+
+  @@index([userId, kind, status])
+  @@index([userId, lastMessageAt])
+  @@map("chat_sessions")
+}
+
+// One message inside a session. `meta` (JSON) carries attachments, agent
+// activity and handoff references:
+//   attachments: [{ fileId, name, kind }]
+//   activity:    [{ seq, label, status: "ok"|"error"|"confirm", detail? }]
+//   handoff:     { agent, sessionId, taskId }
+model ChatEntry {
+  id         String   @id @default(cuid())
+  sessionId  String   @map("session_id")
+  // user | assistant | system | tool
+  role       String
+  content    String
+  meta       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_entries")
+}
+
+// Durable audit trail of every tool invocation an agent made. This is the
+// "understandable progress" surface — and the security audit log.
+model AgentStep {
+  id         String   @id @default(cuid())
+  sessionId  String   @map("session_id")
+  seq        Int
+  // Tool name from the registry (e.g. "bot_create_draft").
+  tool       String
+  argsJson   String   @map("args_json")
+  resultJson String?  @map("result_json")
+  // ok | error | confirm (waiting for the user) 
+  status     String   @default("ok")
+  // Human-readable one-liner shown in the activity list.
+  label      String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, seq])
+  @@map("agent_steps")
+}
+
+// ---------------------------------------------------------------------------
+// Files — user uploads (knowledge / input for chats and agents)
+// ---------------------------------------------------------------------------
+
+// Small text files keep their content inline; binaries live on disk
+// (db/uploads/) with `storagePath`. `extractedText` powers retrieval so the
+// agent never needs the raw binary.
+model UserFile {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  // Session the file was attached in (nullable = account-level file).
+  sessionId     String?  @map("session_id")
+  name          String
+  mime          String
+  size          Int
+  // text | pdf | docx | csv | image | other
+  kind          String
+  content       String?
+  storagePath   String?  @map("storage_path")
+  extractedText String?  @map("extracted_text")
+  // ready | binary | failed
+  status        String   @default("ready")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  session ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("user_files")
+}
+
+// ---------------------------------------------------------------------------
+// Referrals + entitlements — temporary premium access, tracked server-side
+// ---------------------------------------------------------------------------
+
+// One shareable invite code per user (created lazily on first visit).
+model Referral {
+  id        String   @id @default(cuid())
+  inviterId String   @unique @map("inviter_id")
+  code      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("referrals")
+}
+
+// One qualification per invited user — the abuse guard IS the schema
+// (unique invited user; the inviter must differ; qualification happens
+// server-side when the invited account verifies its email).
+model ReferralReward {
+  id             String   @id @default(cuid())
+  inviterId      String   @map("inviter_id")
+  invitedUserId  String   @unique @map("invited_user_id")
+  // Reward days granted (currently 2 — decided by the server, not the client).
+  days           Int      @default(2)
+  // pending | qualified
+  status         String   @default("pending")
+  qualifiedAt    DateTime? @map("qualified_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([inviterId])
+  @@map("referral_rewards")
+}
+
+// A temporary feature grant. NOT a boolean "premium" flag: entitlements are
+// per-feature with an expiry, so future rewards can be scoped (extra agents,
+// storage, models) without another migration.
+model Entitlement {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  // "premium" today; more features later.
+  feature   String
+  // referral | (future: promo, purchase)
+  source    String
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, feature])
+  @@map("entitlements")
 }

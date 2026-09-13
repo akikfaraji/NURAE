@@ -237,7 +237,10 @@ export function chunkTelegramMessage(text: string, limit = TELEGRAM_CHUNK_LIMIT)
     if (!current) current = part;
     else if (current.length + 2 + part.length <= limit) current += `\n\n${part}`;
     else if (current.length + 1 + part.length <= limit) current += `\n${part}`;
-    else pushCurrent(), (current = part);
+    else {
+      pushCurrent();
+      current = part;
+    }
   };
 
   for (const para of text.split(/\n{2,}/)) {
@@ -248,7 +251,10 @@ export function chunkTelegramMessage(text: string, limit = TELEGRAM_CHUNK_LIMIT)
     // Paragraph itself too big — fall back to line boundaries.
     for (const line of para.split('\n')) {
       if (current.length + 1 + line.length <= limit) appendWithBreak(line);
-      else if (line.length <= limit) pushCurrent(), (current = line);
+      else if (line.length <= limit) {
+        pushCurrent();
+        current = line;
+      }
       else {
         // Single line longer than the limit — hard-slice it.
         for (let i = 0; i < line.length; i += limit) {

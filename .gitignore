@@ -40,6 +40,7 @@ yarn-error.log*
 /db/*.db-wal
 /db/*.db-shm
 /db/.nurae-secret-key
+/db/uploads/
 /db/.nurae-runtime-token
 
 # vercel

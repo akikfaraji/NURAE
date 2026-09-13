@@ -35,9 +35,13 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     a: (
       <>
         <p>
-          Ask the NURAE CS Bot in the chat — it walks you through it step by step. The short version: message
-          <strong> @BotFather</strong> on Telegram to get a bot token, then the NURAE team connects it for you with
-          your chosen AI provider (free OpenRouter models are the default brain).
+          Two ways. <strong>Create with AI</strong>: go to <strong>Bots → Create with AI</strong> and describe the bot
+          in a sentence — the Bot Builder agent writes the configuration, adds commands and buttons, and asks for
+          your approval before anything goes live.
+        </p>
+        <p>
+          Or create one manually and paste the token from <strong>@BotFather</strong> yourself. Either way you can
+          test the bot against the real pipeline from its page before publishing it to Telegram.
         </p>
       </>
     ),
@@ -47,7 +51,8 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     a: (
       <p>
         Anything about NURAE: what bots can do, providers and API keys, your account, verification codes, bot status,
-        pricing of free models, and where to get help. It answers in your language.
+        pricing of free models, and where to get help. It answers in your language — and when you ask it to
+        <em> build</em> something, it hands the task to the Bot Builder agent with your files attached.
       </p>
     ),
   },
@@ -56,7 +61,8 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     a: (
       <p>
         Yes. Keys and bot tokens are encrypted at rest (AES-256-GCM), never written to logs, and never returned by
-        any API. They are only used server-side when your bot talks to its AI provider.
+        any API. Agents work through a restricted tool layer that can only touch <em>your</em> bots and files —
+        never another account’s, and nothing consequential happens without your explicit approval.
       </p>
     ),
   },
@@ -64,9 +70,10 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     q: 'My bot stopped responding on Telegram',
     a: (
       <p>
-        The support team can see bot status from the console. Common causes: the bot was stopped (it needs a manual
-        start after a server restart), the Telegram token was revoked in @BotFather, or the AI provider rejected the
-        key. Ask the CS Bot for the current status — it will escalate to the team when needed.
+        Open the bot under <strong>Bots</strong>: the status dot and the status detail tell you what happened. Common
+        causes: the bot was unpublished (start it again from its page), the Telegram token was revoked in @BotFather,
+        or the AI provider rejected the key. The Test console on the bot page runs the real pipeline so you can see
+        exactly where it breaks.
       </p>
     ),
   },
@@ -91,12 +98,12 @@ export function HelpPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <SiteHeader siteName={siteName} user={user} onSignOut={signOut} />
+      <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Help &amp; FAQ</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-foreground">Help &amp; FAQ</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Quick answers about accounts, verification codes and bots. Anything else — the{' '}
-          <Link href="/chat" className="text-foreground underline underline-offset-2">
+          <Link href="/chats" className="text-foreground underline underline-offset-2">
             NURAE CS Bot
           </Link>{' '}
           is one click away.
@@ -128,7 +135,7 @@ export function HelpPage() {
             The fastest route is the CS Bot chat — it escalates to the team with your chat history attached.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Link href="/chat" className="inline-flex">
+            <Link href="/chats" className="inline-flex">
               <Button className="gap-2">Open the chat</Button>
             </Link>
             {supportEmail && (

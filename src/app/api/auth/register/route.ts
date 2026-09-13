@@ -17,11 +17,15 @@ import { hashPassword, numericCode } from '@/lib/nurae/auth/passwords';
 import { gmailConfig, sendVerificationMail, maskEmail, mailFailureHint } from '@/lib/nurae/auth/mailer';
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
 import { getSiteInfo } from '@/lib/nurae/auth/settings';
+import { recordReferralSignup } from '@/lib/nurae/referral';
 
 const BodySchema = z.object({
   name: z.string().trim().min(1).max(80),
   email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(8).max(128),
+  // Referral code from the invite link (?ref=CODE) — optional, never trusted
+  // beyond "record who invited whom"; qualification happens at verification.
+  ref: z.string().trim().max(32).optional(),
 });
 
 const CODE_TTL_MS = 15 * 60 * 1000;
@@ -43,7 +47,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return validationError(parsed.error);
-  const { name, email, password } = parsed.data;
+  const { name, email, password, ref } = parsed.data;
 
   try {
     const existing = await db.user.findUnique({ where: { email } });
@@ -55,6 +59,10 @@ export async function POST(req: Request): Promise<Response> {
     const user = existing
       ? await db.user.update({ where: { id: existing.id }, data: { name, passwordHash } })
       : await db.user.create({ data: { name, email, passwordHash } });
+
+    // Record the invite (if any). Guards inside: unknown code / self-invite /
+    // duplicate invited user all no-op. The reward only QUALIFIES at verify.
+    await recordReferralSignup(user.id, ref);
 
     // Invalidate previous codes, issue a fresh one (hashed — never stored plain).
     await db.verificationToken.deleteMany({ where: { userId: user.id, purpose: 'email_verify' } });
