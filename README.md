@@ -87,9 +87,10 @@ not duplicate version strings elsewhere.
   Nonsense transitions are rejected — the check is enforced in the database,
   not just in memory.
 - **Provider-agnostic AI layer** (`AIProvider` interface + registry):
-  - `zai` — GLM via the built-in SDK (zero configuration, works out of the box)
-  - `openai`, `openrouter`, `deepseek`, `glm` (Zhipu), `local` (Ollama/vLLM),
-    `custom` — all through one OpenAI-compatible HTTP implementation
+  - `openrouter` — one key, many models; `openrouter/free` auto-routes among
+    FREE models (no charge) — the recommended default
+  - `openai`, `deepseek`, `glm` (Zhipu), `local` (Ollama/vLLM), `custom` —
+    all through one OpenAI-compatible HTTP implementation
   - Credential validation, timeouts, error classification, bounded retries
     with backoff, `Retry-After` support
 - **Structured bot logs** with event codes (`BOT_CREATED`, `BOT_STARTING`,
@@ -109,14 +110,13 @@ not duplicate version strings elsewhere.
   (`libsql://` — hosted Turso).
 - **Vercel-compatible**: no second process, no long-running loops, no local
   filesystem dependency when `NURAE_SECRET_KEY` + Turso are configured.
-- Health endpoint, automated tests (92), lint-clean, type-clean.
+- Health endpoint, automated tests (113), lint-clean, type-clean.
 
 ### EXPERIMENTAL
 
-- The built-in `zai` provider depends on the FRAZIYM sandbox SDK
-  (`z-ai-web-dev-sdk`); it works out of the box in the FRAZIYM environment and
-  locally, but production deployments should prefer external providers
-  (`openai`, `openrouter`, `deepseek`, `glm`, …).
+- The `openrouter/free` router and other `:free` model ids rotate as model
+  providers come and go — if one disappears, pick another from the dropdown
+  or type any current model id.
 - Duplicate-update suppression (Telegram retry safety) is per server
   instance; on horizontally scaled deployments a timed-out webhook could
   rarely be processed twice.
@@ -184,8 +184,8 @@ start on serverless platforms, where it cannot work.
 
 - [Node.js](https://nodejs.org) 20+ (the runtime; npm included)
 - A Telegram bot token from [@BotFather](https://t.me/BotFather) (per bot)
-- For the built-in `zai` provider: nothing — it works out of the box
-- For external providers: an API key for the chosen provider
+- An AI provider API key — [OpenRouter](https://openrouter.ai) recommended:
+  one free key unlocks the `:free` model tier (`openrouter/free` default)
 - On Vercel: a [Turso](https://turso.tech) database (free tier works)
 
 ## 7. Installation (local development)
@@ -290,10 +290,13 @@ Note: Telegram webhooks require an HTTPS origin — Vercel provides one.
 
 ## 13. Configuring AI providers
 
-- **Built-in (`zai`)**: zero setup — GLM through the FRAZIYM built-in SDK.
-- **OpenAI-compatible providers** (`openai`, `openrouter`, `deepseek`, `glm`,
-  `local`, `custom`): store the API key on the bot (encrypted) or provide it
-  via the matching environment variable.
+- **OpenRouter (recommended)**: create a free key at openrouter.ai, paste it
+  on the bot (or set `OPENROUTER_API_KEY` in `.env` as the account fallback).
+  The default model `openrouter/free` auto-routes among FREE models — no
+  charge, no model picking required.
+- **OpenAI-compatible providers** (`openai`, `deepseek`, `glm`, `local`,
+  `custom`): store the API key on the bot (encrypted) or provide it via the
+  matching environment variable.
 - Use **Verify connections** on a bot page to check Telegram identity and
   provider credentials without starting the bot.
 
