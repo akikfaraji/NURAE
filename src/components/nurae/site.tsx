@@ -1,58 +1,53 @@
 'use client';
 
 /**
- * NURAE — public site (localhost:3000 for normal users).
+ * NURAE — public site HOME page (localhost:3000 for normal users).
  *
- * Logged out: landing page (hero, features) + auth card
+ * Logged out: hero + features + auth card
  *   • email + password sign-up → 6-digit Gmail verification code
  *   • Google sign-in (when configured)
- * Logged in: the NURAE CS Bot web chat.
+ * Logged in: welcome strip + quick cards (open the CS chat, help, about).
  *
+ * The chat itself lives at /chat; other user pages: /help, /about.
  * Design language: premium black, monochrome SVG icons only.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SupportChat } from '@/components/nurae/support-chat';
+import {
+  SiteFooter,
+  SiteHeader,
+  SiteSplash,
+  useSiteUser,
+} from '@/components/nurae/site-shell';
 import {
   ApiError,
   SessionUserDTO,
   SiteInfoResponse,
   nuraeApi,
 } from '@/lib/nurae-client/api';
-import { NURAE_VERSION } from '@/lib/nurae/version';
 import {
   ArrowRightIcon,
   BoltIcon,
   BotIcon,
   CheckIcon,
-  ExternalIcon,
   GoogleIcon,
   MailIcon,
   ShieldIcon,
   TelegramIcon,
 } from '@/components/nurae/icons';
 
-export function NuraeSite() {
+export function SiteHome() {
   const params = useSearchParams();
+  const router = useRouter();
+  const { user, checked, setUser, signOut } = useSiteUser();
   const [siteInfo, setSiteInfo] = useState<SiteInfoResponse | null>(null);
-  const [user, setUser] = useState<SessionUserDTO | null>(null);
-  const [checked, setChecked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [welcome, setWelcome] = useState(false);
-
-  const refreshUser = useCallback(async () => {
-    try {
-      const me = await nuraeApi.me();
-      setUser(me.user);
-      return me.user;
-    } catch {
-      return null;
-    }
-  }, []);
 
   useEffect(() => {
     (async () => {
@@ -60,8 +55,7 @@ export function NuraeSite() {
       if (err) setAuthError(err.replace(/-/g, ' '));
       if (params.get('welcome')) setWelcome(true);
       try {
-        const info = await nuraeApi.siteInfo();
-        setSiteInfo(info);
+        setSiteInfo(await nuraeApi.siteInfo());
       } catch {
         setSiteInfo({
           site: {
@@ -74,46 +68,16 @@ export function NuraeSite() {
           auth: { googleEnabled: false, gmailEnabled: false },
         });
       }
-      await refreshUser();
-      setChecked(true);
     })();
-  }, [params, refreshUser]);
+  }, [params]);
 
   if (!checked) return <SiteSplash />;
 
   const siteName = siteInfo?.site.siteName ?? 'NURAE';
 
-  if (user) {
-    return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <SiteHeader siteName={siteName} />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
-          {welcome && (
-            <div className="mx-auto mb-4 flex max-w-3xl items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground">
-              <CheckIcon className="h-3.5 w-3.5" /> Signed in with Google — welcome to {siteName}.
-            </div>
-          )}
-          <SupportChat
-            user={user}
-            welcomeMessage={
-              siteInfo?.site.welcomeMessage ||
-              'Hi! I am the official NURAE support bot. Ask me anything about NURAE.'
-            }
-            botUsername={null}
-            onSignedOut={async () => {
-              await nuraeApi.userLogout();
-              setUser(null);
-            }}
-          />
-        </main>
-        <SiteFooter siteName={siteName} />
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <SiteHeader siteName={siteName} />
+      <SiteHeader siteName={siteName} user={user} onSignOut={signOut} />
       <main className="flex-1">
         {/* Hero */}
         <section className="relative overflow-hidden">
@@ -133,9 +97,26 @@ export function NuraeSite() {
               </h1>
               <p className="mt-4 max-w-lg text-base leading-relaxed text-muted-foreground">{siteInfo?.site.tagline}</p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Button size="lg" className="gap-2" onClick={() => document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })}>
-                  Get started free <ArrowRightIcon className="h-4 w-4" />
-                </Button>
+                {user ? (
+                  <Link href="/chat" className="inline-flex">
+                    <Button size="lg" className="gap-2">
+                      Open the chat <ArrowRightIcon className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button
+                    size="lg"
+                    className="gap-2"
+                    onClick={() => document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })}
+                  >
+                    Get started free <ArrowRightIcon className="h-4 w-4" />
+                  </Button>
+                )}
+                <Link href="/help" className="inline-flex">
+                  <Button size="lg" variant="outline">
+                    Help &amp; FAQ
+                  </Button>
+                </Link>
                 {siteInfo?.site.telegramHandle && (
                   <a
                     href={`https://t.me/${siteInfo.site.telegramHandle.replace('@', '')}`}
@@ -144,7 +125,7 @@ export function NuraeSite() {
                     className="inline-flex"
                   >
                     <Button size="lg" variant="outline" className="gap-2">
-                      <TelegramIcon className="h-4 w-4" /> Chat on Telegram
+                      <TelegramIcon className="h-4 w-4" /> Telegram
                     </Button>
                   </a>
                 )}
@@ -156,15 +137,22 @@ export function NuraeSite() {
               )}
             </div>
 
-            {/* Auth card */}
+            {/* Auth card (signed-out only) — signed-in users get quick links */}
             <div id="auth" className="scroll-mt-24">
-              <AuthCard
-                siteInfo={siteInfo}
-                siteName={siteName}
-                authError={authError}
-                clearAuthError={() => setAuthError(null)}
-                onAuthenticated={(u) => setUser(u)}
-              />
+              {user ? (
+                <SignedInCard siteName={siteName} email={user.email} welcome={welcome} />
+              ) : (
+                <AuthCard
+                  siteInfo={siteInfo}
+                  siteName={siteName}
+                  authError={authError}
+                  clearAuthError={() => setAuthError(null)}
+                  onAuthenticated={(u) => {
+                    setUser(u);
+                    router.push('/chat');
+                  }}
+                />
+              )}
             </div>
           </div>
         </section>
@@ -195,46 +183,44 @@ export function NuraeSite() {
   );
 }
 
-function SiteSplash() {
+/** Signed-in view of the auth-card slot: quick links instead of the form. */
+function SignedInCard({
+  siteName,
+  email,
+  welcome,
+}: {
+  siteName: string;
+  email: string;
+  welcome: boolean;
+}) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-sm text-muted-foreground">Loading {''}NURAE…</div>
+    <div className="rounded-xl border border-border bg-card p-6 shadow-lg shadow-black/40">
+      {welcome && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-foreground">
+          <CheckIcon className="h-3.5 w-3.5" /> Signed in with Google — welcome to {siteName}.
+        </div>
+      )}
+      <h2 className="text-lg font-semibold text-foreground">You are signed in</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{email}</p>
+      <div className="mt-5 grid gap-3">
+        <Link href="/chat" className="block">
+          <Button className="w-full gap-2">
+            <BotIcon className="h-4 w-4" /> Chat with the NURAE CS Bot
+          </Button>
+        </Link>
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/help" className="block">
+            <Button variant="outline" className="w-full">Help &amp; FAQ</Button>
+          </Link>
+          <Link href="/about" className="block">
+            <Button variant="outline" className="w-full">About</Button>
+          </Link>
+        </div>
+      </div>
+      <p className="mt-5 border-t border-border pt-4 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
+        {siteName} · FRAZIYM TECH &amp; AI
+      </p>
     </div>
-  );
-}
-
-function SiteHeader({ siteName }: { siteName: string }) {
-  return (
-    <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        <a href="/" className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground font-bold text-background">N</span>
-          <span>
-            <span className="block text-sm font-semibold tracking-wide text-foreground">{siteName}</span>
-            <span className="block text-[11px] uppercase tracking-widest text-muted-foreground">FRAZIYM TECH &amp; AI</span>
-          </span>
-        </a>
-        <a
-          href="/admin"
-          className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
-        >
-          Admin <ExternalIcon className="h-3.5 w-3.5" />
-        </a>
-      </div>
-    </header>
-  );
-}
-
-function SiteFooter({ siteName }: { siteName: string }) {
-  return (
-    <footer className="mt-auto border-t border-border bg-background">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:px-6">
-        <span>
-          {siteName} <span className="font-mono">{NURAE_VERSION}</span> — Autonomous Digital Operations System
-        </span>
-        <span>FRAZIYM TECH &amp; AI</span>
-      </div>
-    </footer>
   );
 }
 
@@ -378,6 +364,10 @@ function AuthCard({
           <div>
             <h2 className="text-lg font-semibold text-foreground">Verify your email</h2>
             <p className="mt-1 text-sm text-muted-foreground">{notice ?? `Enter the 6-digit code sent to ${email}.`}</p>
+          </div>
+          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            Not in your inbox? Check the <span className="font-medium text-foreground">SPAM / Promotions</span> folder —
+            Gmail sometimes files verification mail there. Use the NEWEST email; older codes stop working.
           </div>
           {mailError && (
             <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive" role="alert">

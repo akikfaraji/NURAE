@@ -4,9 +4,15 @@
  * NURAE — customer support chat (public site, signed-in customers).
  * Talks to the official NURAE CS bot through POST /api/support/chat.
  * History is persisted server-side (Conversation/Message rows).
+ *
+ * AI answers are markdown — they render through react-markdown (+GFM) with
+ * the monochrome .md-body styles. Account controls (Sign out) live in the
+ * SITE header, so this card is a single slim toolbar, not a second header.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ChatMessageDTO, SessionUserDTO, nuraeApi } from '@/lib/nurae-client/api';
@@ -16,10 +22,10 @@ interface SupportChatProps {
   user: SessionUserDTO;
   welcomeMessage: string;
   botUsername: string | null;
-  onSignedOut: () => void;
+  onSignedOut?: () => void;
 }
 
-export function SupportChat({ user, welcomeMessage, botUsername, onSignedOut }: SupportChatProps) {
+export function SupportChat({ user, welcomeMessage, botUsername }: SupportChatProps) {
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -72,25 +78,25 @@ export function SupportChat({ user, welcomeMessage, botUsername, onSignedOut }: 
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-8.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-card">
-      {/* Chat header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground text-sm font-bold text-background">
+    <div className="mx-auto flex h-[calc(100vh-9.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-card">
+      {/* Slim chat toolbar — the site header owns brand + account */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-xs font-bold text-background">
             N
           </span>
           <div>
-            <div className="text-sm font-medium text-foreground">NURAE CS Bot</div>
-            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+            <div className="text-sm font-medium leading-tight text-foreground">NURAE CS Bot</div>
+            <div className="text-[10px] uppercase tracking-widest leading-tight text-muted-foreground">
               {botUsername ? botUsername : 'official support'}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <span className="hidden text-xs text-muted-foreground sm:block">{user.email}</span>
-          <Button variant="outline" size="sm" onClick={onSignedOut}>
-            Sign out
-          </Button>
+          <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground" /> online
+          </span>
         </div>
       </div>
 
@@ -143,10 +149,19 @@ function Bubble({ role, content }: { role: string; content: string }) {
         className={
           isUser
             ? 'max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-sm text-background'
-            : 'max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm border border-border bg-muted/60 px-4 py-2.5 text-sm text-foreground'
+            : 'max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-muted/60 px-4 py-2.5 text-foreground'
         }
       >
-        {content}
+        {isUser ? (
+          content
+        ) : (
+          // AI answers are markdown: headings, bold, code, links, lists,
+          // tables (GFM). Escaping/XSS is handled by react-markdown itself —
+          // raw HTML in model output is NOT rendered.
+          <div className="md-body">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          </div>
+        )}
       </div>
     </div>
   );

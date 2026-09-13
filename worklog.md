@@ -347,3 +347,24 @@ Work Log:
 Stage Summary:
 - Dev log is clean; middleware officially migrated to the Next 16.3 proxy convention; bug-reports.md is now the user-facing bug history, worklog.md stays the technical log; both committed (no secrets)
 - Honest notes: IPv4-first now applies only to the SMTP path (that is the only path that ever failed); the sandbox dev-boot warning scan is evidence, but the user should confirm their own console is clean after git pull; OpenRouter key rotation STILL outstanding
+
+---
+Task ID: 17
+Agent: main (Super Z)
+Task: user screenshot round — remove clickable ADMIN link from the customer site, fix "2 heads" (double header), fix web-chat markdown styling, add the missing user pages ("chat is only one of many pages"), add spam-folder guidance (Gmail tags NURAE mail as spam), rewrite outdated README
+
+Work Log:
+- Screenshot diagnosis (upload/Screenshot_20260913_193524_Chrome.jpg): confirmed 4 visual bugs — /admin link in public header; site header + chat-card header stacked ("2 heads"); assistant bubbles rendering RAW markdown (react-markdown was a dependency but never wired into the chat); single-page site with chat only
+- Multi-page user site: new shared chrome src/components/nurae/site-shell.tsx (SiteHeader with Home/Chat/Help/About nav + active state + account area [email + Sign out], SiteFooter with Help/About links, useSiteUser hook, splash); routes /chat (dedicated full-height chat, signed-out guard card), /help (5-question FAQ incl. spam/newest-code answer + contact card fed by site settings), /about (about + live contact channels); site.tsx rewritten as SiteHome (hero + auth card logged-out; quick-links card logged-in; auth success now router.push('/chat')); ADMIN LINK REMOVED — owner reaches /admin by URL
+- Double-head fix: Sign out + email moved into SiteHeader; chat card header reduced to a slim toolbar (small N tile + bot name + ONLINE dot) — one head per page
+- Markdown fix (web): Bubble assistant path → react-markdown + remark-gfm (NEW dep) with new scoped .md-body styles in globals.css (monochrome headings/code/pre/links/lists/tables/blockquote; Tailwind v4 var() + color-mix — NOT hsl(var()), vars hold full oklch() values); user bubbles stay plain text; react-markdown refuses raw HTML in model output (XSS-safe)
+- Spam guidance: verify step now ALWAYS shows a "Check the SPAM / Promotions folder — use the NEWEST email" tip above the code input (logged-in flow unaffected); /help FAQ answer; README §1; official CS prompt already covered it
+- Browser E2E (agent-browser): / /chat /help /about all 200 + hydrate; nav renders; NO /admin link; full register → dev-code → verify → auto-redirect /chat flow PASSED; seeded a rich markdown assistant reply via scripts/seed-chat-markdown.js → structural DOM check: h3 ✓ strong×6 ✓ code×2 ✓ BotFather <a> ✓ GFM table 3 rows ✓ li×6 ✓ blockquote ✓ ZERO raw **/### visible; screenshot upload/after-markdown-fix.png; test user + conversation removed via scripts/remove-test-user.js
+- README surgical update (was V00.01.000-beta-02/113 tests/"plain-text"): current release V00.01.013, customer flow = multi-page site, IMPLEMENTED += markdown-in-both-channels + customer accounts/site + official CS bot + transactional email/IPv4; §14 testing 158/11 files + markdown suite mention; limitations: plain-text-Telegram line removed (fixed in V00.01.011)
+- Version V00.01.012 → V00.01.013-beta-03 (5 sync points); bug-reports.md BR-007…BR-011 added (BR-007 spam = MITIGATED — filter is on Gmail's side)
+- Verification: vitest 158/158; npm run build exit 0 (30 static pages); dev boot: all pages 200, no warnings; tsc — NEW baseline note: pre-existing type strictness debt in tests/nurae/gateway.test.ts + api.test.ts(159) + src/lib/gateway/store.ts (vercel/blob typing) and scaffold files — visible now because earlier tsc outputs were truncated by head; runtime green (158/158), next build ignores tests; queued for a dedicated type-debt round
+- remark-gfm added to package.json (+lockfile, additive only)
+
+Stage Summary:
+- The customer site is now a real multi-page product surface (Home/Chat/Help/About) with single-head chrome, zero admin exposure, markdown-rendered AI answers, and spam-folder guidance at the exact moment of need; README reflects the current stage
+- Honest notes: BR-007 spam classification can only be mitigated in-product (guidance) — real remedies are Gmail-side (warm-up the sender, later: SPF/DKIM-aligned custom domain); chat E2E used the dev-code path (sandbox has no Gmail env); React components verified in-browser, not in vitest; OpenRouter key rotation STILL outstanding

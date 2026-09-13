@@ -27,10 +27,18 @@ NURAE is a platform where an operator can:
 …and where customers can:
 
 1. Visit the public site (`/`) and **sign up** — email + 6-digit Gmail
-   verification code, or Google sign-in.
-2. Chat with the **official NURAE CS bot** right on the site.
-3. Be managed by the operator via the dashboard (**Customers**, site
+   verification code (check spam!), or Google sign-in.
+2. Browse a real multi-page site: **Home** (`/`), **Chat** (`/chat`),
+   **Help & FAQ** (`/help`), **About/Contact** (`/about`) — one shared
+   header, no admin links exposed.
+3. Chat with the **official NURAE CS bot** on the site (web chat) or on
+   Telegram — AI replies render as proper markdown in both places.
+4. Be managed by the operator via the dashboard (**Customers**, site
    settings) — everything persisted in the database, keys encrypted at rest.
+
+The operator console lives at `/admin` (login via `NURAE_ADMIN_TOKEN`) and
+is deliberately **not linked** from the customer site — the owner reaches
+it by URL.
 
 > **Setup / self-hosting:** the complete step-by-step manual — local machine
 > or Termux Debian, polling vs webhook transport, and serving from your own
@@ -69,7 +77,7 @@ not duplicate version strings elsewhere.
 
 ## 3. Current release
 
-**NURAE V00.01.000-beta-02** — the first feature release.
+**NURAE V00.01.013-beta-03** — feature release 01, bug-fix round 13.
 
 > «Small release. Real functionality. Clean architecture. Continuous evolution.»
 
@@ -84,10 +92,15 @@ not duplicate version strings elsewhere.
 - **Telegram integration, webhook transport (primary)**: `setWebhook` on start
   (with a per-bot random secret verified via `X-Telegram-Bot-Api-Secret-Token`),
   `deleteWebhook` on stop, `/start`, `/help`, unknown-command handling,
-  plain-text messages, AI replies, Telegram-side status reconciliation
+  AI replies, Telegram-side status reconciliation
   (`getWebhookInfo`).
 - **Polling transport (local fallback)**: in-process long-poll loop for local
   development without a public URL (`NURAE_BOT_TRANSPORT=polling`).
+- **Markdown answers in both channels**: Telegram replies are converted from
+  AI markdown to Telegram HTML (headings, bold/italic, code blocks, links,
+  lists, quotes, tables) with ≤4096-char chunking and an automatic plain-text
+  fallback; the web chat renders markdown through react-markdown + GFM with
+  monochrome styles.
 - **Bot status state machine**: `stopped → starting → running → stopping →
   stopped`, with `error` reachable from `starting`/`running`/`stopping`.
   Nonsense transitions are rejected — the check is enforced in the database,
@@ -109,6 +122,18 @@ not duplicate version strings elsewhere.
 - **Secrets**: Telegram tokens, AI API keys, and webhook secrets encrypted at
   rest (AES-256-GCM, key from `NURAE_SECRET_KEY` or an auto-generated local
   key file); never returned by any API, never logged.
+- **Customer accounts + public site**: registration with scrypt-hashed
+  passwords, 6-digit Gmail-verified email codes (hashed at rest, 15-min TTL,
+  newest-code-wins), Google sign-in (OAuth 2.0, state-CSRF protected),
+  30-day sessions. Multi-page user site (Home / Chat / Help / About) with a
+  shared header — no admin links in public view.
+- **Official NURAE CS bot**: auto-seeded on first boot; configurable (AI key,
+  Telegram token, system prompt) directly from the admin overview card;
+  powers both the web chat and the Telegram support bot; ships with a
+  crafted official support prompt including escalation guidance.
+- **Transactional email** via Gmail SMTP app password (`NURAE_GMAIL_USER` /
+  `NURAE_GMAIL_APP_PASSWORD`); IPv4-first DNS (fixes unreachable-IPv6
+  networks, e.g. Termux/Android); actionable failure hints surfaced in the UI.
 - **Admin authentication**: set `NURAE_ADMIN_TOKEN` to require an admin token
   for the dashboard and all administrative endpoints (timing-safe comparison).
 - **Persistence** via the Prisma libSQL driver adapter: the SAME schema serves
@@ -116,7 +141,7 @@ not duplicate version strings elsewhere.
   (`libsql://` — hosted Turso).
 - **Vercel-compatible**: no second process, no long-running loops, no local
   filesystem dependency when `NURAE_SECRET_KEY` + Turso are configured.
-- Health endpoint, automated tests (113), lint-clean, type-clean.
+- Health endpoint, automated tests (158), lint-clean, type-clean in `src/`.
 
 ### EXPERIMENTAL
 
@@ -313,7 +338,7 @@ Note: Telegram webhooks require an HTTPS origin — Vercel provides one.
 ## 14. Testing
 
 ```bash
-npm test                 # 133 tests across 10 files (vitest)
+npm test                 # 158 tests across 11 files (vitest)
 npm run lint             # ESLint
 ```
 
@@ -325,10 +350,11 @@ machine, the webhook receiver (secret verification, full message flow,
 duplicate suppression, malformed payloads), API endpoints (projects, bots,
 config, lifecycle, logs), the platform layer (customer registration →
 Gmail code verification → sessions, Google OAuth state/CSRF, the official
-NURAE CS bot seeding + web chat, site settings, customers directory), and
-security (secrets never returned, 401s, 422s, hashed verification codes,
-rate limiting, IDOR-resistant error responses). Network-dependent units use
-mocks — no real Telegram credentials are required.
+NURAE CS bot seeding + web chat, site settings, customers directory), the
+Telegram markdown → HTML conversion (entity escaping, chunking, plain-text
+fallback), and security (secrets never returned, 401s, 422s, hashed
+verification codes, rate limiting, IDOR-resistant error responses). Network-
+dependent units use mocks — no real Telegram credentials are required.
 
 An end-to-end driver lives at `scripts/e2e.ts`. It is REAL-only: real
 Telegram Bot API, real AI provider, real HTTP chain — no mocks. It drives
@@ -423,7 +449,6 @@ keyboard; a `push` trigger is commented out (concurrency + run minutes).
 
 - Telegram only (one channel); the adapter boundary exists but no other
   channels are implemented.
-- Plain-text Telegram messages only (no markdown/media parsing).
 - Short-term memory only (recent-message window per chat).
 - Polling transport is local-development only; one NURAE instance should own
   a bot token at a time (Telegram enforces this per token anyway).

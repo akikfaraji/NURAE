@@ -1,10 +1,11 @@
 import { Suspense } from 'react';
-import { NuraeSite } from '@/components/nurae/site';
+import { SiteHome } from '@/components/nurae/site';
 
 /**
- * NURAE public site — the home for normal users: landing page, customer
- * sign-up/sign-in (Gmail verification + Google) and the official NURAE CS
- * bot web chat. The admin console lives at /admin.
+ * NURAE public site — HOME. Landing page + customer sign-up/sign-in
+ * (Gmail verification + Google). Signed-in customers are routed to /chat.
+ * Other user pages: /chat, /help, /about. The admin console lives at /admin
+ * (no public link — the operator reaches it by URL).
  */
 export default function Home() {
   return (
@@ -15,7 +16,7 @@ export default function Home() {
         </div>
       }
     >
-      <NuraeSite />
+      <SiteHome />
     </Suspense>
   );
 }
