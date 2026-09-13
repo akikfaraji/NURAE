@@ -69,3 +69,4 @@ upload/
 
 # bun was removed from the toolchain — ignore any local bun lockfile
 bun.lock
+tool-results/
