@@ -147,6 +147,13 @@ model User {
   avatarUrl     String?  @map("avatar_url")
   // user (reserved for future roles)
   role          String   @default("user")
+  // Pay-as-you-use wallet. Integer micro-dollars (1,000,000 = $1.00) — never
+  // floats. The ledger (ledger_entries) is the source of truth for history;
+  // this cached balance is updated atomically by the billing service.
+  balanceMicros Int      @default(0) @map("balance_micros")
+  // Signup gift: 7 days of free usage (the "free server" week). All usage is
+  // free while now() < trial_ends_at. Null = trial already consumed/legacy.
+  trialEndsAt   DateTime? @map("trial_ends_at")
   lastLoginAt   DateTime? @map("last_login_at")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -441,4 +448,84 @@ model BotPayment {
 
   @@index([botId])
   @@map("bot_payments")
+}
+
+// ---------------------------------------------------------------------------
+// Pay-as-you-use billing — per-feature metering, wallet ledger, topups.
+// Money is integer micro-dollars (µ$, 1,000,000 = $1.00). Every metered event
+// writes a ledger row (free, trial, premium and charged usage alike) so usage
+// analytics and daily free-quota accounting come from the same source.
+// ---------------------------------------------------------------------------
+
+// Immutable double-entry-ish journal. `bucket` is the UTC day key (YYYY-MM-DD)
+// used for daily free-quota counting and once-per-day hosting charges;
+// `idempotencyKey` makes credits (topups, grants) replay-safe.
+model LedgerEntry {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  // topup | usage | grant | refund | adjustment
+  kind           String
+  // usage feature key (see src/lib/nurae/billing/catalog.ts); null for topups
+  feature        String?
+  // signed: + credited to the wallet, − charged to the wallet
+  amountMicros   Int      @map("amount_micros")
+  // cached balance right after this entry (audit convenience, not authority)
+  balanceAfter   Int      @map("balance_after")
+  unitCount      Int      @default(1) @map("unit_count")
+  bucket         String?
+  // context id: bot id for usage, order no for topups
+  refId          String?  @map("ref_id")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  note           String?
+  metaJson       String?  @map("meta_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([userId, feature, bucket])
+  @@map("ledger_entries")
+}
+
+// Per-feature price book, seeded from the compiled-in defaults on first read.
+// Operators can adjust prices via the admin API without a redeploy.
+model PricingRule {
+  feature          String   @id
+  unitPriceMicros  Int      @map("unit_price_micros")
+  freeDailyUnits   Int      @default(0) @map("free_daily_units")
+  displayName      String   @map("display_name")
+  description      String   @default("")
+  enabled          Boolean  @default(true)
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("pricing_rules")
+}
+
+// One topup attempt. Stars orders are credited on successful_payment with a
+// nurae_topup_ payload; manual crypto orders wait for a tx hash + admin
+// approval; CryptoBot orders are credited by the invoice poller.
+model TopupOrder {
+  id                String    @id @default(cuid())
+  orderNo           String    @unique @map("order_no")
+  userId            String    @map("user_id")
+  // stars | crypto
+  provider          String
+  // crypto asset symbol (TON/BTC/USDT/ETH/LTC/TRX); null for stars
+  asset             String?
+  // deposit address shown to the user (manual crypto)
+  address           String?
+  expectedStars     Int?      @map("expected_stars")
+  expectedUsdMicros Int?      @map("expected_usd_micros")
+  // pending | awaiting_confirmation | paid | rejected | expired
+  status            String    @default("pending")
+  // provider invoice id (CryptoBot) — dedup for the poller
+  providerRef       String?   @map("provider_ref")
+  payUrl            String?   @map("pay_url")
+  txHash            String?   @map("tx_hash")
+  creditedMicros    Int?      @map("credited_micros")
+  note              String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  paidAt            DateTime? @map("paid_at")
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("topup_orders")
 }
