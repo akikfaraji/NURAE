@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { ApiError, SessionUserDTO, UserBotDTO, nuraeApi } from '@/lib/nurae-client/api';
+import { TEMPLATE_CATALOG } from '@/lib/nurae/bots/templates';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -61,10 +62,17 @@ export function BotsListView() {
           </div>
         </div>
 
+        <BuiltInBotsSection />
+
+        <div className="mt-10 flex items-baseline justify-between gap-4">
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Your bots</p>
+          <span className="text-xs text-muted-foreground">{loaded ? bots.length : '…'}</span>
+        </div>
+
         {!loaded ? (
-          <p className="mt-10 text-xs text-muted-foreground">Loading…</p>
+          <p className="mt-4 text-xs text-muted-foreground">Loading…</p>
         ) : bots.length === 0 ? (
-          <div className="mt-16 max-w-lg">
+          <div className="mt-6 max-w-lg">
             <p className="text-sm leading-relaxed text-muted-foreground">
               Say what the bot should do —
               <span className="text-foreground"> “when someone starts my restaurant bot, welcome them with buttons for Menu, Order and Contact” </span>
@@ -72,11 +80,11 @@ export function BotsListView() {
             </p>
             <div className="mt-4 flex gap-3">
               <Link href="/bots/new?ai=1"><Button size="sm">Describe a bot</Button></Link>
-              <Link href="/bots/new" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from scratch</Link>
+              <Link href="/bots" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from a built-in bot above</Link>
             </div>
           </div>
         ) : (
-          <ul className="mt-8 border-t border-border/60">
+          <ul className="mt-4 border-t border-border/60">
             {bots.map((b) => (
               <li key={b.id} className="border-b border-border/60">
                 <Link
@@ -121,6 +129,81 @@ export function BotsListView() {
         )}
       </main>
     </div>
+  );
+}
+
+/**
+ * Built-in bots — five finished promotion templates, ready to instantiate.
+ * Each one deploys with NURAE growth hooks baked in: an "About NURAE"
+ * flow and a referral link that credits the owner for signups.
+ */
+function BuiltInBotsSection() {
+  const router = useRouter();
+  const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const instantiateTemplate = async (id: string) => {
+    if (busy) return;
+    setBusy(id);
+    setError(null);
+    try {
+      const { bot } = await nuraeApi.createBotFromTemplate(id);
+      router.push(`/bots/${bot.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not create the bot.');
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="mt-10">
+      <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Built-in bots</p>
+      <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+        Five finished bots for the classic growth jobs. Pick one — it arrives fully configured,
+        you connect the token, it runs. Every bot you deploy links its users to NURAE.
+      </p>
+      <ul className="mt-4 border-t border-border/60">
+        {TEMPLATE_CATALOG.map((t) => (
+          <li key={t.id} className="border-b border-border/60">
+            <button
+              type="button"
+              onClick={() => setOpen(open === t.id ? null : t.id)}
+              aria-expanded={open === t.id}
+              className="group flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-muted/30"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-foreground">{t.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">{t.tagline}</span>
+              </span>
+              <span className="hidden shrink-0 text-[11px] uppercase tracking-widest text-muted-foreground sm:block">
+                {t.category}
+              </span>
+              <span aria-hidden className="w-4 shrink-0 text-center text-xs text-muted-foreground">
+                {open === t.id ? '−' : '+'}
+              </span>
+            </button>
+            {open === t.id && (
+              <div className="max-w-2xl pb-4">
+                <p className="text-sm leading-relaxed text-muted-foreground">{t.description}</p>
+                <ul className="mt-3 space-y-1">
+                  {t.highlights.map((h) => (
+                    <li key={h} className="text-xs text-muted-foreground">· {h}</li>
+                  ))}
+                </ul>
+                {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+                <div className="mt-3 flex items-center gap-3">
+                  <Button size="sm" disabled={busy !== null} onClick={() => void instantiateTemplate(t.id)}>
+                    {busy === t.id ? 'Creating…' : 'Use this bot'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Creates a draft — connect your @BotFather token next.</span>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

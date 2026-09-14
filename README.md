@@ -98,13 +98,51 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.03.000-beta-03** — the full Telegram interaction surface.
+**NURAE V00.04.000-beta-03** — built-in bots: the growth release.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**The ecosystem release (new in 03.000) — bots that do real work**
+**Built-in bots + growth hooks (new in 04.000) — every deployed bot grows NURAE**
+- **Five built-in bots** ship with the platform and instantiate in one click from
+  the `/bots` "Built-in bots" section: **Referral Ambassador** (personal invite
+  links, invite counters, top-referrers leaderboard), **Giveaway Bot** (one-tap
+  entry, live `/draw` winner announcement), **Daily Trivia** (scored quizzes with
+  instant feedback + leaderboard), **Support & FAQ** (canned answers, question
+  intake into the Audience table, AI fallback), **Community Hub** (subscription
+  flag, broadcasts pairing, one-tap sharing). Each arrives fully configured — the
+  owner connects a @BotFather token and it runs; every behavior stays editable.
+- **Growth hooks baked in**: every template ends with an *About NURAE* flow and
+  its welcome links to `https://<site>/?ref=<ownerCode>` — the platform referral
+  loop, so the bot's audience becomes NURAE signups while the owner earns premium
+  days. Site URL resolves from `NURAE_SITE_URL` → `NURAE_PUBLIC_URL` → the
+  request origin; community/channel shortcuts appear when
+  `NURAE_COMMUNITY_URL` / `NURAE_CHANNEL_URL` are set.
+- **Promotion primitives** (the runtime additions the templates stand on, usable
+  by any bot): **remember** steps (silently set or numerically *add to* an
+  attribute — counters, entries, scores), **draw** steps (random winner among
+  users holding an attribute, announced with `{{winner_name}}/{{winner_chat}}/
+  {{count}}`, honest empty state), **top** steps (leaderboard ranked by a numeric
+  attribute with a limit).
+- **Placeholder upgrades**: `{{bot_username}}` (bare, link-ready, resolved from
+  the live Telegram record), fallback syntax (`{{score|0}}`), and **templated
+  copy/link buttons** — a personal invite link is literally
+  `https://t.me/{{bot_username}}?start=ref_{{chat_id}}` inside a copy button.
+- **Built-in invite credit**: `/start ref_<chatId>` payloads automatically credit
+  the inviter (`invites` counter +1, joiner remembers `invited_by`, self-referral
+  and unknown ids ignored) — the referral-bot convention, now platform-native.
+- Display names are remembered per chat, so draws and leaderboards greet people,
+  not ids. The behavior editor writes/edits all three new steps in plain language;
+  the builder agent's prompt knows the full promotion vocabulary.
+- `POST /api/my/bots/from-template` creates the bot (session identity, compiled
+  through the same validated path as agent builds). Templates are regression-
+  guarded: every template must compile against the real behavior compiler.
+- Honest fix note: the Preview-console route claimed fixed in V00.03.000 (BR-019)
+  had never actually been committed — the file did not exist; it really ships now
+  (BR-020).
+
+**The ecosystem release (03.000) — bots that do real work**
 - **Per-user memory** (`bot_user_states`): every chat has persistent attributes.
   A behavior step can **ask and remember** (collect step): the flow pauses, the next
   text answer is stored, and the flow resumes — multi-turn forms, carts, intake.
@@ -161,7 +199,8 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
   cancel), Payments (Stars ledger). The Behavior editor writes every new step type
   (media, poll, Stars payment, ask-and-remember, reminder) in plain language.
 - Fixed on the way: the **Preview console route** (`POST /api/my/bots/[id]/test`)
-  had been missing since 02.001 — the console hit a 404 on every run (BR-019).
+  had been missing since 02.001 — the console hit a 404 on every run (BR-019;
+  though see BR-020 — the 03.000 fix itself failed to ship and landed in 04.000).
 
 **Behaviors — the primary concept of bot building (02.001)**
 - A **Behavior** is the source of truth: “when someone starts the bot, welcome them
@@ -263,7 +302,7 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 - Secrets encrypted at rest (AES-256-GCM), never returned by APIs, never logged.
 - Customer auth (scrypt, Gmail OTP with hashed codes, Google OAuth), sessions.
 - Structured logs with event codes; bot status state machine enforced in the DB.
-- 226 tests (vitest), lint-clean src, type-clean src.
+- 239 tests (vitest), lint-clean src, type-clean src.
 
 ### NOT in this release (do not assume these exist)
 
@@ -481,4 +520,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.03.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.04.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

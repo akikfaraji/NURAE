@@ -13,6 +13,8 @@
  *     - static → the response text is sent; ai → the text goes through the
  *       bot's AI with the response as extra instruction
  *   replies: [{ id, name, trigger: {type, value}, messages: [ReplyMessage] }]
+ *     - remember/draw/top steps: silent attribute writes, random draws over
+ *       an attribute's holders, leaderboards — the promotion primitives
  *     - trigger command   → exact command match (after Telegram's menu)
  *     - trigger keyword   → case-insensitive substring match
  *     - trigger text      → exact (case-insensitive) match — reply keyboards
@@ -131,6 +133,44 @@ export const replyScheduleSchema = z.object({
   prompt: z.string().trim().max(1000).optional(),
 });
 
+// "Remember" — silently set (or add to) an attribute. The quiet workhorse of
+// referral counters, giveaway entries, quiz scores and subscription flags.
+export const replyRememberSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  // Any text value; numbers may arrive as strings.
+  value: z.string().trim().max(2000).default(''),
+  // set → overwrite; add → numeric increment (missing counts as 0).
+  mode: z.enum(['set', 'add']).default('set'),
+});
+
+// "Draw a winner" — picks a random user who holds `attribute` and announces.
+// The announce text is templated with {{winner}}, {{winner_name}} and
+// {{count}}; an honest no-entrants message is sent when nobody qualifies.
+export const replyDrawSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  announce: z.string().trim().max(4000).default('🎉 The winner is {{winner_name}} ({{winner_chat}}) — {{count}} entrant(s). Congratulations!'),
+  // Sent instead of the announce when nobody holds the attribute.
+  emptyText: z.string().trim().max(1000).default('No entrants yet — nobody to draw from.'),
+});
+
+// "Leaderboard" — ranks users by a numeric attribute (desc) and posts the
+// top `limit`, medaling the first three. Values that are not numbers sort
+// as 0 (honest: text attributes do not belong on a leaderboard).
+export const replyTopSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  title: z.string().trim().max(200).default('Leaderboard'),
+  limit: z.number().int().min(1).max(20).default(10),
+});
+
 export const replyMessageSchema = z.object({
   text: z.string().trim().max(4000).default(''),
   buttons: z.array(z.array(replyButtonSchema).max(8)).max(8).optional(),
@@ -144,6 +184,9 @@ export const replyMessageSchema = z.object({
   payment: replyPaymentSchema.optional(),
   collect: replyCollectSchema.optional(),
   schedule: replyScheduleSchema.optional(),
+  remember: replyRememberSchema.optional(),
+  draw: replyDrawSchema.optional(),
+  top: replyTopSchema.optional(),
   // Edit the pressed button's message in place instead of sending a new one
   // (the idiomatic UX for pagination/settings/carts). Callback turns only.
   edit: z.boolean().optional(),
@@ -190,7 +233,10 @@ export const botReplySchema = z
           m.location !== undefined ||
           m.payment !== undefined ||
           m.collect !== undefined ||
-          m.schedule !== undefined,
+          m.schedule !== undefined ||
+          m.remember !== undefined ||
+          m.draw !== undefined ||
+          m.top !== undefined,
       ),
     { message: 'Every message step needs text, media, a poll, a payment, or something to ask' },
   );

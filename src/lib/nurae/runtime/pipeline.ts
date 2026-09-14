@@ -177,6 +177,8 @@ export interface CallbackMessage {
   data: string;
   fromBot?: boolean;
   fromName?: string;
+  /** First name as Telegram reports it — draws/leaderboards greet people. */
+  fromFirstName?: string;
   /** The message the button was attached to (edit-in-place). */
   messageId?: number;
 }
@@ -305,21 +307,29 @@ async function patchState(
 
 /**
  * {{placeholders}}: attributes (collected answers, carts, progress) plus the
- * builtins {{name}}, {{username}}, {{chat_id}}. Unknown keys stay visible —
- * honest debugging for the owner, never silent data loss.
+ * builtins {{name}}, {{username}}, {{chat_id}}, {{bot_username}}. A placeholder
+ * may carry a fallback — "{{score|0}}" renders 0 until score exists. Unknown
+ * keys without a fallback stay visible — honest debugging for the owner,
+ * never silent data loss.
  */
 function applyTemplate(
   text: string,
   state: BotUserStateData | null,
-  msg: { fromName?: string; fromFirstName?: string; chatId: string },
+  msg: { fromName?: string; fromFirstName?: string; chatId: string; botUsername?: string },
 ): string {
   if (!text.includes('{{')) return text;
   const attrs = state?.attributes ?? {};
-  return text.replace(/\{\{\s*([a-zA-Z0-9_-]{1,40})\s*\}\}/g, (whole, key: string) => {
+  return text.replace(/\{\{\s*([a-zA-Z0-9_-]{1,40})\s*(?:\|\s*([^{}]{1,200}?)\s*)?\}\}/g, (whole, key: string, fallback?: string) => {
     if (key === 'name') return msg.fromFirstName || msg.fromName || 'there';
     if (key === 'username') return msg.fromName ? `@${msg.fromName}` : '';
     if (key === 'chat_id') return msg.chatId;
+    if (key === 'bot_username') {
+      // Stored with the leading @ — links want the bare form.
+      const bare = msg.botUsername?.replace(/^@/, '');
+      return bare || fallback || whole;
+    }
     if (key in attrs) return attrs[key];
+    if (fallback !== undefined) return fallback;
     return whole;
   });
 }
@@ -353,9 +363,15 @@ export async function handleBotMessage(
     chatId: msg.chatId,
     fromName: msg.fromName,
     fromFirstName: msg.fromFirstName,
+    botUsername: bot.telegramUsername ?? undefined,
   };
   const state = await readState(store, bot.id, msg.chatId);
-  await patchState(store, bot.id, msg.chatId, { touch: true });
+  // Remember the display name — draws and leaderboards greet people, not ids.
+  const displayName = msg.fromFirstName || msg.fromName;
+  await patchState(store, bot.id, msg.chatId, {
+    touch: true,
+    ...(displayName ? { attributes: { name: displayName.slice(0, 64) } } : {}),
+  });
 
   // --- Service messages ----------------------------------------------------
   if (msg.service === 'member_joined') {
@@ -403,6 +419,25 @@ export async function handleBotMessage(
           `Deep-link start payload received (chat ${msg.chatId}): ${payload.slice(0, 64)}`,
           'DEEPLINK_START',
         );
+        // Invite credit: "ref_<chatId>" payloads count the inviter's
+        // referrals (the ref_ convention every invite bot speaks). The
+        // joiner remembers the inviter; the inviter's counter increments.
+        const refMatch = /^ref_(\d{3,20})$/.exec(payload);
+        if (refMatch && refMatch[1] !== String(msg.chatId)) {
+          const inviter = await store.getUserState(bot.id, refMatch[1]).catch(() => null);
+          if (inviter) {
+            const current = Number(inviter.attributes['invites'] ?? 0);
+            const next = (Number.isFinite(current) ? current : 0) + 1;
+            await patchState(store, bot.id, refMatch[1], { attributes: { invites: String(next) }, touch: true });
+            await patchState(store, bot.id, msg.chatId, { attributes: { invited_by: refMatch[1] }, touch: true });
+            await store.createLog(
+              bot.id,
+              'info',
+              `Invite credited: chat ${msg.chatId} arrived via ref_${refMatch[1]} (inviter now at ${next}).`,
+              'INVITE_CREDITED',
+            );
+          }
+        }
         const payloadRule = replyForPayload(bot, payload);
         if (payloadRule) {
           await patchState(store, bot.id, msg.chatId, { touch: true });
@@ -798,7 +833,7 @@ async function handleSuccessfulPayment(
   signal?: AbortSignal | null,
 ): Promise<void> {
   const p = msg.paymentInfo!;
-  const ctx: TurnContext = { chatId: msg.chatId, fromName: msg.fromName, fromFirstName: msg.fromFirstName };
+  const ctx: TurnContext = { chatId: msg.chatId, fromName: msg.fromName, fromFirstName: msg.fromFirstName, botUsername: bot.telegramUsername ?? undefined };
   await store.recordPayment({
     botId: bot.id,
     chatId: msg.chatId,
@@ -929,7 +964,11 @@ export async function handleBotCallback(
   if (cb.fromBot) return;
 
   const state = await readState(store, bot.id, cb.chatId);
-  await patchState(store, bot.id, cb.chatId, { touch: true });
+  const displayName = cb.fromFirstName || cb.fromName;
+  await patchState(store, bot.id, cb.chatId, {
+    touch: true,
+    ...(displayName ? { attributes: { name: displayName.slice(0, 64) } } : {}),
+  });
 
   const rule = replyForCallback(bot, cb.data);
   if (!rule) {
@@ -950,7 +989,7 @@ export async function handleBotCallback(
     'BUTTON_PRESSED',
   );
   await answerSafely(bot.id, sender, cb.callbackId);
-  const ctx: TurnContext = { chatId: cb.chatId, fromName: cb.fromName, messageId: cb.messageId };
+  const ctx: TurnContext = { chatId: cb.chatId, fromName: cb.fromName, messageId: cb.messageId, botUsername: bot.telegramUsername ?? undefined };
   await executeReplyMessages(bot, sender, rule.messages, rule.id, 0, ctx, state, store, deps.signal, deps.providerSelector, rule.name);
 }
 
@@ -1092,6 +1131,7 @@ export function updateToCallback(update: TelegramUpdateLike): CallbackMessage | 
     data: typeof cq.data === 'string' ? cq.data : '',
     fromBot: cq.from?.is_bot ?? false,
     fromName: cq.from?.username,
+    fromFirstName: cq.from?.first_name,
     messageId: cq.message?.message_id,
   };
 }
@@ -1118,7 +1158,7 @@ export interface TelegramUpdateLike {
   };
   callback_query?: {
     id: string;
-    from?: { id: number; is_bot: boolean; username?: string };
+    from?: { id: number; is_bot: boolean; first_name?: string; username?: string };
     message?: { message_id?: number; chat?: { id: number; type?: string } };
     data?: string;
   };
@@ -1162,6 +1202,9 @@ interface ReplyMessage {
   payment?: { title: string; description: string; priceStars: number; payload?: string; successText?: string };
   collect?: { attribute: string; prompt?: string };
   schedule?: { prompt?: string };
+  remember?: { attribute: string; value: string; mode: 'set' | 'add' };
+  draw?: { attribute: string; announce: string; emptyText: string };
+  top?: { attribute: string; title: string; limit: number };
   edit?: boolean;
   keyboard?: 'reply' | 'inline' | 'none';
   forceReply?: boolean;
@@ -1174,6 +1217,48 @@ interface TurnContext {
   fromFirstName?: string;
   /** The message a button was pressed on — enables edit-in-place. */
   messageId?: number;
+  /** The bot's own @username ("{{bot_username}}", invite links). */
+  botUsername?: string;
+}
+
+/**
+ * Buttons with per-user content: copy texts and link URLs support
+ * {{placeholders}} (invite links, share links). A URL that templates into
+ * something non-HTTP is dropped rather than sent — Telegram would refuse
+ * the whole message otherwise. Rows that end up empty disappear too.
+ */
+function templateButtons(
+  buttons: OutboundButtons | undefined,
+  state: BotUserStateData,
+  ctx: TurnContext,
+): OutboundButtons | undefined {
+  if (!buttons?.length) return buttons;
+  let changed = false;
+  const rows: OutboundButtons = [];
+  for (const row of buttons) {
+    const outRow: Array<{ text: string; url?: string; callback?: string; webapp?: string; copy?: string }> = [];
+    for (const b of row) {
+      let btn = b;
+      if (btn.copy) {
+        const copy = applyTemplate(btn.copy, state, ctx);
+        if (copy !== btn.copy) {
+          btn = { ...btn, copy };
+          changed = true;
+        }
+      }
+      if (btn.url) {
+        const url = applyTemplate(btn.url, state, ctx);
+        if (url !== btn.url) {
+          changed = true;
+          if (!/^https?:\/\//i.test(url)) continue; // templated into garbage — drop, never send
+          btn = { ...btn, url };
+        }
+      }
+      outRow.push(btn);
+    }
+    if (outRow.length) rows.push(outRow);
+  }
+  return changed ? (rows.length ? rows : undefined) : buttons;
 }
 
 /**
@@ -1195,6 +1280,17 @@ async function executeReplyMessages(
   providerSelector?: PipelineDeps['providerSelector'],
   triggerText?: string,
 ): Promise<void> {
+  // A mutable view of the user's state: remember steps write through so
+  // later steps in the same flow template fresh values ("Your score: 3").
+  const st: BotUserStateData = state ?? {
+    botId: bot.id,
+    chatId: ctx.chatId,
+    attributes: {},
+    awaiting: null,
+    resumeRuleId: null,
+    resumeStep: null,
+    startPayload: null,
+  };
   for (const [index, message] of replyMessages.entries()) {
     if (index < start) continue;
 
@@ -1229,8 +1325,8 @@ async function executeReplyMessages(
     }
 
     if (message.media && sender.sendMedia) {
-      const caption = applyTemplate(message.media.caption ?? '', state, ctx);
-      const buttons = message.buttons;
+      const caption = applyTemplate(message.media.caption ?? '', st, ctx);
+      const buttons = templateButtons(message.buttons, st, ctx);
       try {
         await sender.sendMedia(
           ctx.chatId,
@@ -1289,13 +1385,69 @@ async function executeReplyMessages(
       return;
     }
 
+    // Remember: a silent attribute write — counters, flags, entries. 'add'
+    // mode numerically increments (missing counts as 0, non-numeric as 0).
+    if (message.remember) {
+      let value = message.remember.value;
+      if (message.remember.mode === 'add') {
+        const current = Number(st.attributes[message.remember.attribute] ?? 0);
+        const add = Number(value === '' ? '1' : value);
+        value = String((Number.isFinite(current) ? current : 0) + (Number.isFinite(add) ? add : 0));
+      }
+      st.attributes[message.remember.attribute] = value;
+      await patchState(store, bot.id, ctx.chatId, {
+        attributes: { [message.remember.attribute]: value },
+        touch: true,
+      });
+      continue;
+    }
+
+    // Draw: pick a random user holding the attribute and announce it.
+    if (message.draw) {
+      const entrants = await store.listUsersWithAttribute(bot.id, message.draw.attribute).catch(() => []);
+      if (!entrants.length) {
+        await sendMarkdownReply(bot, sender, ctx, [{ text: message.draw.emptyText }], store, signal);
+        await store.createLog(bot.id, 'info', `Draw over "${message.draw.attribute}" had no entrants — nothing drawn.`, 'DRAW_EMPTY');
+      } else {
+        const winner = entrants[Math.floor(Math.random() * entrants.length)];
+        const text = message.draw.announce
+          .replace(/\{\{\s*winner_name\s*\}\}/g, winner.name ?? `user ${winner.chatId}`)
+          .replace(/\{\{\s*winner_chat\s*\}\}/g, winner.chatId)
+          .replace(/\{\{\s*count\s*\}\}/g, String(entrants.length));
+        await sendMarkdownReply(bot, sender, ctx, [{ text }], store, signal);
+        await store.createLog(
+          bot.id,
+          'info',
+          `Draw over "${message.draw.attribute}": winner chat ${winner.chatId} among ${entrants.length} entrant(s).`,
+          'DRAW_EXECUTED',
+        );
+      }
+      continue;
+    }
+
+    // Leaderboard: rank users by a numeric attribute, post the top slice.
+    if (message.top) {
+      const users = await store.listUsersWithAttribute(bot.id, message.top.attribute).catch(() => []);
+      const ranked = users
+        .map((u) => ({ ...u, n: Number(u.value) }))
+        .filter((u) => Number.isFinite(u.n))
+        .sort((a, b) => b.n - a.n)
+        .slice(0, message.top.limit);
+      const text = ranked.length
+        ? `${message.top.title}\n\n${ranked.map((u, i) => `${i + 1}. ${u.name ?? `user ${u.chatId}`} — ${u.n}`).join('\n')}`
+        : `${message.top.title}\n\nNo entries yet.`;
+      await sendMarkdownReply(bot, sender, ctx, [{ text }], store, signal);
+      await store.createLog(bot.id, 'info', `Leaderboard "${message.top.attribute}" posted (${ranked.length} row(s)).`, 'TOP_POSTED');
+      continue;
+    }
+
     // Plain text (the default): template → HTML → chunks → edit or send.
     const chunks = chunkTelegramMessage(message.text || ' ');
     for (const [ci, chunk] of chunks.entries()) {
-      const templated = applyTemplate(chunk, state, ctx);
+      const templated = applyTemplate(chunk, st, ctx);
       const html = telegramHtmlFromMarkdown(templated);
       const buttons: OutboundButtons | undefined =
-        ci === 0 && (index === 0 || message.edit) ? message.buttons : undefined;
+        ci === 0 && (index === 0 || message.edit) ? templateButtons(message.buttons, st, ctx) : undefined;
       const sendOpts: SendOptions = {
         signal: signal ?? undefined,
         parseMode: 'HTML',

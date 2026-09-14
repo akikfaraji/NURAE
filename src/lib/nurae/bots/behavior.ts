@@ -112,6 +112,36 @@ export const behaviorScheduleSchema = z.object({
   prompt: z.string().trim().max(1000).optional(),
 });
 
+// "Remember" — silently set (or numerically add to) an attribute.
+export const behaviorRememberSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  value: z.string().trim().max(2000).default(''),
+  mode: z.enum(['set', 'add']).default('set'),
+});
+
+// "Draw a winner" — random pick among users holding an attribute.
+export const behaviorDrawSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  announce: z.string().trim().max(4000).default('🎉 The winner is {{winner_name}} ({{winner_chat}}) — {{count}} entrant(s). Congratulations!'),
+  emptyText: z.string().trim().max(1000).default('No entrants yet — nobody to draw from.'),
+});
+
+// "Leaderboard" — top users by a numeric attribute.
+export const behaviorTopSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  title: z.string().trim().max(200).default('Leaderboard'),
+  limit: z.number().int().min(1).max(20).default(10),
+});
+
 export const behaviorStepSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('message'),
@@ -142,6 +172,12 @@ export const behaviorStepSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('collect'), collect: behaviorCollectSchema }),
   // Ask when to remind, parse the answer with the bot's AI, schedule it.
   z.object({ type: z.literal('schedule'), schedule: behaviorScheduleSchema }),
+  // Silently remember (or increment) an attribute — counters, flags, entries.
+  z.object({ type: z.literal('remember'), remember: behaviorRememberSchema }),
+  // Draw a random winner among the users holding an attribute.
+  z.object({ type: z.literal('draw'), draw: behaviorDrawSchema }),
+  // Post the leaderboard for a numeric attribute.
+  z.object({ type: z.literal('top'), top: behaviorTopSchema }),
 ]);
 
 export const behaviorWhenSchema = z.discriminatedUnion('type', [
@@ -298,6 +334,32 @@ function stepsToReplyMessages(
       return {
         text: step.schedule.prompt ?? '',
         schedule: { prompt: step.schedule.prompt },
+      };
+    }
+    if (step.type === 'remember') {
+      return {
+        text: '',
+        remember: {
+          attribute: step.remember.attribute,
+          value: step.remember.value,
+          mode: step.remember.mode,
+        },
+      };
+    }
+    if (step.type === 'draw') {
+      return {
+        text: '',
+        draw: {
+          attribute: step.draw.attribute,
+          announce: step.draw.announce,
+          emptyText: step.draw.emptyText,
+        },
+      };
+    }
+    if (step.type === 'top') {
+      return {
+        text: '',
+        top: { attribute: step.top.attribute, title: step.top.title, limit: step.top.limit },
       };
     }
     // message step.
@@ -576,6 +638,24 @@ export function deriveBehaviors(caps: BotCapabilities): BotBehaviorSpec[] {
       if (m.schedule) {
         return { type: 'schedule', schedule: { ...(m.schedule.prompt ? { prompt: m.schedule.prompt } : {}) } } as BehaviorStep;
       }
+      if (m.remember) {
+        return {
+          type: 'remember',
+          remember: { attribute: m.remember.attribute, value: m.remember.value, mode: m.remember.mode },
+        } as BehaviorStep;
+      }
+      if (m.draw) {
+        return {
+          type: 'draw',
+          draw: { attribute: m.draw.attribute, announce: m.draw.announce, emptyText: m.draw.emptyText },
+        } as BehaviorStep;
+      }
+      if (m.top) {
+        return {
+          type: 'top',
+          top: { attribute: m.top.attribute, title: m.top.title, limit: m.top.limit },
+        } as BehaviorStep;
+      }
       return {
         type: 'message',
         text: m.text,
@@ -636,7 +716,7 @@ export function deriveBehaviors(caps: BotCapabilities): BotBehaviorSpec[] {
     if (!behavior) continue;
     behavior.steps = r.messages.map((m, mi) => {
       if (m.ai !== undefined) return { type: 'ai', instruction: m.ai } as BehaviorStep;
-      if (m.media || m.poll || m.payment || m.collect || m.schedule) return behavior.steps[mi];
+      if (m.media || m.poll || m.payment || m.collect || m.schedule || m.remember || m.draw || m.top) return behavior.steps[mi];
       const flat = m.buttons?.flat() ?? [];
       const buttons: BehaviorButton[] = flat.map((b) => {
         if (b.webapp) return { label: b.text, action: { kind: 'webapp', url: b.webapp } as BehaviorButtonAction };
@@ -721,6 +801,13 @@ export function describeSteps(steps: BehaviorStep[]): string {
       if (s.type === 'payment') return `charges ${s.payment.priceStars}★ for ${s.payment.title}`;
       if (s.type === 'collect') return `asks and remembers ${s.collect.attribute}`;
       if (s.type === 'schedule') return 'sets a reminder';
+      if (s.type === 'remember') {
+        return s.remember.mode === 'add'
+          ? `adds ${s.remember.value || '1'} to ${s.remember.attribute}`
+          : `remembers ${s.remember.attribute}`;
+      }
+      if (s.type === 'draw') return `draws a winner by ${s.draw.attribute}`;
+      if (s.type === 'top') return `leaderboard: top ${s.top.limit} by ${s.top.attribute}`;
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 42 ? `${s.text.slice(0, 42).trimEnd()}…` : s.text;
       return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';

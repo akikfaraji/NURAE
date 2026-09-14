@@ -248,7 +248,10 @@ export type BehaviorStepDTO =
     }
   | { type: 'payment'; payment: { title: string; description: string; priceStars: number; successText?: string } }
   | { type: 'collect'; collect: { attribute: string; prompt?: string } }
-  | { type: 'schedule'; schedule: { prompt?: string } };
+  | { type: 'schedule'; schedule: { prompt?: string } }
+  | { type: 'remember'; remember: { attribute: string; value?: string; mode?: 'set' | 'add' } }
+  | { type: 'draw'; draw: { attribute: string; announce?: string; emptyText?: string } }
+  | { type: 'top'; top: { attribute: string; title?: string; limit?: number } };
 
 export type BehaviorWhenDTO =
   | { type: 'start' }
@@ -519,6 +522,11 @@ export const nuraeApi = {
   getMyBot: (id: string) => api<{ bot: UserBotDTO }>(`/api/my/bots/${id}`),
   createMyBot: (input: Record<string, unknown>) =>
     api<{ bot: UserBotDTO }>('/api/my/bots', { method: 'POST', body: JSON.stringify(input) }),
+  createBotFromTemplate: (templateId: string) =>
+    api<{ bot: UserBotDTO }>('/api/my/bots/from-template', {
+      method: 'POST',
+      body: JSON.stringify({ templateId }),
+    }),
   updateMyBot: (id: string, patch: Record<string, unknown>) =>
     api<{ bot: UserBotDTO }>(`/api/my/bots/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteMyBot: (id: string) => api<{ ok: true }>(`/api/my/bots/${id}`, { method: 'DELETE' }),

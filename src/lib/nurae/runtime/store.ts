@@ -129,6 +129,15 @@ export interface RuntimeStore {
   updateUserState(botId: string, chatId: string, patch: BotUserStatePatch): Promise<void>;
   /** Every chat this bot has ever seen (broadcast audience). */
   listChatIds(botId: string): Promise<string[]>;
+  /**
+   * Users (private chats) holding a given attribute, with its raw value and
+   * stored display name — powers draws and leaderboards. Oldest-seen first
+   * so ties resolve deterministically.
+   */
+  listUsersWithAttribute(
+    botId: string,
+    attribute: string,
+  ): Promise<Array<{ chatId: string; value: string; name: string | null }>>;
   // --- Stars payments ------------------------------------------------------
   recordPayment(p: Omit<BotPaymentRow, 'id' | 'createdAt'>): Promise<void>;
   listPayments(botId: string): Promise<BotPaymentRow[]>;
@@ -341,6 +350,26 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
         select: { chatId: true },
       });
       return [...new Set([...states.map((s) => s.chatId), ...conversations.map((c) => c.chatId)])];
+    },
+
+    async listUsersWithAttribute(botId, attribute) {
+      const states = await prisma.botUserState.findMany({
+        where: { botId },
+        select: { chatId: true, attributes: true },
+        orderBy: { lastSeenAt: 'asc' },
+        take: 2000,
+      });
+      const out: Array<{ chatId: string; value: string; name: string | null }> = [];
+      for (const s of states) {
+        const attrs = parseAttributes(s.attributes);
+        const value = attrs[attribute];
+        if (value === undefined) continue;
+        // Private chats are numeric ids; group ids (-100…) hold per-GROUP
+        // state, not per-user entries, and never belong in a draw.
+        if (!/^-?\d+$/.test(s.chatId) || s.chatId.startsWith('-')) continue;
+        out.push({ chatId: s.chatId, value, name: attrs['name'] ?? null });
+      }
+      return out;
     },
 
     // --- payments -----------------------------------------------------------

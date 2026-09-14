@@ -81,6 +81,11 @@ function stepsSummary(steps: BehaviorStepDTO[], all: BotBehaviorDTO[]): string {
       if (s.type === 'payment') return `charges ${s.payment.priceStars}★ for ${s.payment.title}`;
       if (s.type === 'collect') return `asks and remembers ${s.collect.attribute}`;
       if (s.type === 'schedule') return 'sets a reminder';
+      if (s.type === 'remember') {
+        return s.remember.mode === 'add' ? `adds to ${s.remember.attribute}` : `remembers ${s.remember.attribute}`;
+      }
+      if (s.type === 'draw') return `draws a winner by ${s.draw.attribute}`;
+      if (s.type === 'top') return `leaderboard by ${s.top.attribute}`;
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 48 ? `${s.text.slice(0, 48).trimEnd()}…` : s.text;
       return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';
@@ -380,6 +385,18 @@ function BehaviorEditor({
         setError(`Step ${si + 1}: attribute names are short slugs — letters, digits, "-", "_".`);
         return;
       }
+      if (s.type === 'remember' && !/^[a-zA-Z0-9_-]{1,40}$/.test(s.remember.attribute.trim())) {
+        setError(`Step ${si + 1}: attribute names are short slugs — letters, digits, "-", "_".`);
+        return;
+      }
+      if (s.type === 'draw' && !/^[a-zA-Z0-9_-]{1,40}$/.test(s.draw.attribute.trim())) {
+        setError(`Step ${si + 1}: attribute names are short slugs — letters, digits, "-", "_".`);
+        return;
+      }
+      if (s.type === 'top' && !/^[a-zA-Z0-9_-]{1,40}$/.test(s.top.attribute.trim())) {
+        setError(`Step ${si + 1}: attribute names are short slugs — letters, digits, "-", "_".`);
+        return;
+      }
       if (s.type === 'poll') {
         const options = s.poll.options.map((o) => o.trim()).filter(Boolean);
         if (!s.poll.question.trim() || options.length < 2) {
@@ -514,7 +531,13 @@ function BehaviorEditor({
                             ? 'Stars payment'
                             : step.type === 'collect'
                               ? 'Ask and remember'
-                              : 'Set a reminder'}
+                              : step.type === 'remember'
+                                ? 'Remember (silent)'
+                                : step.type === 'draw'
+                                  ? 'Draw a winner'
+                                  : step.type === 'top'
+                                    ? 'Leaderboard'
+                                    : 'Set a reminder'}
                 </span>
                 <button
                   type="button"
@@ -742,6 +765,159 @@ function BehaviorEditor({
                     Digital goods are charged in Telegram Stars; /terms, /paysupport and /support are answered automatically.
                   </p>
                 </div>
+              ) : step.type === 'remember' ? (
+                <div className="space-y-2">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,200px)_150px_minmax(0,200px)]">
+                    <Input
+                      value={step.remember.attribute}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'remember' ? { ...s, remember: { ...s.remember, attribute: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="invites"
+                      maxLength={40}
+                      className="bg-transparent font-mono text-xs"
+                    />
+                    <select
+                      value={step.remember.mode ?? 'set'}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'remember'
+                              ? { ...s, remember: { ...s.remember, mode: e.target.value as 'set' | 'add' } }
+                              : s,
+                          ),
+                        }))
+                      }
+                      className="h-9 w-full border border-border bg-transparent px-2 text-xs text-foreground"
+                    >
+                      <option value="set" className="bg-background">set to</option>
+                      <option value="add" className="bg-background">add</option>
+                    </select>
+                    <Input
+                      value={step.remember.value ?? ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'remember' ? { ...s, remember: { ...s.remember, value: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder={step.remember.mode === 'add' ? '1 (the amount to add)' : 'yes'}
+                      maxLength={2000}
+                      className="bg-transparent font-mono text-xs"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Silent — sends nothing. Reuse anywhere as <code className="font-mono">{'{{invites}}'}</code>; “add” increments numbers (counters, scores, entries).
+                  </p>
+                </div>
+              ) : step.type === 'draw' ? (
+                <div className="space-y-2">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,200px)_1fr]">
+                    <Input
+                      value={step.draw.attribute}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'draw' ? { ...s, draw: { ...s.draw, attribute: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="entered"
+                      maxLength={40}
+                      className="bg-transparent font-mono text-xs"
+                    />
+                    <Input
+                      value={step.draw.announce ?? ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'draw' ? { ...s, draw: { ...s.draw, announce: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="🎉 The winner is {{winner_name}} ({{winner_chat}}) — {{count}} entrant(s)!"
+                      maxLength={4000}
+                      className="bg-transparent text-sm"
+                    />
+                  </div>
+                  <Input
+                    value={step.draw.emptyText ?? ''}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        steps: d.steps.map((s, idx) =>
+                          idx === si && s.type === 'draw' ? { ...s, draw: { ...s.draw, emptyText: e.target.value } } : s,
+                        ),
+                      }))
+                    }
+                    placeholder="No entrants yet — nobody to draw from."
+                    maxLength={1000}
+                    className="bg-transparent text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Draws one random user among everyone holding that attribute.</p>
+                </div>
+              ) : step.type === 'top' ? (
+                <div className="space-y-2">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,200px)_1fr_minmax(0,110px)]">
+                    <Input
+                      value={step.top.attribute}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'top' ? { ...s, top: { ...s.top, attribute: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="score"
+                      maxLength={40}
+                      className="bg-transparent font-mono text-xs"
+                    />
+                    <Input
+                      value={step.top.title ?? ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'top' ? { ...s, top: { ...s.top, title: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="Leaderboard"
+                      maxLength={200}
+                      className="bg-transparent text-sm"
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={step.top.limit ?? ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'top'
+                              ? { ...s, top: { ...s.top, limit: Math.min(20, Math.max(1, Math.round(Number(e.target.value) || 10))) } }
+                              : s,
+                          ),
+                        }))
+                      }
+                      placeholder="10"
+                      className="bg-transparent text-sm"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">Posts the top users ranked by that attribute (numbers only).</p>
+                </div>
               ) : (
                 <>
                   <Textarea
@@ -962,6 +1138,42 @@ function BehaviorEditor({
             }
           >
             + Reminder
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'remember', remember: { attribute: '', value: 'yes', mode: 'set' } } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Remember
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'draw', draw: { attribute: '' } } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Draw winner
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'top', top: { attribute: '' } } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Leaderboard
           </button>
         </div>
       </div>
