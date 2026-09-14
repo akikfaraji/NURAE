@@ -18,7 +18,7 @@
  */
 
 import { TelegramAdapter, TelegramApiError } from '../telegram/adapter';
-import { handleBotMessage, updateToInboundMessage } from './pipeline';
+import { routeBotUpdate, TelegramUpdateLike } from './pipeline';
 import { RuntimeBotRecord, RuntimeStore } from './store';
 import { BotStatus } from './state-machine';
 import { telegramMenuCommands } from '../bots/capabilities';
@@ -151,18 +151,14 @@ export class BotRuntime {
         for (const update of updates) {
           if (signal.aborted) return;
           offset = Math.max(offset, update.update_id + 1);
-          const msg = updateToInboundMessage(update);
-          if (!msg) continue;
-          await this.store.createLog(
-            this.botId,
-            'info',
-            `Message received from chat ${msg.chatId} (${msg.text?.length ?? 0} chars).`,
-            'TELEGRAM_MESSAGE_RECEIVED',
-          );
-          await handleBotMessage(this.record, adapter, msg, {
+          // The SAME router the webhook uses — callbacks, inline queries,
+          // payments and membership updates work identically in polling.
+          await routeBotUpdate(this.record, adapter, update as TelegramUpdateLike, {
             store: this.store,
             signal,
             providerSelector: this.providerSelector,
+          }, {
+            botUsername: this.record.telegramUsername ?? undefined,
           });
         }
       } catch (err) {

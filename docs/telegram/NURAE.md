@@ -50,6 +50,17 @@ ownership-checked at the query level, consequential actions need model
 
 ## 2. Gap analysis — NURAE vs the platform
 
+> **Status update (V00.03.000-beta-03, 2026-09-14):** the P1 batch and most of P2
+> shipped — items 1–9 are IMPLEMENTED (media send, edit-in-place, per-user state,
+> typing action, owner broadcast, scheduler, reply keyboards, button variety,
+> deep-link routing), plus 10 (group joins + mention gating + `my_chat_member`;
+> admin/moderation actions still absent), 11 (polls + poll answers), 12 (Stars
+> invoices → pre-checkout → ledger → auto /terms /paysupport /support; refunds still
+> manual), 13 (inline mode from static menu content), 14 remains BotFather-only.
+> Still open: 15–22 (P3 differentiation lane) — streaming drafts, Rich Messages,
+> ephemeral/Guest, Business, Mini App hosting, Games, paid media/subscriptions,
+> local Bot API server.
+
 Priority key: **P1** unlocks whole blueprint categories soon; **P2**
 material UX/ops wins; **P3** frontier/differentiation.
 

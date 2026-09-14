@@ -79,7 +79,34 @@ export function installTelegramStub(): void {
         telegramState.sends.push({ chatId: String(body.chat_id), text: String(body.text) });
         return tgRes({ ok: true, result: { message_id: 1 } });
       }
-      if (method === 'answerCallbackQuery' || method === 'setMyCommands') {
+      if (method === 'editMessageText') {
+        telegramState.sends.push({ chatId: String(body.chat_id), text: String(body.text) });
+        return tgRes({ ok: true, result: true });
+      }
+      if (method === 'sendPhoto' || method === 'sendDocument' || method === 'sendVideo' || method === 'sendAudio' || method === 'sendVoice' || method === 'sendAnimation' || method === 'sendSticker' || method === 'sendMediaGroup') {
+        telegramState.sends.push({ chatId: String(body.chat_id), text: String(body.caption ?? body.media ?? '') });
+        return tgRes({ ok: true, result: { message_id: 2 } });
+      }
+      if (method === 'sendPoll') {
+        telegramState.sends.push({ chatId: String(body.chat_id), text: String(body.question) });
+        return tgRes({ ok: true, result: { message_id: 3 } });
+      }
+      if (method === 'sendInvoice') {
+        telegramState.sends.push({ chatId: String(body.chat_id), text: `invoice:${body.payload}:${body.prices?.[0]?.amount ?? 0}` });
+        return tgRes({ ok: true, result: { message_id: 4 } });
+      }
+      if (
+        method === 'answerCallbackQuery' ||
+        method === 'setMyCommands' ||
+        method === 'sendChatAction' ||
+        method === 'answerPreCheckoutQuery' ||
+        method === 'answerInlineQuery' ||
+        method === 'setMyName' ||
+        method === 'setMyDescription' ||
+        method === 'setMyShortDescription' ||
+        method === 'deleteMessage' ||
+        method === 'refundStarPayment'
+      ) {
         return tgRes({ ok: true, result: true });
       }
       return tgRes({ ok: false, error_code: 404, description: `Unknown method ${method}` });

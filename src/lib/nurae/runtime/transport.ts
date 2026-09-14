@@ -26,7 +26,8 @@ import { TelegramAdapter, TelegramApiError, WebhookInfo } from '../telegram/adap
 import { BotManager } from './bot-manager';
 import { BotRuntime } from './bot-runtime';
 import { createPrismaRuntimeStore, RuntimeStore } from './store';
-import { handleBotMessage, handleBotCallback, updateToCallback, updateToInboundMessage, TelegramUpdateLike } from './pipeline';
+import { routeBotUpdate, TelegramUpdateLike } from './pipeline';
+import { runDueBotWork, startTaskTicker } from './tasks';
 import { loadCapabilities, telegramMenuCommands } from '../bots/capabilities';
 import { db } from '@/lib/db';
 import { SecretManager } from '../secrets';
@@ -228,6 +229,8 @@ export async function startBot(botId: string, opts?: { publicBaseUrl?: string | 
       // origin with the frontend and refreshes it every 60 s. Fire-and-forget
       // — it must not delay or fail the bot start.
       startGatewayHeartbeat();
+      // Deferred-work ticker (schedules + broadcasts) — idempotent per process.
+      startTaskTicker(createStore());
       return { ok: true, status: 'running' };
     }
 
@@ -418,29 +421,15 @@ export async function ingestWebhookUpdate(botId: string, update: TelegramUpdateL
   const record = await store.getBot(botId);
   if (!record) throw new Error('Bot not found');
 
-  // Callback queries (inline button presses) take precedence when present.
-  const callback = updateToCallback(update);
-  if (callback) {
-    await store.createLog(
-      botId,
-      'info',
-      `Button press received from chat ${callback.chatId} (data: ${callback.data.slice(0, 64)}).`,
-      'TELEGRAM_CALLBACK_RECEIVED',
-    );
-    await handleBotCallback(record, adapterFor(record.telegramToken), callback, { store });
-    return true;
-  }
+  // One router for every update family (messages, callbacks, inline,
+  // payments, membership, polls) — webhook and polling stay identical.
+  await routeBotUpdate(record, adapterFor(record.telegramToken), update, { store }, {
+    botUsername: record.telegramUsername ?? undefined,
+  });
 
-  const msg = updateToInboundMessage(update);
-  if (!msg) return true; // nothing this release handles (non-text updates are ignored)
-
-  await store.createLog(
-    botId,
-    'info',
-    `Message received from chat ${msg.chatId} (${msg.text.length} chars${msg.hasPhoto ? ', photo' : ''}).`,
-    'TELEGRAM_MESSAGE_RECEIVED',
-  );
-  await handleBotMessage(record, adapterFor(record.telegramToken), msg, { store });
+  // Deferred work (schedules, broadcasts) rides along after the update is
+  // served — fire-and-forget; the in-process ticker covers idle periods.
+  void runDueBotWork(store, { botId }).catch(() => undefined);
   return true;
 }
 

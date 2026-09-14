@@ -182,6 +182,10 @@ describe('pipeline AI reply delivery', () => {
       async appendAssistantMessage() {},
       async trimConversation() {},
       async createLog() {},
+      async getUserState() {
+        return null;
+      },
+      async updateUserState() {},
     } as unknown as RuntimeStore;
   }
 

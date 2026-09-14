@@ -144,6 +144,42 @@ export function makeStore() {
     async createLog(botId, level, message) {
       logs.push({ botId, level, message });
     },
+  // Ecosystem store surface (unused by these tests, required by the interface).
+  async getUserState() {
+    return null;
+  },
+  async updateUserState() {},
+  async listChatIds() {
+    return [];
+  },
+  async recordPayment() {},
+  async listPayments() {
+    return [];
+  },
+  async createSchedule() {
+    throw new Error('not implemented in this fake');
+  },
+  async listSchedules() {
+    return [];
+  },
+  async cancelSchedule() {
+    return false;
+  },
+  async dueSchedules() {
+    return [];
+  },
+  async markScheduleSent() {},
+  async markScheduleFailed() {},
+  async createBroadcast() {
+    throw new Error('not implemented in this fake');
+  },
+  async claimPendingBroadcast() {
+    return null;
+  },
+  async updateBroadcastProgress() {},
+  async listBroadcasts() {
+    return [];
+  },
   };
 
   function append(key: string, msg: ChatMessage) {
@@ -170,6 +206,7 @@ export function runtimeRecord(overrides?: Partial<RuntimeBotRecord>): RuntimeBot
     memorySize: 4,
     enabled: true,
     status: 'stopped',
+    capabilities: { commands: [], replies: [] },
     telegramToken: '1234567890:TestTokenNotRealButWellFormedAAAAAA',
     apiKey: null,
     baseUrl: null,

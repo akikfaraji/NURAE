@@ -1,24 +1,29 @@
 /**
- * NURAE — bot capabilities: menu commands, response rules, inline buttons,
- * mini-workflows. The configuration model that agents write through tools
- * and the Telegram pipeline executes.
+ * NURAE — bot capabilities: menu commands, response rules, keyboards, media,
+ * polls, payments, forms. The configuration model that agents write through
+ * tools and the Telegram pipeline executes.
  *
  * Storage: two JSON strings on the Bot row (SQLite has no JSON type). All
  * shapes are validated with zod at the boundary — a poisoned row cannot
  * reach the pipeline (it re-validates on load, like bot config does).
  *
- * Shapes (v1 — deliberately small, everything here actually works):
+ * Shapes (v2 — the full interaction surface):
  *   commands: [{ command: "/pricing", description, kind: "static"|"ai", response? }]
  *     - registered with Telegram setMyCommands on bot start (menu)
  *     - static → the response text is sent; ai → the text goes through the
  *       bot's AI with the response as extra instruction
- *   replies: [{ id, name, trigger: {type, value}, messages: [{ text, buttons? }] }]
- *     - trigger command → exact command match (after Telegram's menu)
- *     - trigger keyword  → case-insensitive substring match
- *     - trigger button   → callback_data equal to `value`
- *     - trigger fallback → catch-all for unmatched text
- *     - messages with >1 entries form a mini workflow (sent in order)
- *     - buttons: [{ text, url? , callback? }] — rows of ≤8, ≤8 rows
+ *   replies: [{ id, name, trigger: {type, value}, messages: [ReplyMessage] }]
+ *     - trigger command   → exact command match (after Telegram's menu)
+ *     - trigger keyword   → case-insensitive substring match
+ *     - trigger text      → exact (case-insensitive) match — reply keyboards
+ *     - trigger button    → callback_data equal to `value` (r: namespaced)
+ *     - trigger payload   → /start deep-link payload (exact or prefix)
+ *     - trigger member_joined → group join service messages
+ *     - trigger fallback  → catch-all for unmatched text
+ *     - messages with >1 entries form a mini workflow (sent in order);
+ *       collect/schedule steps pause the flow until the user answers
+ *   replyMessage: { text, ai?, buttons?, media?, poll?, location?, payment?,
+ *                   collect?, schedule?, edit?, keyboard?, forceReply?, removeKeyboard? }
  */
 
 import { z } from 'zod';
@@ -41,7 +46,7 @@ export const botCommandSchema = z.object({
 export const botCommandsSchema = z.array(botCommandSchema).max(20);
 
 // ---------------------------------------------------------------------------
-// Replies / buttons / workflows
+// Buttons — inline (url/callback/webapp/copy) and reply-keyboard labels
 // ---------------------------------------------------------------------------
 
 export const replyButtonSchema = z
@@ -50,20 +55,106 @@ export const replyButtonSchema = z
     url: z.string().trim().url('Button URL must be valid').max(256).optional(),
     // Callback data ≤ 64 bytes (Telegram limit). Must be namespaced to the reply.
     callback: z.string().trim().max(64).optional(),
+    // Mini App button — opens the web app inside Telegram (HTTPS only).
+    webapp: z.string().trim().url('Mini App URL must be valid').max(256).optional(),
+    // copy_text button — pressing copies the text (Bot API 7.11).
+    copy: z.string().trim().min(1).max(200).optional(),
   })
-  .refine((b) => Boolean(b.url || b.callback), { message: 'A button needs a URL or a callback' });
+  .refine((b) => Boolean(b.url || b.callback || b.webapp || b.copy), {
+    message: 'A button needs a URL, a callback, a Mini App URL, or text to copy',
+  });
+
+// ---------------------------------------------------------------------------
+// Message steps — the full outbound surface
+// ---------------------------------------------------------------------------
+
+export const replyMediaSchema = z.object({
+  // photo | video | audio | voice | animation | document | sticker
+  kind: z.enum(['photo', 'video', 'audio', 'voice', 'animation', 'document', 'sticker']),
+  // HTTPS URL (Telegram fetches it) or a persistent file_id.
+  source: z
+    .string()
+    .trim()
+    .min(6)
+    .max(512)
+    .refine((s) => /^https?:\/\//i.test(s) || /^[\w-]{20,}$/.test(s) || /^[\w-]+$/.test(s), {
+      message: 'Media source must be an HTTPS URL or a Telegram file_id',
+    }),
+  caption: z.string().trim().max(1024).optional(),
+  filename: z.string().trim().max(120).optional(),
+});
+
+export const replyPollSchema = z
+  .object({
+    question: z.string().trim().min(1).max(300),
+    options: z.array(z.string().trim().min(1).max(100)).min(2).max(12),
+    quiz: z.boolean().optional(),
+    correctOption: z.number().int().min(0).max(11).optional(),
+    explanation: z.string().trim().max(200).optional(),
+    anonymous: z.boolean().optional(),
+  })
+  .refine((p) => !p.quiz || typeof p.correctOption === 'number', {
+    message: 'A quiz needs a correct option',
+  });
+
+export const replyLocationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  title: z.string().trim().max(64).optional(),
+  address: z.string().trim().max(64).optional(),
+});
+
+// Stars invoice — the mandatory rail for digital goods inside Telegram.
+export const replyPaymentSchema = z.object({
+  title: z.string().trim().min(1).max(32),
+  description: z.string().trim().min(1).max(255),
+  priceStars: z.number().int().min(1).max(25_000),
+  // Stable key stored on the payment row + user attribute (paid_<payload>).
+  // Auto-derived per step when omitted.
+  payload: z.string().trim().max(128).optional(),
+  // Sent automatically after successful_payment for this product.
+  successText: z.string().trim().max(4000).optional(),
+});
+
+// "Ask and remember" — pauses the flow; the next text answer is stored.
+export const replyCollectSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  prompt: z.string().trim().max(1000).optional(),
+});
+
+// "Set a reminder" — pauses the flow; the answer is parsed into a schedule
+// with the bot's own AI ("tomorrow at 9am" → a real scheduled message).
+export const replyScheduleSchema = z.object({
+  prompt: z.string().trim().max(1000).optional(),
+});
 
 export const replyMessageSchema = z.object({
-  text: z.string().trim().min(1).max(4000),
+  text: z.string().trim().max(4000).default(''),
   buttons: z.array(z.array(replyButtonSchema).max(8)).max(8).optional(),
   // Behavior "Ask the AI" steps compile to this marker: the pipeline runs the
   // bot's AI with `ai` as extra guidance instead of sending `text` verbatim.
   // Text still carries the trigger label (buttons need non-empty message text).
   ai: z.string().trim().max(2000).optional(),
+  media: replyMediaSchema.optional(),
+  poll: replyPollSchema.optional(),
+  location: replyLocationSchema.optional(),
+  payment: replyPaymentSchema.optional(),
+  collect: replyCollectSchema.optional(),
+  schedule: replyScheduleSchema.optional(),
+  // Edit the pressed button's message in place instead of sending a new one
+  // (the idiomatic UX for pagination/settings/carts). Callback turns only.
+  edit: z.boolean().optional(),
+  // Render buttons as a reply keyboard (labels sent back as text) or strip.
+  keyboard: z.enum(['inline', 'reply', 'none']).optional(),
+  forceReply: z.boolean().optional(),
+  removeKeyboard: z.boolean().optional(),
 });
 
 export const replyTriggerSchema = z.object({
-  type: z.enum(['command', 'keyword', 'button', 'fallback']),
+  type: z.enum(['command', 'keyword', 'text', 'button', 'fallback', 'payload', 'member_joined']),
   value: z.string().trim().max(64).optional(),
 });
 
@@ -77,6 +168,7 @@ export const botReplySchema = z
   .refine(
     (r) =>
       r.trigger.type === 'fallback' ||
+      r.trigger.type === 'member_joined' ||
       (r.trigger.value !== undefined && r.trigger.value.length > 0),
     { message: 'This trigger type needs a value' },
   )
@@ -85,6 +177,22 @@ export const botReplySchema = z
     // between replies or with other bots on shared callback data.
     (r) => r.trigger.type !== 'button' || (r.trigger.value ?? '').startsWith('r:'),
     { message: 'Button callback data must start with "r:" (namespaced callback)' },
+  )
+  .refine(
+    // A message step must DO something — the pipeline rejects empty sends.
+    (r) =>
+      r.messages.every(
+        (m) =>
+          m.text.trim().length > 0 ||
+          m.ai !== undefined ||
+          m.media !== undefined ||
+          m.poll !== undefined ||
+          m.location !== undefined ||
+          m.payment !== undefined ||
+          m.collect !== undefined ||
+          m.schedule !== undefined,
+      ),
+    { message: 'Every message step needs text, media, a poll, a payment, or something to ask' },
   );
 
 export const botRepliesSchema = z.array(botReplySchema).max(30);
@@ -92,6 +200,7 @@ export const botRepliesSchema = z.array(botReplySchema).max(30);
 export type BotCommandSpec = z.infer<typeof botCommandSchema>;
 export type BotReplySpec = z.infer<typeof botReplySchema>;
 export type BotReplyButton = z.infer<typeof replyButtonSchema>;
+export type BotReplyMessage = z.infer<typeof replyMessageSchema>;
 
 // ---------------------------------------------------------------------------
 // Serialize / load
@@ -144,4 +253,44 @@ export function telegramMenuCommands(commands: BotCommandSpec[]): Array<{
     command: c.command.replace(/^\//, '').slice(0, 32),
     description: c.description.slice(0, 64),
   }));
+}
+
+/**
+ * Stars compliance: any bot that sells digital goods must answer /terms,
+ * /paysupport and /support. The compiler appends these automatically when a
+ * payment step exists — unless the builder already defined them.
+ */
+export function complianceCommands(commands: BotCommandSpec[]): BotCommandSpec[] {
+  const has = (name: string) =>
+    commands.some((c) => c.command.toLowerCase() === `/${name}`);
+  const extras: BotCommandSpec[] = [];
+  if (!has('terms')) {
+    extras.push({
+      command: '/terms',
+      description: 'Terms of service',
+      kind: 'static',
+      response:
+        'Terms: digital goods and services delivered through this bot are sold via Telegram Stars. ' +
+        'Prices are shown before you pay. If something you paid for was not delivered, contact /support — we make it right or refund.',
+    });
+  }
+  if (!has('paysupport')) {
+    extras.push({
+      command: '/paysupport',
+      description: 'Help with a payment',
+      kind: 'static',
+      response:
+        'For payment issues: check that the payment went through in Telegram (Settings → Stars). ' +
+        'If you were charged but did not receive the product, message /support with the payment date and we will refund or deliver.',
+    });
+  }
+  if (!has('support')) {
+    extras.push({
+      command: '/support',
+      description: 'Contact support',
+      kind: 'static',
+      response: 'Support: describe your issue here and the team will answer. Payment refunds are handled within 14 days.',
+    });
+  }
+  return extras;
 }

@@ -386,6 +386,8 @@ export async function testBotTextTurn(userId: string, botId: string, text: strin
       text: text.slice(0, 4000),
       fromBot: false,
       fromName: 'console',
+      fromFirstName: 'Tester',
+      chatType: 'private',
     }, { store: createPrismaRuntimeStore(db) });
     return { sends: sender.sends };
   } catch (err) {

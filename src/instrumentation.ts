@@ -26,4 +26,11 @@ export async function register(): Promise<void> {
   if (gatewayLinkConfigured()) {
     startGatewayHeartbeat();
   }
+  // Bot task engine (schedules + broadcasts): a 60 s in-process ticker for
+  // long-lived deployments. Idempotent per process; serverless deployments
+  // sweep the same work after every webhook update instead.
+  const { createPrismaRuntimeStore } = await import('./lib/nurae/runtime/store');
+  const { startTaskTicker } = await import('./lib/nurae/runtime/tasks');
+  const { db } = await import('./lib/db');
+  startTaskTicker(createPrismaRuntimeStore(db));
 }

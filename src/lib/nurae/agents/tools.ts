@@ -44,6 +44,9 @@ import {
   userBotLifecycle,
 } from '../bots/user-bots';
 import { LIMITS } from '../validation';
+import { SecretManager } from '../secrets';
+import { TelegramAdapter } from '../telegram/adapter';
+import { createPrismaRuntimeStore } from '../runtime/store';
 
 // ---------------------------------------------------------------------------
 // Context + result types
@@ -428,6 +431,260 @@ const botUnpublish: ToolSpec = {
 };
 
 // ---------------------------------------------------------------------------
+// Ecosystem tools — profile, audience, broadcast, schedule, payments
+// ---------------------------------------------------------------------------
+
+const botSetProfile: ToolSpec = {
+  name: 'bot_set_profile',
+  description:
+    'Set the bot\u2019s PUBLIC profile text on Telegram: what it does before anyone starts it. ' +
+    'description = the "What can this bot do?" line (\u2264512 chars, shown before /start); ' +
+    'shortDescription = the profile bio (\u2264120 chars); name = display name (\u226464). ' +
+    'Requires a Telegram token (not necessarily live). One strong sentence each — no keyword soup.',
+  kind: 'write',
+  schema: z
+    .object({
+      botId: botIdSchema,
+      description: z.string().min(1).max(512).optional(),
+      shortDescription: z.string().min(1).max(120).optional(),
+      name: z.string().min(1).max(64).optional(),
+    })
+    .strict(),
+  async exec(ctx, args) {
+    const { botId, description, shortDescription, name } = args as {
+      botId: string;
+      description?: string;
+      shortDescription?: string;
+      name?: string;
+    };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    if (!owned.telegramTokenRef) {
+      return fail(`"${owned.name}" has no Telegram token yet — add it before setting the Telegram profile.`);
+    }
+    let token: string;
+    try {
+      token = SecretManager.decrypt(owned.telegramTokenRef);
+    } catch {
+      return fail('Stored Telegram token could not be decrypted. Re-enter the token.');
+    }
+    const adapter = new TelegramAdapter({ token });
+    const applied: string[] = [];
+    try {
+      if (description) {
+        await adapter.setMyDescription(description);
+        applied.push('description');
+      }
+      if (shortDescription) {
+        await adapter.setMyShortDescription(shortDescription);
+        applied.push('short description');
+      }
+      if (name) {
+        await adapter.setMyName(name);
+        applied.push('name');
+      }
+    } catch (err) {
+      return fail(`Telegram rejected the profile update: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return {
+      label: `Updated ${applied.join(' + ')} on "${owned.name}"`,
+      data: { botId, applied },
+    };
+  },
+};
+
+const botListUsers: ToolSpec = {
+  name: 'bot_list_users',
+  description:
+    'List a bot\u2019s audience: every chat that ever talked to it, with stored attributes (collected answers, ' +
+    'carts, arrival payload) and last-seen time. Read-only — use it to personalize flows or report reach.',
+  kind: 'read',
+  schema: z.object({ botId: botIdSchema }).strict(),
+  async exec(ctx, args) {
+    const { botId } = args as { botId: string };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    const store = createPrismaRuntimeStore(db);
+    const chats = await store.listChatIds(botId);
+    const users: Array<{ chatId: string; attributes: Record<string, string>; startPayload: string | null }> = [];
+    for (const chatId of chats.slice(0, 200)) {
+      const state = await store.getUserState(botId, chatId);
+      users.push({
+        chatId,
+        attributes: state?.attributes ?? {},
+        startPayload: state?.startPayload ?? null,
+      });
+    }
+    return { label: `Listed ${users.length} chat(s) for "${owned.name}"`, data: { botId, users } };
+  },
+};
+
+const botBroadcast: ToolSpec = {
+  name: 'bot_broadcast',
+  description:
+    'Send ONE message to every chat the bot has ever talked to (newsletters, announcements). Consequential: ' +
+    'requires { confirm: true } AND the user\u2019s approval this turn. Delivery is queued and paced (~20 msg/s); ' +
+    'results appear in the bot\u2019s broadcasts list. Markdown renders. Use sparingly — nobody likes spam.',
+  kind: 'write',
+  consequential: true,
+  schema: z
+    .object({
+      botId: botIdSchema,
+      text: z.string().min(1).max(4000),
+      confirm: z.boolean(),
+    })
+    .strict(),
+  async exec(ctx, args) {
+    const { botId, text, confirm } = args as { botId: string; text: string; confirm: boolean };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    if (!confirm || !ctx.userConfirmed) {
+      return {
+        label: `Waiting for your approval to broadcast to "${owned.name}"\u2019s audience`,
+        status: 'confirm',
+        data: { botId, needsApproval: true },
+      };
+    }
+    if (!owned.telegramTokenRef) {
+      return fail(`"${owned.name}" has no Telegram token — a broadcast needs a live bot.`);
+    }
+    const store = createPrismaRuntimeStore(db);
+    const chats = await store.listChatIds(botId);
+    if (!chats.length) {
+      return fail('No one has talked to this bot yet — there is nobody to broadcast to.');
+    }
+    const row = await store.createBroadcast(botId, text, chats.length);
+    return {
+      label: `Broadcast queued to ${chats.length} chat(s) of "${owned.name}"`,
+      detail: 'Delivery runs in the background at ~20 messages/second.',
+      data: { botId, broadcastId: row.id, recipients: chats.length, status: row.status },
+    };
+  },
+};
+
+const botScheduleMessage: ToolSpec = {
+  name: 'bot_schedule_message',
+  description:
+    'Schedule a message to ONE chat (reminders, drip content). Args: botId, chatId, text, and either ' +
+    'runAt (ISO 8601, UTC) or inMinutes (number); recurrence: "once" (default) | "daily" | "weekly". ' +
+    'Or cancel with cancelScheduleId. Max one year ahead. The bot must have a Telegram token.',
+  kind: 'write',
+  schema: z
+    .object({
+      botId: botIdSchema,
+      chatId: z.string().min(1).max(64).optional(),
+      text: z.string().min(1).max(4000).optional(),
+      runAt: z.string().max(40).optional(),
+      inMinutes: z.number().int().min(1).max(60 * 24 * 365).optional(),
+      recurrence: z.enum(['once', 'daily', 'weekly']).default('once'),
+      cancelScheduleId: z.string().min(1).max(64).optional(),
+    })
+    .strict(),
+  async exec(ctx, args) {
+    const { botId, chatId, text, runAt, inMinutes, recurrence, cancelScheduleId } = args as {
+      botId: string;
+      chatId?: string;
+      text?: string;
+      runAt?: string;
+      inMinutes?: number;
+      recurrence: 'once' | 'daily' | 'weekly';
+      cancelScheduleId?: string;
+    };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    const store = createPrismaRuntimeStore(db);
+    if (cancelScheduleId) {
+      const ok = await store.cancelSchedule(botId, cancelScheduleId);
+      if (!ok) return fail(`Schedule ${cancelScheduleId} not found (or already sent/cancelled).`);
+      return { label: `Cancelled a scheduled message on "${owned.name}"`, data: { botId, cancelled: cancelScheduleId } };
+    }
+    if (!chatId || !text) return fail('Scheduling needs chatId and text (or cancelScheduleId to cancel).');
+    if (!owned.telegramTokenRef) {
+      return fail(`"${owned.name}" has no Telegram token — scheduled sends need one.`);
+    }
+    let runDate: Date;
+    if (inMinutes !== undefined) {
+      runDate = new Date(Date.now() + inMinutes * 60_000);
+    } else if (runAt) {
+      runDate = new Date(runAt);
+      if (Number.isNaN(runDate.getTime())) return fail(`"${runAt}" is not a valid ISO 8601 datetime.`);
+    } else {
+      return fail('Give runAt (ISO 8601) or inMinutes.');
+    }
+    if (runDate.getTime() <= Date.now()) return fail('That time is in the past.');
+    if (runDate.getTime() > Date.now() + 365 * 24 * 60 * 60 * 1000) return fail('Schedules can be at most one year ahead.');
+    const row = await store.createSchedule({ botId, chatId, text, runAt: runDate, recurrence });
+    return {
+      label: `Scheduled a ${recurrence === 'once' ? 'one-time' : recurrence} message for "${owned.name}"`,
+      detail: `Runs at ${row.runAt.toISOString().replace('T', ' ').slice(0, 16)} UTC → chat ${chatId}`,
+      data: { botId, scheduleId: row.id, runAt: row.runAt.toISOString(), recurrence },
+    };
+  },
+};
+
+const botListSchedules: ToolSpec = {
+  name: 'bot_list_schedules',
+  description:
+    'List a bot\u2019s pending/failed scheduled messages (id, chat, run time, recurrence, first line of text). ' +
+    'Cancel with bot_schedule_message { cancelScheduleId }. Read-only.',
+  kind: 'read',
+  schema: z.object({ botId: botIdSchema }).strict(),
+  async exec(ctx, args) {
+    const { botId } = args as { botId: string };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    const store = createPrismaRuntimeStore(db);
+    const rows = await store.listSchedules(botId);
+    return {
+      label: `Listed ${rows.length} schedule(s) for "${owned.name}"`,
+      data: {
+        botId,
+        schedules: rows.map((r) => ({
+          id: r.id,
+          chatId: r.chatId,
+          runAt: r.runAt.toISOString(),
+          recurrence: r.recurrence,
+          status: r.status,
+          textPreview: r.text.slice(0, 120),
+        })),
+      },
+    };
+  },
+};
+
+const botPaymentsList: ToolSpec = {
+  name: 'bot_payments_list',
+  description:
+    'List a bot\u2019s completed Telegram Stars payments (amount, chat, product payload, date). Read-only. ' +
+    'Refunds are manual this release — say so honestly if asked.',
+  kind: 'read',
+  schema: z.object({ botId: botIdSchema }).strict(),
+  async exec(ctx, args) {
+    const { botId } = args as { botId: string };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    const store = createPrismaRuntimeStore(db);
+    const rows = await store.listPayments(botId);
+    const totalStars = rows.reduce((sum, r) => sum + (r.currency === 'XTR' ? r.amount : 0), 0);
+    return {
+      label: `Listed ${rows.length} payment(s) for "${owned.name}"`,
+      data: {
+        botId,
+        totalStars,
+        payments: rows.map((r) => ({
+          chatId: r.chatId,
+          amount: r.amount,
+          currency: r.currency,
+          payload: r.payload,
+          title: r.title,
+          at: r.createdAt.toISOString(),
+        })),
+      },
+    };
+  },
+};
+
+// ---------------------------------------------------------------------------
 // File tools
 // ---------------------------------------------------------------------------
 
@@ -525,6 +782,12 @@ export const TOOLS: readonly ToolSpec[] = [
   botSetCommands,
   botSetReplies,
   botAddKnowledge,
+  botSetProfile,
+  botListUsers,
+  botBroadcast,
+  botScheduleMessage,
+  botListSchedules,
+  botPaymentsList,
   botPublish,
   botUnpublish,
   filesList,
@@ -570,6 +833,8 @@ export interface ExecRecord {
   label: string;
   status: 'ok' | 'error' | 'confirm';
   detail?: string;
+  /** Structured result for the model's next round (compact — large payloads trimmed). */
+  data?: unknown;
 }
 
 /**
@@ -638,5 +903,17 @@ export async function executeTool(
     label: outcome.label,
     status,
     detail: outcome.detail,
+    data: outcome.data !== undefined ? compactData(outcome.data) : undefined,
   };
+}
+
+/** Tool data feeds the model's next round — keep it useful but bounded. */
+function compactData(data: unknown): unknown {
+  try {
+    const json = JSON.stringify(data);
+    if (json.length <= 4000) return data;
+    return { truncated: json.slice(0, 4000) };
+  } catch {
+    return undefined;
+  }
 }

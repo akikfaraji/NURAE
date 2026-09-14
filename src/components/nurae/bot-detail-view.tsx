@@ -20,6 +20,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
 import { BehaviorSection } from '@/components/nurae/bot-behavior-section';
+import { AudienceSection, BroadcastSection, PaymentsSection, SchedulesSection } from '@/components/nurae/bot-ecosystem-sections';
 import {
   ApiError,
   CapturedSendDTO,
@@ -213,6 +214,12 @@ export function BotDetailView() {
 
         {/* Preview — the real pipeline */}
         <PreviewSection bot={bot} />
+
+        {/* Ecosystem — audience, reach, rhythm, money */}
+        <AudienceSection botId={botId} refreshKey={0} />
+        <BroadcastSection botId={botId} refreshKey={0} onSent={() => void load()} />
+        <SchedulesSection botId={botId} refreshKey={0} />
+        <PaymentsSection botId={botId} refreshKey={0} />
 
         {/* Configuration */}
         <ConfigSection bot={bot} catalog={catalog} saving={saving} onSave={patch} />
@@ -660,7 +667,7 @@ function PreviewSection({ bot }: { bot: UserBotDTO }) {
   return (
     <Section
       title="Preview"
-      hint="Talk to the bot before it goes live. This runs the real pipeline — behaviors, commands, buttons, this bot's AI provider — and shows exactly what Telegram will deliver. Nothing is sent anywhere."
+      hint="Talk to the bot before it goes live. This runs the real pipeline — behaviors, commands, buttons, media, polls, Stars invoices, questions it remembers — and shows exactly what Telegram will deliver. Nothing is sent anywhere."
     >
       <div ref={scrollRef} className="max-h-96 space-y-4 overflow-y-auto border border-border/60 p-4">
         {sends.length === 0 && (
@@ -670,7 +677,29 @@ function PreviewSection({ bot }: { bot: UserBotDTO }) {
         )}
         {sends.map((s, i) => (
           <div key={i} className="space-y-2">
-            <Markdown>{s.text}</Markdown>
+            {s.kind === 'media' && s.media && (
+              <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                {s.media.kind}{s.media.source.startsWith('http') ? '' : ' (file_id)'}
+              </p>
+            )}
+            {s.kind === 'payment' && s.payment && (
+              <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                stars invoice · {s.payment.priceStars} ★
+              </p>
+            )}
+            {s.kind === 'edit' && (
+              <p className="text-[11px] uppercase tracking-widest text-muted-foreground">edited in place</p>
+            )}
+            {s.kind === 'poll' && s.poll ? (
+              <div>
+                <p className="text-sm font-medium">{s.poll.question}{s.poll.quiz ? ' (quiz)' : ''}</p>
+                <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                  {s.poll.options.map((o, oi) => <li key={oi}>· {o}</li>)}
+                </ul>
+              </div>
+            ) : (
+              <Markdown>{s.text}</Markdown>
+            )}
             {s.buttons && (
               <div className="flex flex-wrap gap-1.5">
                 {s.buttons.flatMap((row, ri) =>
@@ -683,7 +712,8 @@ function PreviewSection({ bot }: { bot: UserBotDTO }) {
                       className="border border-border px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-muted/60 disabled:opacity-50"
                     >
                       {b.text}
-                      {!b.callback && ' ↗'}
+                      {b.webapp && ' ⧉'}
+                      {!b.callback && !b.webapp && ' ↗'}
                     </button>
                   )),
                 )}

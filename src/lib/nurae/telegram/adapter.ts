@@ -3,7 +3,13 @@
  *
  * The ONLY channel implemented in this release. Speaks the raw Telegram Bot
  * API over HTTPS (no third-party dependency): long-polling getUpdates for
- * inbound messages, sendMessage for outbound replies.
+ * inbound messages, the messaging surface for outbound replies.
+ *
+ * Outbound surface (2026 platform state, sized for the blueprint library):
+ *   text (HTML/markdown-converted, inline OR reply keyboards, force-reply),
+ *   media (photo/video/audio/voice/animation/document/sticker by URL or
+ *   file_id, albums), polls/quiz, locations, Stars invoices, inline-mode
+ *   answers, edit-in-place, chat actions (typing…), profile (name/description).
  *
  * Future channels (Discord/WhatsApp/Web) will implement the same logical
  * surface (ChannelAdapter), keeping the runtime channel-agnostic.
@@ -83,22 +89,150 @@ interface ApiResult<T> {
   parameters?: { retry_after?: number };
 }
 
+/**
+ * Every update family NURAE can act on. Telegram only delivers an update
+ * type when it is listed here — new families MUST be added or they silently
+ * never arrive (verified platform rule).
+ */
+export const ALLOWED_UPDATES = [
+  'message',
+  'callback_query',
+  'inline_query',
+  'pre_checkout_query',
+  'my_chat_member',
+  'chat_member',
+  'poll_answer',
+] as const;
+
 /** Inline keyboard shape used by bot replies (rows of buttons). */
 export interface OutboundButton {
   text: string;
   url?: string;
   callback?: string;
+  /** Opens a Mini App (web_app button) — HTTPS URL. */
+  webapp?: string;
+  /** copy_text button — copies the given text when pressed (Bot API 7.11). */
+  copy?: string;
 }
 export type OutboundButtons = OutboundButton[][];
 
-function toTelegramKeyboard(buttons: OutboundButtons): Array<Array<{ text: string; url?: string; callback_data?: string }>> {
+type TgButton = { text: string; url?: string; callback_data?: string; web_app?: { url: string }; copy_text?: { text: string } };
+
+function toTelegramKeyboard(buttons: OutboundButtons): TgButton[][] {
   return buttons.map((row) =>
-    row.map((b) =>
-      b.callback
-        ? { text: b.text, callback_data: b.callback }
-        : { text: b.text, url: b.url ?? 'https://t.me' },
-    ),
+    row.map((b) => {
+      const base: TgButton = { text: b.text };
+      if (b.callback) return { ...base, callback_data: b.callback };
+      if (b.webapp) return { ...base, web_app: { url: b.webapp } };
+      if (b.copy) return { ...base, copy_text: { text: b.copy } };
+      return { ...base, url: b.url ?? 'https://t.me' };
+    }),
   );
+}
+
+/** Reply-keyboard button: the label is sent back as a normal text message. */
+export interface ReplyKeyboardOptions {
+  rows: string[][];
+  /** One-time keyboard — Telegram hides it after the next press. */
+  oneTime?: boolean;
+  placeholder?: string;
+}
+
+type ReplyMarkup =
+  | { inline_keyboard: TgButton[][] }
+  | { keyboard: Array<Array<{ text: string }>>; is_persistent?: boolean; input_field_placeholder?: string }
+  | { force_reply: true; input_field_placeholder?: string }
+  | { remove_keyboard: true };
+
+export type MediaKind = 'photo' | 'video' | 'audio' | 'voice' | 'animation' | 'document' | 'sticker';
+
+const MEDIA_METHOD: Record<MediaKind, string> = {
+  photo: 'sendPhoto',
+  video: 'sendVideo',
+  audio: 'sendAudio',
+  voice: 'sendVoice',
+  animation: 'sendAnimation',
+  document: 'sendDocument',
+  sticker: 'sendSticker',
+};
+
+/** Media kinds that accept a caption + reply markup (sticker does neither). */
+function mediaSupportsCaption(kind: MediaKind): boolean {
+  return kind !== 'sticker';
+}
+
+export interface OutboundMedia {
+  kind: MediaKind;
+  /** HTTPS URL or a previously seen Telegram file_id (persistent per bot). */
+  source: string;
+  caption?: string;
+  filename?: string;
+}
+
+export interface OutboundPoll {
+  question: string;
+  options: string[];
+  quiz?: boolean;
+  /** Zero-based index of the correct option (quiz only). */
+  correctOption?: number;
+  explanation?: string;
+  anonymous?: boolean;
+}
+
+export interface OutboundInvoice {
+  title: string;
+  description: string;
+  /** Price in Telegram Stars (XTR) — the mandatory rail for digital goods. */
+  priceStars: number;
+  payload: string;
+}
+
+export interface InlineQueryResult {
+  id: string;
+  title: string;
+  /** Markdown/plain body — converted to Telegram HTML for input_message_content. */
+  body: string;
+  description?: string;
+}
+
+export type ChatAction =
+  | 'typing'
+  | 'upload_photo'
+  | 'upload_video'
+  | 'upload_document'
+  | 'choose_sticker'
+  | 'find_location';
+
+export interface SendOptions {
+  replyToMessageId?: number;
+  signal?: AbortSignal;
+  parseMode?: 'HTML';
+  buttons?: OutboundButtons;
+  /** Render `buttons` as a reply keyboard instead of an inline keyboard. */
+  keyboard?: 'reply' | 'inline' | 'none';
+  forceReply?: boolean;
+  /** Send ReplyKeyboardRemove (clears a previous reply keyboard). */
+  removeKeyboard?: boolean;
+  /** The reply keyboard itself (labels the user taps, sent back as text). */
+  replyKeyboard?: ReplyKeyboardOptions;
+  /** Disable the link preview even in plain-text mode. */
+  disablePreview?: boolean;
+}
+
+function replyMarkupFor(opts: SendOptions): ReplyMarkup | undefined {
+  if (opts.removeKeyboard) return { remove_keyboard: true };
+  if (opts.replyKeyboard?.rows?.length) {
+    return {
+      keyboard: opts.replyKeyboard.rows.slice(0, 8).map((row) => row.slice(0, 8).map((text) => ({ text: text.slice(0, 64) }))),
+      ...(opts.replyKeyboard.oneTime ? { is_persistent: false } : {}),
+      ...(opts.replyKeyboard.placeholder ? { input_field_placeholder: opts.replyKeyboard.placeholder.slice(0, 64) } : {}),
+    };
+  }
+  if (opts.forceReply) return { force_reply: true };
+  if (opts.buttons?.length && opts.keyboard !== 'none') {
+    return { inline_keyboard: toTelegramKeyboard(opts.buttons) };
+  }
+  return undefined;
 }
 
 export class TelegramAdapter {
@@ -204,7 +338,7 @@ export class TelegramAdapter {
         url,
         secret_token: opts?.secretToken,
         drop_pending_updates: opts?.dropPendingUpdates ?? false,
-        allowed_updates: opts?.allowedUpdates ?? ['message', 'callback_query'],
+        allowed_updates: opts?.allowedUpdates ?? [...ALLOWED_UPDATES],
       },
       opts,
     );
@@ -222,27 +356,24 @@ export class TelegramAdapter {
   ): Promise<TelegramUpdate[]> {
     return this.call<TelegramUpdate[]>(
       'getUpdates',
-      { offset, timeout: this.pollTimeoutSec, allowed_updates: ['message', 'callback_query'] },
+      { offset, timeout: this.pollTimeoutSec, allowed_updates: [...ALLOWED_UPDATES] },
       opts,
     );
   }
 
   /**
-   * Send a message. Throws TelegramApiError on failure.
+   * Send a text message. Throws TelegramApiError on failure.
    * With `parseMode: 'HTML'` the text must already be Telegram-HTML
    * (see ./markdown.ts); plain mode sends raw text with no parse_mode.
-   * `buttons` attaches an inline keyboard (NURAE bot replies).
+   * `buttons` attaches a keyboard (inline by default; reply with keyboard:'reply'
+   * or via replyKeyboard labels); forceReply/removeKeyboard shape the input.
    */
   async sendMessage(
     chatId: number | string,
     text: string,
-    opts?: {
-      replyToMessageId?: number;
-      signal?: AbortSignal;
-      parseMode?: 'HTML';
-      buttons?: OutboundButtons;
-    },
+    opts?: SendOptions,
   ): Promise<void> {
+    const markup = replyMarkupFor(opts ?? {});
     await this.call<unknown>(
       'sendMessage',
       {
@@ -253,10 +384,202 @@ export class TelegramAdapter {
         // disabled to keep AI answers compact. Plain mode stays untouched.
         ...(opts?.parseMode
           ? { parse_mode: opts.parseMode, link_preview_options: { is_disabled: true } }
+          : opts?.disablePreview
+            ? { link_preview_options: { is_disabled: true } }
+            : {}),
+        ...(markup ? { reply_markup: markup } : {}),
+      },
+      opts,
+    );
+  }
+
+  /** Show a chat action status ("typing…") for ~5s — polish for slow turns. */
+  async sendChatAction(
+    chatId: number | string,
+    action: ChatAction,
+    opts?: { signal?: AbortSignal },
+  ): Promise<void> {
+    try {
+      await this.call<unknown>('sendChatAction', { chat_id: chatId, action }, opts);
+    } catch {
+      // Cosmetic by definition — never fail a turn over a typing indicator.
+    }
+  }
+
+  /** Send one media item (by URL or file_id) with optional caption + markup. */
+  async sendMedia(
+    chatId: number | string,
+    media: OutboundMedia,
+    opts?: SendOptions,
+  ): Promise<void> {
+    const method = MEDIA_METHOD[media.kind] ?? 'sendPhoto';
+    const mediaField = media.kind === 'animation' ? 'animation' : media.kind;
+    const withCaption = mediaSupportsCaption(media.kind);
+    const markup = replyMarkupFor(opts ?? {});
+    await this.call<unknown>(
+      method,
+      {
+        chat_id: chatId,
+        [mediaField]: media.source,
+        ...(withCaption && media.caption ? { caption: media.caption.slice(0, 1024) } : {}),
+        ...(withCaption && opts?.parseMode ? { parse_mode: opts.parseMode } : {}),
+        ...(markup ? { reply_markup: markup } : {}),
+        ...(opts?.replyToMessageId ? { reply_to_message_id: opts.replyToMessageId } : {}),
+      },
+      opts,
+    );
+  }
+
+  /** Send an album (2–10 media items). Reply markup is not supported here. */
+  async sendMediaGroup(
+    chatId: number | string,
+    items: OutboundMedia[],
+    opts?: SendOptions,
+  ): Promise<void> {
+    await this.call<unknown>(
+      'sendMediaGroup',
+      {
+        chat_id: chatId,
+        media: items.slice(0, 10).map((m) => ({
+          type: m.kind === 'animation' ? 'animation' : m.kind === 'document' ? 'document' : m.kind,
+          media: m.source,
+          ...(mediaSupportsCaption(m.kind) && m.caption ? { caption: m.caption.slice(0, 1024), parse_mode: opts?.parseMode } : {}),
+        })),
+      },
+      opts,
+    );
+  }
+
+  /** Send a poll / quiz (options ≤12, question ≤300 chars). */
+  async sendPoll(
+    chatId: number | string,
+    poll: OutboundPoll,
+    opts?: SendOptions,
+  ): Promise<void> {
+    await this.call<unknown>(
+      'sendPoll',
+      {
+        chat_id: chatId,
+        question: poll.question.slice(0, 300),
+        options: poll.options.slice(0, 12).map((o) => o.slice(0, 100)),
+        is_anonymous: poll.anonymous ?? true,
+        ...(poll.quiz
+          ? {
+              type: 'quiz',
+              ...(typeof poll.correctOption === 'number' ? { correct_option_id: poll.correctOption } : {}),
+              ...(poll.explanation ? { explanation: poll.explanation.slice(0, 200) } : {}),
+            }
           : {}),
-        ...(opts?.buttons?.length
-          ? { reply_markup: { inline_keyboard: toTelegramKeyboard(opts.buttons) } }
-          : {}),
+      },
+      opts,
+    );
+  }
+
+  async sendLocation(
+    chatId: number | string,
+    location: { latitude: number; longitude: number; title?: string; address?: string },
+    opts?: SendOptions,
+  ): Promise<void> {
+    const isVenue = Boolean(location.title && location.address);
+    await this.call<unknown>(
+      isVenue ? 'sendVenue' : 'sendLocation',
+      {
+        chat_id: chatId,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        ...(isVenue ? { title: location.title!.slice(0, 64), address: location.address!.slice(0, 64) } : {}),
+      },
+      opts,
+    );
+  }
+
+  async sendContact(
+    chatId: number | string,
+    contact: { phone: string; firstName: string; lastName?: string },
+    opts?: SendOptions,
+  ): Promise<void> {
+    await this.call<unknown>(
+      'sendContact',
+      {
+        chat_id: chatId,
+        phone_number: contact.phone,
+        first_name: contact.firstName.slice(0, 64),
+        ...(contact.lastName ? { last_name: contact.lastName.slice(0, 64) } : {}),
+      },
+      opts,
+    );
+  }
+
+  /**
+   * Send a Telegram Stars invoice (digital goods MUST use XTR — store policy).
+   * Telegram then sends pre_checkout_query + successful_payment updates.
+   */
+  async sendInvoice(
+    chatId: number | string,
+    invoice: OutboundInvoice,
+    opts?: SendOptions,
+  ): Promise<void> {
+    const markup = replyMarkupFor(opts ?? {});
+    await this.call<unknown>(
+      'sendInvoice',
+      {
+        chat_id: chatId,
+        title: invoice.title.slice(0, 32),
+        description: invoice.description.slice(0, 255),
+        payload: invoice.payload.slice(0, 128),
+        currency: 'XTR',
+        prices: [{ label: invoice.title.slice(0, 32), amount: Math.max(1, Math.round(invoice.priceStars)) }],
+        ...(markup ? { reply_markup: markup } : {}),
+      },
+      opts,
+    );
+  }
+
+  /** Refund a Stars payment (telegram_payment_charge_id from BotPayment). */
+  async refundStarPayment(chargeId: string, opts?: { signal?: AbortSignal }): Promise<void> {
+    await this.call<unknown>('refundStarPayment', { telegram_payment_charge_id: chargeId }, opts);
+  }
+
+  /** Approve/deny a pre-checkout query — MUST be answered within 10 seconds. */
+  async answerPreCheckoutQuery(
+    queryId: string,
+    ok: boolean,
+    opts?: { errorMessage?: string; signal?: AbortSignal },
+  ): Promise<void> {
+    await this.call<unknown>(
+      'answerPreCheckoutQuery',
+      {
+        pre_checkout_query_id: queryId,
+        ok,
+        ...(ok ? {} : { error_message: (opts?.errorMessage ?? 'Payment could not be completed.').slice(0, 255) }),
+      },
+      opts,
+    );
+  }
+
+  /** Answer an inline query (results shown while typing @bot … anywhere). */
+  async answerInlineQuery(
+    queryId: string,
+    results: InlineQueryResult[],
+    opts?: { cacheTime?: number; isPersonal?: boolean; signal?: AbortSignal },
+  ): Promise<void> {
+    await this.call<unknown>(
+      'answerInlineQuery',
+      {
+        inline_query_id: queryId,
+        cache_time: opts?.cacheTime ?? 30,
+        is_personal: opts?.isPersonal ?? true,
+        results: results.slice(0, 20).map((r) => ({
+          type: 'article',
+          id: r.id.slice(0, 64),
+          title: r.title.slice(0, 128),
+          description: (r.description ?? '').slice(0, 128),
+          input_message_content: {
+            message_text: r.body.slice(0, 4096),
+            parse_mode: 'HTML',
+            link_preview_options: { is_disabled: true },
+          },
+        })),
       },
       opts,
     );
@@ -277,6 +600,34 @@ export class TelegramAdapter {
     );
   }
 
+  /**
+   * Edit a sent message in place (the idiomatic UX for pagination/settings).
+   * Pass replyMarkup:false to strip the keyboard; buttons to replace it.
+   */
+  async editMessageText(
+    chatId: number | string,
+    messageId: number,
+    text: string,
+    opts?: SendOptions & { keepMarkup?: boolean },
+  ): Promise<void> {
+    const markup = opts?.keepMarkup ? undefined : replyMarkupFor(opts ?? {});
+    await this.call<unknown>(
+      'editMessageText',
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        ...(opts?.parseMode ? { parse_mode: opts.parseMode, link_preview_options: { is_disabled: true } } : {}),
+        ...(markup ? { reply_markup: markup } : {}),
+      },
+      opts,
+    );
+  }
+
+  async deleteMessage(chatId: number | string, messageId: number, opts?: { signal?: AbortSignal }): Promise<void> {
+    await this.call<unknown>('deleteMessage', { chat_id: chatId, message_id: messageId }, opts);
+  }
+
   /** Register the bot menu commands (what Telegram shows in the commands UI). */
   async setMyCommands(
     commands: Array<{ command: string; description: string }>,
@@ -288,6 +639,21 @@ export class TelegramAdapter {
       { commands: commands.slice(0, 100) },
       opts,
     );
+  }
+
+  /** Public bot profile text — shown BEFORE a user starts the bot (≤512). */
+  async setMyDescription(description: string, opts?: { signal?: AbortSignal }): Promise<void> {
+    await this.call<unknown>('setMyDescription', { description: description.slice(0, 512) }, opts);
+  }
+
+  /** Short profile line ("bio", ≤120 chars, shown on the bot's profile). */
+  async setMyShortDescription(text: string, opts?: { signal?: AbortSignal }): Promise<void> {
+    await this.call<unknown>('setMyShortDescription', { short_description: text.slice(0, 120) }, opts);
+  }
+
+  /** Bot display name (≤64 chars). */
+  async setMyName(name: string, opts?: { signal?: AbortSignal }): Promise<void> {
+    await this.call<unknown>('setMyName', { name: name.slice(0, 64) }, opts);
   }
 
   /** Resolve a file id to a download path (media handling). */

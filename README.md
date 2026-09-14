@@ -98,13 +98,72 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.02.002-beta-03** — one workflow, one database.
+**NURAE V00.03.000-beta-03** — the full Telegram interaction surface.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**Behaviors — the primary concept of bot building (new in 02.001)**
+**The ecosystem release (new in 03.000) — bots that do real work**
+- **Per-user memory** (`bot_user_states`): every chat has persistent attributes.
+  A behavior step can **ask and remember** (collect step): the flow pauses, the next
+  text answer is stored, and the flow resumes — multi-turn forms, carts, intake.
+  Collected values render anywhere via `{{placeholders}}` (built-ins: `{{name}}`,
+  `{{username}}`, `{{chat_id}}`; the AI sees the user's facts too).
+- **Outbound media**: photo / video / audio / voice / animation / document / sticker
+  by HTTPS URL or Telegram `file_id`, with captions + buttons; albums via `sendMediaGroup`.
+- **Polls & quizzes** (`sendPoll`, quiz mode with correct answer + explanation);
+  answers land on the voter's state (`poll_<id>` attribute).
+- **Telegram Stars payments** for digital goods (the mandatory rail): a payment step
+  sends an XTR invoice → `pre_checkout_query` answered within the 10 s window →
+  `successful_payment` recorded in a dedicated ledger (`bot_payments`, unique
+  `charge_id`) → `paid_<payload>` attribute + automatic delivery text. `/terms`,
+  `/paysupport`, `/support` are compiled in automatically for any bot that sells
+  (Stars store-policy compliance) unless the builder defined them.
+- **Scheduler** (`bot_schedules`): reminders and drip content. A behavior step can
+  **set a reminder** — the bot parses “water the plants tomorrow at 9am” with its own
+  AI into a strict UTC datetime and schedules the send; failures answer honestly and
+  let the user retry. Recurring schedules (daily/weekly) re-arm at the same time (UTC).
+- **Broadcasts** (`bot_broadcasts`): one message to every chat that ever wrote to the
+  bot — newsletters, announcements. Claimed atomically (no double-send across
+  workers), paced at ~20 msg/s under Telegram's limits, 429-aware, honest
+  sent/failed counters.
+- **The task engine** (`runtime/tasks.ts`): a 60 s in-process ticker for long-lived
+  deployments plus a fire-and-forget sweep after every webhook update (serverless
+  safe) executes due schedules and queued broadcasts.
+- **Groups**: `member_joined` trigger for welcomes (name-aware `{{name}}`), commands
+  aimed at other bots ignored (`/cmd@OtherBot`), free text in groups answered only
+  when the bot is @mentioned (privacy-mode-safe), `my_chat_member` tracking (block
+  detection), `chat_member` + `poll_answer` in the update allow-list.
+- **Deep links routed**: `/start <payload>` matches payload behaviors (exact or
+  prefix) and is stored on the user's state — referral attribution and bind-a-chat
+  flows are real now.
+- **Reply keyboards & friends**: buttons can render as a reply keyboard (taps send
+  the label as text; compiled to exact-text rules), `force_reply`, keyboard remove,
+  and **edit-in-place** (`edit: true` edits the pressed message — the idiomatic UX
+  for pagination/settings).
+- **Button variety**: `web_app` (Mini App links), `copy_text`, plus url/callback/flow/AI.
+- **Inline mode**: `@bot query` anywhere answers with the bot's static menu content
+  (`answerInlineQuery`, personal, 30 s cache).
+- **Typing indicator** before every AI turn (`sendChatAction`), edit-in-place support
+  in the sender, `setMyName/setMyDescription/setMyShortDescription` for the public profile.
+- **Six new agent tools** (18 total): `bot_set_profile`, `bot_list_users`,
+  `bot_broadcast` (approval-gated), `bot_schedule_message` (create/cancel),
+  `bot_list_schedules`, `bot_payments_list`. Tool results now feed structured data
+  back to the model. The builder prompt carries the capability map + a blueprint
+  library (support desk, shop, booking form, reminder bot, newsletter, event bot,
+  group welcome, quiz) — pattern-matching, not generic shells.
+- **One update router**: webhook and polling share `routeBotUpdate` — polling
+  previously dropped callback queries entirely (fixed); every new update family is
+  in `allowed_updates` explicitly.
+- **Owner surfaces** in `/bots/[id]`: Audience (who talks to the bot and what it
+  remembers), Broadcast (queue + live progress), Schedule (pending reminders,
+  cancel), Payments (Stars ledger). The Behavior editor writes every new step type
+  (media, poll, Stars payment, ask-and-remember, reminder) in plain language.
+- Fixed on the way: the **Preview console route** (`POST /api/my/bots/[id]/test`)
+  had been missing since 02.001 — the console hit a 404 on every run (BR-019).
+
+**Behaviors — the primary concept of bot building (02.001)**
 - A **Behavior** is the source of truth: “when someone starts the bot, welcome them
   with buttons for Menu, Order, Contact”. The compiler (`src/lib/nurae/bots/behavior.ts`)
   derives the executed configuration (menu commands, reply rules, inline keyboards,
@@ -125,8 +184,8 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
   the raw command/reply editors live under an *Advanced* disclosure with an honest note
   that the next behavior save recompiles. Bots configured the old way get a one-click
   **Import current configuration as behaviors** (derive → compile round-trip tested).
-- Custom `/start` welcome: a start behavior replaces the built-in text (deep-link
-  payloads still logged). Fixed: `kind: "ai"` menu commands now actually run the model
+- Custom `/start` welcome: a start behavior replaces the built-in text. Fixed:
+  `kind: "ai"` menu commands now actually run the model
   (they previously fell through to “Unknown command”).
 
 **Product surfaces**
@@ -204,17 +263,22 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 - Secrets encrypted at rest (AES-256-GCM), never returned by APIs, never logged.
 - Customer auth (scrypt, Gmail OTP with hashed codes, Google OAuth), sessions.
 - Structured logs with event codes; bot status state machine enforced in the DB.
-- 202 tests (vitest), lint-clean src, type-clean src.
+- 226 tests (vitest), lint-clean src, type-clean src.
 
 ### NOT in this release (do not assume these exist)
 
-- Streaming responses; vector search/RAG (file knowledge currently distills into the
-  bot prompt, ≤3000 chars per `bot_add_knowledge` call); multi-step visual workflow
-  editor (workflows are sequential message lists); payments/billing (entitlements are
-  the foundation); additional agents (the registry has exactly one real agent);
-  Discord/WhatsApp channels; reply-keyboard (bottom keyboard) UI — the pipeline
-  accepts and routes callbacks, but NURAE does not yet SEND `reply_keyboard` markups;
-  horizontal scaling guarantees (duplicate-update suppression is per instance).
+- Streaming responses (`sendMessageDraft`); Rich Messages; vector search/RAG (file
+  knowledge currently distills into the bot prompt, ≤3000 chars per
+  `bot_add_knowledge` call); Mini App hosting + `initData` validation (web_app
+  buttons link out, NURAE does not host apps yet); group moderation/admin actions;
+  Stars refunds via UI (the adapter method exists, no owner control yet); inline
+  mode toggle is BotFather-side; games/sticker-pack APIs; Business/Secretary mode;
+  Managed Bots; multi-step visual workflow editor; additional agents (the registry
+  has exactly one real agent); Discord/WhatsApp channels; horizontal scaling
+  guarantees (duplicate-update suppression and broadcast claims are per instance
+  for broadcasts; schedule claims are DB-atomic).
+- The bot AI time parser assumes UTC unless the user names a timezone — honest,
+  documented behavior.
 
 ## 5. Architecture
 
@@ -331,7 +395,7 @@ node node_modules/prisma/build/index.js migrate diff --from-empty --to-schema-da
 ## 11. Testing
 
 ```bash
-npm test                 # 188 tests across 12 files (vitest)
+npm test                 # 226 tests across 14 files (vitest)
 npm run lint             # ESLint
 ```
 
@@ -417,4 +481,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.02.002-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.03.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

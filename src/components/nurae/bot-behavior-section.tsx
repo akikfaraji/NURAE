@@ -42,6 +42,10 @@ export function whenLabel(when: BehaviorWhenDTO): string {
       return `When a message mentions “${when.text}”`;
     case 'button':
       return 'When a button is pressed';
+    case 'payload':
+      return `When someone arrives from the “${when.value}” link`;
+    case 'member_joined':
+      return 'When someone joins the group';
     case 'anything_else':
       return 'For anything else';
   }
@@ -53,6 +57,10 @@ function actionLabel(action: BehaviorButtonActionDTO, all: BotBehaviorDTO[]): st
       return 'shows a message';
     case 'link':
       return 'opens a link';
+    case 'webapp':
+      return 'opens a Mini App';
+    case 'copy':
+      return 'copies text';
     case 'flow': {
       const target = all.find((b) => b.id === action.behaviorId);
       return target ? `starts “${target.title}”` : 'starts a flow';
@@ -66,9 +74,16 @@ function stepsSummary(steps: BehaviorStepDTO[], all: BotBehaviorDTO[]): string {
   return steps
     .map((s) => {
       if (s.type === 'ai') return 'the AI answers';
+      if (s.type === 'media') {
+        return s.media.caption ? `sends a ${s.media.kind} “${s.media.caption.slice(0, 32)}”` : `sends a ${s.media.kind}`;
+      }
+      if (s.type === 'poll') return `poll: ${s.poll.question.slice(0, 36)}`;
+      if (s.type === 'payment') return `charges ${s.payment.priceStars}★ for ${s.payment.title}`;
+      if (s.type === 'collect') return `asks and remembers ${s.collect.attribute}`;
+      if (s.type === 'schedule') return 'sets a reminder';
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 48 ? `${s.text.slice(0, 48).trimEnd()}…` : s.text;
-      return `“${excerpt}”${btns}`;
+      return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';
     })
     .join(' → ')
     + buttonFlowNotes(steps, all);
@@ -268,12 +283,16 @@ const WHEN_OPTIONS: Array<{ value: BehaviorWhenDTO['type']; label: string }> = [
   { value: 'command', label: 'someone types a command' },
   { value: 'says', label: 'a message mentions…' },
   { value: 'button', label: 'a button is pressed' },
+  { value: 'payload', label: 'someone arrives from a link…' },
+  { value: 'member_joined', label: 'someone joins the group' },
   { value: 'anything_else', label: 'anything else' },
 ];
 
 const ACTION_OPTIONS: Array<{ value: BehaviorButtonActionDTO['kind']; label: string }> = [
   { value: 'message', label: 'Show a message' },
   { value: 'link', label: 'Open a link' },
+  { value: 'webapp', label: 'Open a Mini App' },
+  { value: 'copy', label: 'Copy text' },
   { value: 'flow', label: 'Start a flow' },
   { value: 'ai', label: 'Ask the AI' },
 ];
@@ -343,7 +362,34 @@ function BehaviorEditor({
             setError(`Button “${b.label}”: pick which flow it starts.`);
             return;
           }
+          if ((b.action.kind === 'link' || b.action.kind === 'webapp') && !b.action.url.trim()) {
+            setError(`Button “${b.label}”: add the URL.`);
+            return;
+          }
+          if (b.action.kind === 'copy' && !b.action.text.trim()) {
+            setError(`Button “${b.label}”: write the text it copies.`);
+            return;
+          }
         }
+      }
+      if (s.type === 'media' && !s.media.source.trim()) {
+        setError(`Step ${si + 1}: add the ${s.media.kind} URL (or a Telegram file_id).`);
+        return;
+      }
+      if (s.type === 'collect' && !/^[a-zA-Z0-9_-]{1,40}$/.test(s.collect.attribute.trim())) {
+        setError(`Step ${si + 1}: attribute names are short slugs — letters, digits, "-", "_".`);
+        return;
+      }
+      if (s.type === 'poll') {
+        const options = s.poll.options.map((o) => o.trim()).filter(Boolean);
+        if (!s.poll.question.trim() || options.length < 2) {
+          setError(`Step ${si + 1}: a poll needs a question and at least two options.`);
+          return;
+        }
+      }
+      if (s.type === 'payment' && (!s.payment.title.trim() || !s.payment.description.trim())) {
+        setError(`Step ${si + 1}: a payment needs a product name and what the buyer gets.`);
+        return;
       }
     }
     // Unique "when" sanity: two behaviors on the same trigger confuse everyone.
@@ -383,9 +429,13 @@ function BehaviorEditor({
                       ? { type: 'command', command: d.when.type === 'command' ? d.when.command : '/' }
                       : type === 'says'
                         ? { type: 'says', text: d.when.type === 'says' ? d.when.text : '' }
-                        : type === 'button'
-                          ? { type: 'button' }
-                          : { type: 'anything_else' },
+                        : type === 'payload'
+                          ? { type: 'payload', value: d.when.type === 'payload' ? d.when.value : '' }
+                          : type === 'button'
+                            ? { type: 'button' }
+                            : type === 'member_joined'
+                              ? { type: 'member_joined' }
+                              : { type: 'anything_else' },
               }));
             }}
             className="h-9 w-full border border-border bg-transparent px-2 text-sm text-foreground"
@@ -419,6 +469,24 @@ function BehaviorEditor({
             />
           </div>
         )}
+        {draft.when.type === 'payload' && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Link payload</Label>
+            <Input
+              value={draft.when.value}
+              onChange={(e) => setDraft((d) => ({ ...d, when: { type: 'payload', value: e.target.value } }))}
+              placeholder="flyer — matches t.me/yourbot?start=flyer…"
+              maxLength={64}
+              className="bg-transparent font-mono text-xs"
+            />
+            <p className="text-[11px] text-muted-foreground">Deep links look like t.me/yourbot?start=flyer — any payload starting with this word triggers the behavior.</p>
+          </div>
+        )}
+        {draft.when.type === 'member_joined' && (
+          <p className="self-end text-xs text-muted-foreground">
+            Runs in groups when a new member joins — a welcome with the rules, for example. Add the bot to the group as admin so joins are visible.
+          </p>
+        )}
         {draft.when.type === 'button' && (
           <p className="self-end text-xs text-muted-foreground">
             This runs when a button whose action is “Start a flow” points here.
@@ -434,7 +502,19 @@ function BehaviorEditor({
             <div key={si} className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] uppercase tracking-widest text-muted-foreground/70">
-                  {step.type === 'message' ? `Message ${si + 1}` : 'AI answer'}
+                  {step.type === 'message'
+                    ? `Message ${si + 1}`
+                    : step.type === 'ai'
+                      ? 'AI answer'
+                      : step.type === 'media'
+                        ? 'Photo / file'
+                        : step.type === 'poll'
+                          ? 'Poll'
+                          : step.type === 'payment'
+                            ? 'Stars payment'
+                            : step.type === 'collect'
+                              ? 'Ask and remember'
+                              : 'Set a reminder'}
                 </span>
                 <button
                   type="button"
@@ -461,6 +541,207 @@ function BehaviorEditor({
                   maxLength={2000}
                   className="bg-transparent text-sm"
                 />
+              ) : step.type === 'media' ? (
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,140px)_1fr]">
+                  <select
+                    value={step.media.kind}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        steps: d.steps.map((s, idx) =>
+                          idx === si && s.type === 'media'
+                            ? { ...s, media: { ...s.media, kind: e.target.value } }
+                            : s,
+                        ),
+                      }))
+                    }
+                    className="h-9 w-full border border-border bg-transparent px-2 text-xs text-foreground"
+                  >
+                    {['photo', 'video', 'audio', 'voice', 'animation', 'document', 'sticker'].map((k) => (
+                      <option key={k} value={k} className="bg-background">{k}</option>
+                    ))}
+                  </select>
+                  <Input
+                    value={step.media.source}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        steps: d.steps.map((s, idx) =>
+                          idx === si && s.type === 'media' ? { ...s, media: { ...s.media, source: e.target.value } } : s,
+                        ),
+                      }))
+                    }
+                    placeholder="https://… (or a Telegram file_id)"
+                    maxLength={512}
+                    className="bg-transparent font-mono text-xs"
+                  />
+                  <Input
+                    value={step.media.caption ?? ''}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        steps: d.steps.map((s, idx) =>
+                          idx === si && s.type === 'media' ? { ...s, media: { ...s.media, caption: e.target.value } } : s,
+                        ),
+                      }))
+                    }
+                    placeholder="Caption (markdown works, {{name}} too)"
+                    maxLength={1024}
+                    className="bg-transparent text-sm sm:col-span-2"
+                  />
+                </div>
+              ) : step.type === 'collect' ? (
+                <div className="space-y-2">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,220px)_1fr]">
+                    <Input
+                      value={step.collect.attribute}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'collect' ? { ...s, collect: { ...s.collect, attribute: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="name_of_thing"
+                      maxLength={40}
+                      className="bg-transparent font-mono text-xs"
+                    />
+                    <Input
+                      value={step.collect.prompt ?? ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'collect' ? { ...s, collect: { ...s.collect, prompt: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="What should the bot ask?"
+                      maxLength={1000}
+                      className="bg-transparent text-sm"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    The answer is remembered per user — reuse it anywhere as <code className="font-mono">{'{{name_of_thing}}'}</code>.
+                  </p>
+                </div>
+              ) : step.type === 'schedule' ? (
+                <Input
+                  value={step.schedule.prompt ?? ''}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      steps: d.steps.map((s, idx) =>
+                        idx === si && s.type === 'schedule' ? { ...s, schedule: { prompt: e.target.value } } : s,
+                      ),
+                    }))
+                  }
+                  placeholder="What should the bot ask? (e.g. “What and when should I remind you?”)"
+                  maxLength={1000}
+                  className="bg-transparent text-sm"
+                />
+              ) : step.type === 'poll' ? (
+                <div className="space-y-2">
+                  <Input
+                    value={step.poll.question}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        steps: d.steps.map((s, idx) =>
+                          idx === si && s.type === 'poll' ? { ...s, poll: { ...s.poll, question: e.target.value } } : s,
+                        ),
+                      }))
+                    }
+                    placeholder="The question"
+                    maxLength={300}
+                    className="bg-transparent text-sm"
+                  />
+                  <Textarea
+                    value={step.poll.options.join('\n')}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        steps: d.steps.map((s, idx) =>
+                          idx === si && s.type === 'poll'
+                            ? { ...s, poll: { ...s.poll, options: e.target.value.split('\n').slice(0, 12) } }
+                            : s,
+                        ),
+                      }))
+                    }
+                    placeholder={'One option per line (2–12)'}
+                    rows={3}
+                    className="bg-transparent text-sm"
+                  />
+                </div>
+              ) : step.type === 'payment' ? (
+                <div className="space-y-2">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,180px)_minmax(0,110px)_1fr]">
+                    <Input
+                      value={step.payment.title}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'payment' ? { ...s, payment: { ...s.payment, title: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="Product name"
+                      maxLength={32}
+                      className="bg-transparent text-sm"
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      max={25000}
+                      value={step.payment.priceStars || ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'payment'
+                              ? { ...s, payment: { ...s.payment, priceStars: Math.max(1, Math.round(Number(e.target.value) || 1)) } }
+                              : s,
+                          ),
+                        }))
+                      }
+                      placeholder="★"
+                      className="bg-transparent text-sm"
+                    />
+                    <Input
+                      value={step.payment.description}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          steps: d.steps.map((s, idx) =>
+                            idx === si && s.type === 'payment' ? { ...s, payment: { ...s.payment, description: e.target.value } } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="What the buyer gets"
+                      maxLength={255}
+                      className="bg-transparent text-sm"
+                    />
+                  </div>
+                  <Input
+                    value={step.payment.successText ?? ''}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        steps: d.steps.map((s, idx) =>
+                          idx === si && s.type === 'payment' ? { ...s, payment: { ...s.payment, successText: e.target.value } } : s,
+                        ),
+                      }))
+                    }
+                    placeholder="Sent right after payment — deliver the goods here (link, code, …)"
+                    maxLength={4000}
+                    className="bg-transparent text-sm"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Digital goods are charged in Telegram Stars; /terms, /paysupport and /support are answered automatically.
+                  </p>
+                </div>
               ) : (
                 <>
                   <Textarea
@@ -492,9 +773,13 @@ function BehaviorEditor({
                                     ? { kind: 'message', text: '' }
                                     : kind === 'link'
                                       ? { kind: 'link', url: '' }
-                                      : kind === 'flow'
-                                        ? { kind: 'flow', behaviorId: otherBehaviors[0]?.id ?? '' }
-                                        : { kind: 'ai' };
+                                      : kind === 'webapp'
+                                        ? { kind: 'webapp', url: '' }
+                                        : kind === 'copy'
+                                          ? { kind: 'copy', text: '' }
+                                          : kind === 'flow'
+                                            ? { kind: 'flow', behaviorId: otherBehaviors[0]?.id ?? '' }
+                                            : { kind: 'ai' };
                                 patchButton(si, bi, { action });
                               }}
                               className="h-9 w-full border border-border bg-transparent px-2 text-xs text-foreground"
@@ -532,6 +817,27 @@ function BehaviorEditor({
                               placeholder="https://…"
                               maxLength={256}
                               className="bg-transparent font-mono text-xs"
+                            />
+                          )}
+                          {b.action.kind === 'webapp' && (
+                            <div className="space-y-1">
+                              <Input
+                                value={b.action.url}
+                                onChange={(e) => patchButton(si, bi, { action: { kind: 'webapp', url: e.target.value } })}
+                                placeholder="https://your-mini-app…"
+                                maxLength={256}
+                                className="bg-transparent font-mono text-xs"
+                              />
+                              <p className="text-[11px] text-muted-foreground">Opens inside Telegram as a Mini App. The URL must be HTTPS.</p>
+                            </div>
+                          )}
+                          {b.action.kind === 'copy' && (
+                            <Input
+                              value={b.action.text}
+                              onChange={(e) => patchButton(si, bi, { action: { kind: 'copy', text: e.target.value } })}
+                              placeholder="Text copied when pressed (codes, addresses…)"
+                              maxLength={200}
+                              className="bg-transparent text-xs"
                             />
                           )}
                           {b.action.kind === 'flow' && (
@@ -580,7 +886,7 @@ function BehaviorEditor({
             </div>
           ))}
         </div>
-        <div className="flex gap-3 pt-1">
+        <div className="flex flex-wrap gap-3 pt-1">
           <button
             type="button"
             className="text-[11px] text-muted-foreground hover:text-foreground"
@@ -588,14 +894,74 @@ function BehaviorEditor({
               setDraft((d) => ({ ...d, steps: [...d.steps, { type: 'message', text: '' } as BehaviorStepDTO] }))
             }
           >
-            + Add message step
+            + Message
           </button>
           <button
             type="button"
             className="text-[11px] text-muted-foreground hover:text-foreground"
             onClick={() => setDraft((d) => ({ ...d, steps: [...d.steps, { type: 'ai' } as BehaviorStepDTO] }))}
           >
-            + Add AI answer step
+            + AI answer
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'media', media: { kind: 'photo', source: '' } } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Photo / file
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'poll', poll: { question: '', options: ['', ''] } } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Poll
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'payment', payment: { title: '', description: '', priceStars: 1 } } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Stars payment
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'collect', collect: { attribute: '' } } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Ask &amp; remember
+          </button>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                steps: [...d.steps, { type: 'schedule', schedule: {} } as BehaviorStepDTO],
+              }))
+            }
+          >
+            + Reminder
           </button>
         </div>
       </div>

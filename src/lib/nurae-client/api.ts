@@ -220,6 +220,8 @@ export interface BotReplySpecDTO {
 export type BehaviorButtonActionDTO =
   | { kind: 'message'; text: string }
   | { kind: 'link'; url: string }
+  | { kind: 'webapp'; url: string }
+  | { kind: 'copy'; text: string }
   | { kind: 'flow'; behaviorId: string }
   | { kind: 'ai'; instruction?: string };
 
@@ -229,14 +231,32 @@ export interface BehaviorButtonDTO {
 }
 
 export type BehaviorStepDTO =
-  | { type: 'message'; text: string; buttons?: BehaviorButtonDTO[] }
-  | { type: 'ai'; instruction?: string };
+  | {
+      type: 'message';
+      text: string;
+      buttons?: BehaviorButtonDTO[];
+      keyboard?: 'inline' | 'reply' | 'none';
+      edit?: boolean;
+      forceReply?: boolean;
+      removeKeyboard?: boolean;
+    }
+  | { type: 'ai'; instruction?: string }
+  | { type: 'media'; media: { kind: string; source: string; caption?: string; filename?: string }; buttons?: BehaviorButtonDTO[] }
+  | {
+      type: 'poll';
+      poll: { question: string; options: string[]; quiz?: boolean; correctOption?: number; explanation?: string; anonymous?: boolean };
+    }
+  | { type: 'payment'; payment: { title: string; description: string; priceStars: number; successText?: string } }
+  | { type: 'collect'; collect: { attribute: string; prompt?: string } }
+  | { type: 'schedule'; schedule: { prompt?: string } };
 
 export type BehaviorWhenDTO =
   | { type: 'start' }
   | { type: 'command'; command: string }
   | { type: 'says'; text: string }
   | { type: 'button' }
+  | { type: 'payload'; value: string }
+  | { type: 'member_joined' }
   | { type: 'anything_else' };
 
 export interface BotBehaviorDTO {
@@ -296,9 +316,50 @@ export interface FileDTO {
 }
 
 export interface CapturedSendDTO {
+  kind?: 'text' | 'media' | 'poll' | 'payment' | 'edit';
   text: string;
   parseMode?: 'HTML';
-  buttons?: Array<Array<{ text: string; url?: string; callback?: string }>>;
+  buttons?: Array<Array<{ text: string; url?: string; callback?: string; webapp?: string; copy?: string }>>;
+  keyboard?: 'reply' | 'inline' | 'none';
+  media?: { kind: string; source: string; caption?: string };
+  poll?: { question: string; options: string[]; quiz?: boolean };
+  payment?: { title: string; description: string; priceStars: number };
+}
+
+export interface BroadcastDTO {
+  id: string;
+  text: string;
+  status: string;
+  total: number;
+  sent: number;
+  failed: number;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export interface BotScheduleDTO {
+  id: string;
+  chatId: string;
+  text: string;
+  runAt: string;
+  recurrence: string;
+  status: string;
+  lastError: string | null;
+}
+
+export interface BotPaymentDTO {
+  chatId: string;
+  amount: number;
+  currency: string;
+  payload: string;
+  title: string;
+  createdAt: string;
+}
+
+export interface BotUserStateDTO {
+  chatId: string;
+  attributes: Record<string, string>;
+  startPayload: string | null;
 }
 
 export interface ReferralResponse {
@@ -470,6 +531,21 @@ export const nuraeApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  listMyBotUsers: (id: string) =>
+    api<{ total: number; users: BotUserStateDTO[] }>(`/api/my/bots/${id}/users`),
+  listMyBotBroadcasts: (id: string) =>
+    api<{ broadcasts: BroadcastDTO[] }>(`/api/my/bots/${id}/broadcast`),
+  broadcastMyBot: (id: string, text: string) =>
+    api<{ broadcast: { id: string; status: string; total: number } }>(`/api/my/bots/${id}/broadcast`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  listMyBotSchedules: (id: string) =>
+    api<{ schedules: BotScheduleDTO[] }>(`/api/my/bots/${id}/schedules`),
+  cancelMyBotSchedule: (id: string, scheduleId: string) =>
+    api<{ ok: true }>(`/api/my/bots/${id}/schedules?scheduleId=${encodeURIComponent(scheduleId)}`, { method: 'DELETE' }),
+  listMyBotPayments: (id: string) =>
+    api<{ totalStars: number; payments: BotPaymentDTO[] }>(`/api/my/bots/${id}/payments`),
 
   // --- Referral -------------------------------------------------------------
   referral: () => api<ReferralResponse>('/api/referral'),

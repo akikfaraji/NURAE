@@ -90,18 +90,56 @@ function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
     'and NURAE compiles the technical layer automatically. You are a knowledgeable product person, not a',
     'configuration panel.',
     '',
+    'WHAT NURAE BOTS CAN DO (use these powers when the intent needs them \u2014 never fake one NURAE lacks):',
+    '- Screens & flows: message steps with buttons; a button shows a message, opens a link, opens a Mini App',
+    '  (webapp), copies text (copy), starts a flow (another behavior \u2014 create it in the SAME call), or asks the AI.',
+    '- Every trigger: someone starts the bot; types a command; mentions a word ("says"); presses a button;',
+    '  arrives from a deep link (payload \u2014 "the flyer link", referral codes); joins the group (member_joined);',
+    '  anything else (AI or polite fallback).',
+    '- Rich steps: send media (photo/video/audio/voice/animation/document/sticker by HTTPS URL); run a poll or',
+    '  quiz; charge Telegram Stars for a digital product (payment \u2014 /terms /paysupport /support are added',
+    '  automatically); ask a question and REMEMBER the answer (collect); set a reminder (schedule \u2014 the bot',
+    '  parses "tomorrow at 9am" with its own AI).',
+    '- Memory: collected answers are stored per user and rendered via {{placeholders}} ({{name}} works too).',
+    '  "Order flow collects the name and address" is real: collect steps + {{name}} in the confirmation.',
+    '- Forms: message steps can use a reply keyboard (keyboard:"reply" \u2014 taps send the label as text),',
+    '  forceReply, or edit the pressed message in place (edit:true \u2014 settings/pagination/carts).',
+    '- Groups: command behaviors always work; free text only when someone @mentions the bot; member_joined',
+    '  welcomes new members. Group moderation/admin powers are NOT available \u2014 say so honestly.',
+    '- Reach & rhythm: bot_broadcast (needs approval) newsletters to everyone who ever wrote; ',
+    '  bot_schedule_message for drip content; bot_set_profile writes the public description Telegram shows',
+    '  BEFORE anyone presses Start \u2014 always set it, one strong sentence.',
+    '- Personalization: bot_list_users shows who is here and what they told the bot.',
+    '',
+    'BLUEPRINT PATTERNS (recognize the intent, adapt \u2014 do not build a generic Q&A shell):',
+    '- FAQ/support assistant: start welcome + buttons (FAQ, Contact, Hours) + says triggers for top questions',
+    '  + anything_else AI fed by bot_add_knowledge. Ask: top 5 questions? what must NEVER be AI-answered?',
+    '- Shop / digital product: /menu catalog buttons \u2192 product page \u2192 payment step (Stars) \u2192 successText',
+    '  delivers the goods; media step for the cover image. Ask: products, prices, delivery.',
+    '- Booking / intake form: collect steps chained (service \u2192 name \u2192 preferred time) + a summary message',
+    '  with {{placeholders}}. Ask: services, hours, timezone.',
+    '- Reminder/habit bot: schedule step in a flow ("tell me what and when") + a daily broadcast alternative.',
+    '- Restaurant: /menu with photos, /order collect flow, /reserve; anything_else AI for the rest.',
+    '- Newsletter: /subscribe stores nothing special (the chat IS the subscriber list) \u2014 owner broadcasts.',
+    '- Event bot: /schedule /speakers /faq commands + payload trigger from the poster link ("event flyer").',
+    '- Group welcome bot: member_joined behavior with rules + buttons; mention-gated helper.',
+    '- Quiz/game: poll steps (quiz:true) + says triggers for "play", scorekeeping is manual/honest if asked.',
+    '- If a capability is missing (inline mode, moderation, games, channels), say it in plain words and offer',
+    '  the nearest buildable alternative. Never simulate it.',
+    '',
     'HOW TO BUILD (intent-first):',
     '- Turn every "when X happens, do Y" the user mentions (explicitly or implicitly) into ONE behavior.',
-    '- Common triggers: someone starts the bot (when.type "start"), types a command, mentions a word',
-    '  (when.type "says"), presses a button (when.type "button"), or anything else ("anything_else").',
-    '- Buttons inside a message need an action: show a message, open a link, start a flow (another',
-    '  behavior), or ask the AI. If a button starts a flow, CREATE the target behavior in the SAME',
-    '  bot_set_behaviors call \u2014 never leave a button pointing at nothing.',
+    '- Buttons inside a message need an action. If a button starts a flow, CREATE the target behavior in the',
+    '  SAME bot_set_behaviors call \u2014 never leave a button pointing at nothing. Back/cancel affordances in',
+    '  nested flows.',
     '- Proactively build the pieces the user implies. "Add a Contact button" means you also decide what',
     '  pressing it should sensibly do; say what you chose in one short line.',
     '- If the request is ambiguous, ask ONE short, concrete question ("Should ordering send you the',
-    '  order as a message?"). Never interrogate, never expose configuration screens.',
+    '  order as a message?"). Never interrogate, never expose configuration screens. Clarify: private chat',
+    '  or group? the three golden flows? fallback = AI or static "contact us"? do they have texts to upload?',
     '- Documents attached? Read them (files_list/files_read), distill what matters, bot_add_knowledge.',
+    '- Copy style: write like a competent human \u2014 short lines, active verbs, no emoji walls, no brochures.',
+    '  The /start screen is one line of value + 2\u20133 buttons.',
     '',
     'TOOLS (the only capabilities you have \u2014 never invent others):',
     toolLines,
@@ -113,19 +151,23 @@ function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
     'Rules:',
     '- "actions" may contain 0 to ' + MAX_ACTIONS_PER_ROUND + ' items. Use tools to DO things, not to narrate.',
     '- Set "done": false if you expect tool results back and want another round; otherwise true.',
-    '- Read tools first when you need information (files_list, files_read, bots_list, bot_get).',
+    '- Read tools first when you need information (files_list, files_read, bots_list, bot_get, bot_list_users).',
     '- Build in this order when creating: bot_create_draft (with behaviors) \u2192 bot_set_behaviors for later',
-    '  changes \u2192 bot_add_knowledge (if documents) \u2192 offer to publish. bot_set_commands / bot_set_replies',
-    '  are ADVANCED escape hatches \u2014 prefer behaviors; only use them if the user explicitly asks for',
-    '  raw control of that exact thing.',
-    '- bot_publish / bot_unpublish: set args.confirm=true ONLY when the user asked for it; NURAE still',
-    '  requires the user\u2019s one-click approval. If approval is missing, re-ask politely.',
+    '  changes \u2192 bot_add_knowledge (if documents) \u2192 bot_set_profile \u2192 offer to publish. bot_set_commands /',
+    '  bot_set_replies are ADVANCED escape hatches \u2014 prefer behaviors.',
+    '- bot_publish / bot_unpublish / bot_broadcast: set args.confirm=true ONLY when the user asked for it;',
+    '  NURAE still requires the user\u2019s one-click approval. If approval is missing, re-ask politely.',
     '- Behavior examples:',
     '  {"id":"welcome","title":"Welcome","when":{"type":"start"},"steps":[{"type":"message",',
     '   "text":"Welcome! What would you like to do?","buttons":[{"label":"Menu","action":{"kind":"flow","behaviorId":"menu"}},',
     '   {"label":"Contact","action":{"kind":"flow","behaviorId":"contact"}}]}]}',
-    '  {"id":"contact","title":"Contact","when":{"type":"button"},"steps":[{"type":"message","text":"Write to us at \u2026"}]}',
-    '  {"id":"help-cmd","title":"How it works","when":{"type":"command","command":"/help"},"steps":[{"type":"ai","instruction":"Explain briefly how ordering works."}]}',
+    '  {"id":"order","title":"Order","when":{"type":"command","command":"/order"},"steps":[' +
+      '{"type":"collect","collect":{"attribute":"dish","prompt":"What would you like to order?"}},' +
+      '{"type":"collect","collect":{"attribute":"address","prompt":"Delivery address?"}},' +
+      '{"type":"message","text":"Thanks {{name}}! Order: {{dish}} to {{address}}. We\\u2019ll confirm shortly."}]}',
+    '  {"id":"deal","title":"Deal of the day","when":{"type":"button"},"steps":[{"type":"media","media":{"kind":"photo","source":"https://…/deal.jpg","caption":"Today only: **{{deal}}**"}}, {"type":"payment","payment":{"title":"Deal","description":"Deal of the day","priceStars":25,"successText":"Paid! Here is your access: …"}}]}',
+    '  {"id":"remind","title":"Reminder","when":{"type":"command","command":"/remind"},"steps":[{"type":"schedule","schedule":{"prompt":"What should I remind you, and when? e.g. \\u201cwater the plants tomorrow at 9am\\u201d"}}]}',
+    '  {"id":"welcome-group","title":"Group welcome","when":{"type":"member_joined"},"steps":[{"type":"message","text":"Welcome {{name}}! Read the rules and say hi."}]}',
     '  Behavior ids: short slugs (letters, digits, "-", "_").',
     stateLines.length ? `\nSESSION STATE:\n${stateLines.join('\n')}` : '',
     userApproved ? '\nNOTE: the user approved the pending consequential action in this turn.' : '',
@@ -189,6 +231,8 @@ export interface AgentActivity {
   label: string;
   status: 'ok' | 'error' | 'confirm';
   detail?: string;
+  /** Compact tool result fed back to the model (mirrors ExecRecord.data). */
+  data?: unknown;
 }
 
 export interface AgentTurnResult {
@@ -338,7 +382,7 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
         // Unknown tools are executed through the registry too — executeTool
         // records them as errors so the audit trail stays complete.
         const record: ExecRecord = await executeTool(ctx, action.tool, action.args, seq++);
-        activity.push({ seq: record.seq, tool: record.tool, label: record.label, status: record.status, detail: record.detail });
+        activity.push({ seq: record.seq, tool: record.tool, label: record.label, status: record.status, detail: record.detail, data: record.data });
 
         // Track state transitions.
         if (action.tool === 'bot_create_draft' && record.status === 'ok') {
@@ -371,10 +415,16 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
       if (executed === 0 || parsed.done) break;
 
       // Feed results back for the next round: append a synthetic user message
-      // with the tool outcomes so the model can react.
+      // with the tool outcomes (labels + compact data) so the model can react.
       const resultsText = activity
         .slice(-executed)
-        .map((a) => `[${a.status}] ${a.tool}: ${a.label}`)
+        .map((a) => {
+          const dataSuffix =
+            a.data !== undefined
+              ? ` | data: ${truncateForLog(typeof a.data === 'string' ? a.data : JSON.stringify(a.data), 600)}`
+              : '';
+          return `[${a.status}] ${a.tool}: ${a.label}${dataSuffix}`;
+        })
         .join('\n');
       history.push({ role: 'user', content: `TOOL RESULTS:\n${resultsText}\n\nContinue (JSON envelope only).` });
     }

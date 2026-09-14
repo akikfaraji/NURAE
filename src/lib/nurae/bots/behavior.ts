@@ -8,8 +8,9 @@
  *
  * …and the compiler below turns that into the technical configuration the
  * Telegram pipeline already executes (menu commands, reply rules, inline
- * keyboards, callback wiring, AI steps). Commands/callbacks/workflows stay
- * real underneath — they are simply not the language people build in.
+ * keyboards, callback wiring, AI steps, media, polls, payments, forms,
+ * reminders). Commands/callbacks/workflows stay real underneath — they are
+ * simply not the language people build in.
  *
  * Layering (who owns what):
  *   behaviors_json   SOURCE OF TRUTH — edited by people and the agent
@@ -28,6 +29,7 @@ import { z } from 'zod';
 import {
   botCommandsSchema,
   botRepliesSchema,
+  complianceCommands,
   serializeCapabilities,
   type BotCapabilities,
   type BotCommandSpec,
@@ -42,12 +44,17 @@ const idPattern = /^[a-zA-Z0-9_-]{1,40}$/;
 
 /**
  * What a button does — deliberately phrased the way a non-developer thinks:
- *   Show a message · Open a link · Start a flow · Ask the AI
+ *   Show a message · Open a link · Open a Mini App · Copy text ·
+ *   Start a flow · Ask the AI
  * (No "callback query", no "inline keyboard" — the compiler decides that.)
  */
 export const behaviorButtonActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('message'), text: z.string().trim().min(1).max(4000) }),
   z.object({ kind: z.literal('link'), url: z.string().trim().url('Button URL must be valid').max(256) }),
+  // Opens a Mini App inside Telegram (web_app button, HTTPS URL).
+  z.object({ kind: z.literal('webapp'), url: z.string().trim().url('Mini App URL must be valid').max(256) }),
+  // copy_text button — pressing copies the text.
+  z.object({ kind: z.literal('copy'), text: z.string().trim().min(1).max(200) }),
   // Starts another behavior (by id). The compiler wires the callback.
   z.object({ kind: z.literal('flow'), behaviorId: z.string().trim().regex(idPattern) }),
   // Hands the turn to the bot's AI, optionally with extra guidance.
@@ -59,16 +66,82 @@ export const behaviorButtonSchema = z.object({
   action: behaviorButtonActionSchema,
 });
 
+export const behaviorMediaSchema = z.object({
+  kind: z.enum(['photo', 'video', 'audio', 'voice', 'animation', 'document', 'sticker']),
+  source: z
+    .string()
+    .trim()
+    .min(6)
+    .max(512)
+    .refine((s) => /^https?:\/\//i.test(s) || /^[\w-]+$/.test(s), {
+      message: 'Media source must be an HTTPS URL or a Telegram file_id',
+    }),
+  caption: z.string().trim().max(1024).optional(),
+  filename: z.string().trim().max(120).optional(),
+});
+
+export const behaviorPollSchema = z
+  .object({
+    question: z.string().trim().min(1).max(300),
+    options: z.array(z.string().trim().min(1).max(100)).min(2).max(12),
+    quiz: z.boolean().optional(),
+    correctOption: z.number().int().min(0).max(11).optional(),
+    explanation: z.string().trim().max(200).optional(),
+    anonymous: z.boolean().optional(),
+  })
+  .refine((p) => !p.quiz || typeof p.correctOption === 'number', {
+    message: 'A quiz needs a correct option',
+  });
+
+export const behaviorPaymentSchema = z.object({
+  title: z.string().trim().min(1).max(32),
+  description: z.string().trim().min(1).max(255),
+  priceStars: z.number().int().min(1).max(25_000),
+  successText: z.string().trim().max(4000).optional(),
+});
+
+export const behaviorCollectSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  prompt: z.string().trim().max(1000).optional(),
+});
+
+export const behaviorScheduleSchema = z.object({
+  prompt: z.string().trim().max(1000).optional(),
+});
+
 export const behaviorStepSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('message'),
-    text: z.string().trim().min(1).max(4000),
+    text: z.string().trim().max(4000).default(''),
     buttons: z.array(behaviorButtonSchema).max(8).optional(),
+    // reply = labels the user taps and sends back as text; none = no keyboard.
+    keyboard: z.enum(['inline', 'reply', 'none']).optional(),
+    // Replace the pressed button's message in place (callback turns only).
+    edit: z.boolean().optional(),
+    forceReply: z.boolean().optional(),
+    removeKeyboard: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('ai'),
     instruction: z.string().trim().max(2000).optional(),
   }),
+  // Send a photo/video/audio/voice/animation/document/sticker.
+  z.object({
+    type: z.literal('media'),
+    media: behaviorMediaSchema,
+    buttons: z.array(behaviorButtonSchema).max(8).optional(),
+  }),
+  // Run a poll / quiz.
+  z.object({ type: z.literal('poll'), poll: behaviorPollSchema }),
+  // Charge Telegram Stars for a digital product (compliance commands auto-added).
+  z.object({ type: z.literal('payment'), payment: behaviorPaymentSchema }),
+  // Ask a question and remember the answer ({{attribute}} usable everywhere).
+  z.object({ type: z.literal('collect'), collect: behaviorCollectSchema }),
+  // Ask when to remind, parse the answer with the bot's AI, schedule it.
+  z.object({ type: z.literal('schedule'), schedule: behaviorScheduleSchema }),
 ]);
 
 export const behaviorWhenSchema = z.discriminatedUnion('type', [
@@ -80,6 +153,10 @@ export const behaviorWhenSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('says'), text: z.string().trim().min(1).max(64) }),
   // "When a button is pressed" — usually the target of a "Start a flow" action
   z.object({ type: z.literal('button') }),
+  // "When someone arrives from the link with payload …" (deep links)
+  z.object({ type: z.literal('payload'), value: z.string().trim().min(1).max(64) }),
+  // "When someone joins the group"
+  z.object({ type: z.literal('member_joined') }),
   // "For anything else"
   z.object({ type: z.literal('anything_else') }),
 ]);
@@ -145,6 +222,7 @@ interface Ctx {
   commands: BotCommandSpec[];
   replies: BotReplySpec[];
   issues: string[];
+  hasPayment: boolean;
 }
 
 function callbackForAction(behaviorId: string, stepIdx: number, btnIdx: number): string {
@@ -154,6 +232,14 @@ function callbackForAction(behaviorId: string, stepIdx: number, btnIdx: number):
 
 function callbackForBehavior(behaviorId: string): string {
   return `${FLOW_PREFIX}_${behaviorId}`;
+}
+
+function buttonToReplyButton(b: BehaviorButton): { text: string; url?: string; callback?: string; webapp?: string; copy?: string } {
+  const a = b.action;
+  if (a.kind === 'link') return { text: b.label, url: a.url };
+  if (a.kind === 'webapp') return { text: b.label, webapp: a.url };
+  if (a.kind === 'copy') return { text: b.label, copy: a.text };
+  return { text: b.label }; // callback filled by compileButton
 }
 
 function stepsToReplyMessages(
@@ -167,10 +253,62 @@ function stepsToReplyMessages(
       // logging; the schema requires it to be non-empty.
       return { text: behavior.title.slice(0, 64), ai: step.instruction ?? '' };
     }
+    if (step.type === 'media') {
+      const buttons = step.buttons?.length ? [step.buttons.map((b, btnIdx) => compileButton(b, behavior, stepIdx, btnIdx, ctx))] : undefined;
+      return {
+        text: '',
+        media: { kind: step.media.kind, source: step.media.source, caption: step.media.caption, filename: step.media.filename },
+        ...(buttons ? { buttons } : {}),
+      };
+    }
+    if (step.type === 'poll') {
+      return {
+        text: '',
+        poll: {
+          question: step.poll.question,
+          options: step.poll.options,
+          quiz: step.poll.quiz,
+          correctOption: step.poll.correctOption,
+          explanation: step.poll.explanation,
+          anonymous: step.poll.anonymous,
+        },
+      };
+    }
+    if (step.type === 'payment') {
+      ctx.hasPayment = true;
+      return {
+        text: '',
+        payment: {
+          title: step.payment.title,
+          description: step.payment.description,
+          priceStars: step.payment.priceStars,
+          // Deterministic payload: the key the pipeline stores + confirms on.
+          payload: `p_${behavior.id}_${stepIdx}`.slice(0, 128),
+          successText: step.payment.successText,
+        },
+      };
+    }
+    if (step.type === 'collect') {
+      return {
+        text: step.collect.prompt ?? '',
+        collect: { attribute: step.collect.attribute, prompt: step.collect.prompt },
+      };
+    }
+    if (step.type === 'schedule') {
+      return {
+        text: step.schedule.prompt ?? '',
+        schedule: { prompt: step.schedule.prompt },
+      };
+    }
+    // message step.
     const buttons = step.buttons?.length ? [step.buttons.map((b, btnIdx) => compileButton(b, behavior, stepIdx, btnIdx, ctx))] : undefined;
     return {
       text: step.text,
       ...(buttons ? { buttons } : {}),
+      ...(step.keyboard ? { keyboard: step.keyboard } : {}),
+      ...(step.edit ? { edit: true } : {}),
+      ...(step.forceReply ? { forceReply: true } : {}),
+      ...(step.removeKeyboard ? { removeKeyboard: true } : {}),
     };
   });
 }
@@ -181,11 +319,13 @@ function compileButton(
   stepIdx: number,
   btnIdx: number,
   ctx: Ctx,
-): { text: string; url?: string; callback?: string } {
+): { text: string; url?: string; callback?: string; webapp?: string; copy?: string } {
   const action = button.action;
   switch (action.kind) {
     case 'link':
-      return { text: button.label, url: action.url };
+    case 'webapp':
+    case 'copy':
+      return buttonToReplyButton(button);
     case 'flow':
       // The target behavior's own button-trigger rule answers the press.
       return { text: button.label, callback: callbackForBehavior(action.behaviorId) };
@@ -217,6 +357,10 @@ function compileTrigger(behavior: BotBehaviorSpec): BotReplySpec['trigger'] {
       return { type: 'keyword', value: behavior.when.text };
     case 'button':
       return { type: 'button', value: callbackForBehavior(behavior.id) };
+    case 'payload':
+      return { type: 'payload', value: behavior.when.value };
+    case 'member_joined':
+      return { type: 'member_joined' };
     case 'anything_else':
       return { type: 'fallback' };
   }
@@ -226,16 +370,20 @@ function compileTrigger(behavior: BotBehaviorSpec): BotReplySpec['trigger'] {
  * Compile behaviors into executable capabilities.
  *
  * Guarantees:
- *  - every generated reply/button passes botReplySchema (the pipeline's loader
- *    re-validates, so a bad compile can never poison a running bot);
+ *  - every generated reply/button passes botRepliesSchema (the pipeline's
+ *    loader re-validates, so a bad compile can never poison a running bot);
  *  - flow actions point at behaviors that exist;
  *  - command triggers are unique (/start normalizes to a start behavior);
+ *  - reply-keyboard buttons carry message/flow/AI actions only (Telegram
+ *    reply keyboards send the label as text — links would be dead buttons);
  *  - menu commands exist for every command behavior so Telegram's / menu
- *    stays discoverable.
+ *    stays discoverable;
+ *  - selling with a payment step auto-adds the /terms /paysupport /support
+ *    compliance commands (Stars policy) unless already defined.
  */
 export function compileBehaviors(behaviors: BotBehaviorSpec[]): BotCapabilities {
   const list = behaviors?.length ? botBehaviorsSchema.parse(behaviors) : [];
-  const ctx: Ctx = { commands: [], replies: [], issues: [] };
+  const ctx: Ctx = { commands: [], replies: [], issues: [], hasPayment: false };
 
   const ids = new Set<string>();
   const commandValues = new Map<string, string>(); // "/start" → behavior title
@@ -266,7 +414,7 @@ export function compileBehaviors(behaviors: BotBehaviorSpec[]): BotCapabilities 
   }
   // Flow targets must exist.
   for (const b of list) {
-    for (const [stepIdx, step] of b.steps.entries()) {
+    for (const step of b.steps) {
       if (step.type !== 'message' || !step.buttons) continue;
       for (const button of step.buttons) {
         if (button.action.kind === 'flow' && !ids.has(button.action.behaviorId)) {
@@ -274,30 +422,8 @@ export function compileBehaviors(behaviors: BotBehaviorSpec[]): BotCapabilities 
             `Button "${button.label}" in "${b.title}" starts flow "${button.action.behaviorId}", which does not exist.`,
           );
         }
-        void stepIdx;
       }
     }
-  }
-  if (ctx.issues.length) throw new BehaviorCompileError(ctx.issues);
-
-  // Compiled-artifact limits (mirror botCommandsSchema/botRepliesSchema).
-  const hiddenRules = list.reduce(
-    (n, b) =>
-      n +
-      b.steps.reduce(
-        (m, s) => m + (s.type === 'message' && s.buttons ? s.buttons.filter((x) => x.action.kind !== 'link' && x.action.kind !== 'flow').length : 0),
-        0,
-      ),
-    0,
-  );
-  const menuCommands = list.filter((b) => b.when.type === 'command' && !(b.when.type === 'command' && b.when.command.toLowerCase() === '/start')).length;
-  if (list.length + hiddenRules > 30) {
-    ctx.issues.push(
-      `This compiles to ${list.length + hiddenRules} rules — the limit is 30. Merge steps or remove buttons.`,
-    );
-  }
-  if (menuCommands > 20) {
-    ctx.issues.push(`Too many command behaviors (${menuCommands}) — Telegram allows 20 menu commands.`);
   }
   if (ctx.issues.length) throw new BehaviorCompileError(ctx.issues);
 
@@ -317,6 +443,34 @@ export function compileBehaviors(behaviors: BotBehaviorSpec[]): BotCapabilities 
       messages,
     });
 
+    // Reply keyboards: buttons become hidden exact-text rules (the label is
+    // what Telegram sends back). Non-text actions would be dead buttons.
+    for (const [stepIdx, step] of effective.steps.entries()) {
+      if (step.type !== 'message' || step.keyboard !== 'reply' || !step.buttons?.length) continue;
+      for (const [btnIdx, button] of step.buttons.entries()) {
+        const action = button.action;
+        if (action.kind === 'link' || action.kind === 'webapp' || action.kind === 'copy') {
+          ctx.issues.push(
+            `Button "${button.label}" in "${effective.title}" opens a link/Mini App/copy — reply keyboards can only send text. ` +
+              'Use an inline keyboard (the default) or make it a message/flow/AI button.',
+          );
+          continue;
+        }
+        const callback = callbackForAction(effective.id, stepIdx, btnIdx);
+        ctx.replies.push({
+          id: `k_${effective.id}_${stepIdx}_${btnIdx}`.slice(0, 64),
+          name: button.label,
+          trigger: { type: 'text', value: button.label },
+          messages:
+            action.kind === 'flow'
+              ? [{ text: button.label, buttons: [[{ text: button.label, callback: callbackForBehavior(action.behaviorId) }]] }]
+              : action.kind === 'ai'
+                ? [{ text: button.label, ai: action.instruction ?? '' }]
+                : [{ text: action.text }],
+        });
+      }
+    }
+
     // Menu discoverability: command behaviors appear in Telegram's / menu.
     if (effective.when.type === 'command') {
       const command = effective.when.command.toLowerCase();
@@ -334,8 +488,25 @@ export function compileBehaviors(behaviors: BotBehaviorSpec[]): BotCapabilities 
       });
     }
   }
+  if (ctx.issues.length) throw new BehaviorCompileError(ctx.issues);
 
-  const caps = serializeCapabilities({ commands: ctx.commands, replies: ctx.replies });
+  // Compiled-artifact limits (mirror botCommandsSchema/botRepliesSchema).
+  const hiddenRules = ctx.replies.filter((r) => r.id.startsWith('a_') || r.id.startsWith('k_')).length;
+  const menuCommands = list.filter((b) => b.when.type === 'command' && !(b.when.type === 'command' && b.when.command.toLowerCase() === '/start')).length;
+  if (list.length + hiddenRules > 30) {
+    ctx.issues.push(
+      `This compiles to ${list.length + hiddenRules} rules — the limit is 30. Merge steps or remove buttons.`,
+    );
+  }
+  if (menuCommands > 20) {
+    ctx.issues.push(`Too many command behaviors (${menuCommands}) — Telegram allows 20 menu commands.`);
+  }
+  if (ctx.issues.length) throw new BehaviorCompileError(ctx.issues);
+
+  // Stars compliance: selling digital goods auto-answers /terms /paysupport.
+  const commands = ctx.hasPayment ? [...ctx.commands, ...complianceCommands(ctx.commands)] : ctx.commands;
+
+  const caps = serializeCapabilities({ commands, replies: ctx.replies });
   const validated = {
     commands: botCommandsSchema.parse(caps.commandsJson ? JSON.parse(caps.commandsJson) : []),
     replies: botRepliesSchema.parse(caps.repliesJson ? JSON.parse(caps.repliesJson) : []),
@@ -371,10 +542,48 @@ export function deriveBehaviors(caps: BotCapabilities): BotBehaviorSpec[] {
   const stepsFromReply = (r: BotReplySpec): BehaviorStep[] =>
     r.messages.map((m) => {
       if (m.ai !== undefined) return { type: 'ai', instruction: m.ai } as BehaviorStep;
+      if (m.media) return { type: 'media', media: m.media } as BehaviorStep;
+      if (m.poll) {
+        return {
+          type: 'poll',
+          poll: {
+            question: m.poll.question,
+            options: [...m.poll.options],
+            ...(m.poll.quiz !== undefined ? { quiz: m.poll.quiz } : {}),
+            ...(typeof m.poll.correctOption === 'number' ? { correctOption: m.poll.correctOption } : {}),
+            ...(m.poll.explanation ? { explanation: m.poll.explanation } : {}),
+            ...(m.poll.anonymous !== undefined ? { anonymous: m.poll.anonymous } : {}),
+          },
+        } as BehaviorStep;
+      }
+      if (m.payment) {
+        return {
+          type: 'payment',
+          payment: {
+            title: m.payment.title,
+            description: m.payment.description,
+            priceStars: m.payment.priceStars,
+            ...(m.payment.successText ? { successText: m.payment.successText } : {}),
+          },
+        } as BehaviorStep;
+      }
+      if (m.collect) {
+        return {
+          type: 'collect',
+          collect: { attribute: m.collect.attribute, ...(m.collect.prompt ? { prompt: m.collect.prompt } : {}) },
+        } as BehaviorStep;
+      }
+      if (m.schedule) {
+        return { type: 'schedule', schedule: { ...(m.schedule.prompt ? { prompt: m.schedule.prompt } : {}) } } as BehaviorStep;
+      }
       return {
         type: 'message',
         text: m.text,
         ...(m.buttons?.length ? { buttons: [] as BehaviorButton[] } : {}),
+        ...(m.keyboard ? { keyboard: m.keyboard } : {}),
+        ...(m.edit ? { edit: true } : {}),
+        ...(m.forceReply ? { forceReply: true } : {}),
+        ...(m.removeKeyboard ? { removeKeyboard: true } : {}),
       } as BehaviorStep;
     });
 
@@ -386,11 +595,15 @@ export function deriveBehaviors(caps: BotCapabilities): BotBehaviorSpec[] {
     const when: BehaviorWhen =
       r.trigger.type === 'fallback'
         ? { type: 'anything_else' }
-        : r.trigger.type === 'command'
-          ? r.trigger.value?.toLowerCase() === '/start'
-            ? { type: 'start' }
-            : { type: 'command', command: r.trigger.value ?? '/help' }
-          : { type: 'says', text: r.trigger.value ?? r.name };
+        : r.trigger.type === 'member_joined'
+          ? { type: 'member_joined' }
+          : r.trigger.type === 'payload'
+            ? { type: 'payload', value: r.trigger.value ?? 'start' }
+            : r.trigger.type === 'command'
+              ? r.trigger.value?.toLowerCase() === '/start'
+                ? { type: 'start' }
+                : { type: 'command', command: r.trigger.value ?? '/help' }
+              : { type: 'says', text: r.trigger.value ?? r.name };
     behaviors.push({
       id: uniqueId(r.id.replace(/^b_/, ''), r.name || 'flow'),
       title: r.name,
@@ -423,8 +636,11 @@ export function deriveBehaviors(caps: BotCapabilities): BotBehaviorSpec[] {
     if (!behavior) continue;
     behavior.steps = r.messages.map((m, mi) => {
       if (m.ai !== undefined) return { type: 'ai', instruction: m.ai } as BehaviorStep;
+      if (m.media || m.poll || m.payment || m.collect || m.schedule) return behavior.steps[mi];
       const flat = m.buttons?.flat() ?? [];
       const buttons: BehaviorButton[] = flat.map((b) => {
+        if (b.webapp) return { label: b.text, action: { kind: 'webapp', url: b.webapp } as BehaviorButtonAction };
+        if (b.copy) return { label: b.text, action: { kind: 'copy', text: b.copy } as BehaviorButtonAction };
         if (b.url) return { label: b.text, action: { kind: 'link', url: b.url } as BehaviorButtonAction };
         const targetId = b.callback ? callbackToBehavior.get(b.callback) : undefined;
         if (targetId) return { label: b.text, action: { kind: 'flow', behaviorId: targetId } as BehaviorButtonAction };
@@ -483,6 +699,10 @@ export function describeWhen(when: BehaviorWhen): string {
       return `When a message mentions “${when.text}”`;
     case 'button':
       return 'When a button is pressed';
+    case 'payload':
+      return `When someone arrives from the “${when.value}” link`;
+    case 'member_joined':
+      return 'When someone joins the group';
     case 'anything_else':
       return 'For anything else';
   }
@@ -493,9 +713,17 @@ export function describeSteps(steps: BehaviorStep[]): string {
   return steps
     .map((s) => {
       if (s.type === 'ai') return 'the AI answers';
+      if (s.type === 'media') {
+        const cap = s.media.caption ? `“${s.media.caption.slice(0, 32)}”` : `a ${s.media.kind}`;
+        return `sends ${cap}`;
+      }
+      if (s.type === 'poll') return `poll: ${s.poll.question.slice(0, 32)}`;
+      if (s.type === 'payment') return `charges ${s.payment.priceStars}★ for ${s.payment.title}`;
+      if (s.type === 'collect') return `asks and remembers ${s.collect.attribute}`;
+      if (s.type === 'schedule') return 'sets a reminder';
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 42 ? `${s.text.slice(0, 42).trimEnd()}…` : s.text;
-      return `“${excerpt}”${btns}`;
+      return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';
     })
     .join(' → ');
 }
