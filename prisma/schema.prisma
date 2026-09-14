@@ -53,12 +53,17 @@ model Bot {
   // Short-term conversation memory: number of recent messages kept per chat.
   memorySize           Int     @default(10) @map("memory_size")
   // Bot capabilities (JSON, SQLite has no JSON type):
-  // commands_json = [{ command, description, kind: "static"|"ai", response }]
-  // replies_json  = [{ id, name, trigger: {type: "command"|"keyword"|"button"|"fallback", value},
-  //                    messages: [{ text, buttons: [[{ text, url?|callback? }]] }] }]
-  // A reply with multiple messages is a mini workflow (sent in order).
+  // behaviors_json  = SOURCE OF TRUTH behaviors (intent-first building) —
+  //                   [{ id, title, when: {type: "start"|"command"|"says"|"button"|"anything_else", …},
+  //                      steps: [{type:"message", text, buttons?}|{type:"ai", instruction?}] }]
+  // commands_json   = compiled artifact [{ command, description, kind: "static"|"ai", response }]
+  // replies_json    = compiled artifact [{ id, name, trigger: {type, value},
+  //                   messages: [{ text, ai?, buttons: [[{ text, url?|callback? }]] }] }]
+  // The Behavior compiler (src/lib/nurae/bots/behavior.ts) derives commands +
+  // replies from behaviors; the pipeline executes only the compiled artifacts.
   commandsJson         String? @map("commands_json")
   repliesJson          String? @map("replies_json")
+  behaviorsJson        String? @map("behaviors_json")
   // Archived bots stay runnable-but-hidden for their owner; delete removes rows.
   archived             Boolean @default(false)
   enabled              Boolean @default(true)

@@ -56,6 +56,10 @@ export const replyButtonSchema = z
 export const replyMessageSchema = z.object({
   text: z.string().trim().min(1).max(4000),
   buttons: z.array(z.array(replyButtonSchema).max(8)).max(8).optional(),
+  // Behavior "Ask the AI" steps compile to this marker: the pipeline runs the
+  // bot's AI with `ai` as extra guidance instead of sending `text` verbatim.
+  // Text still carries the trigger label (buttons need non-empty message text).
+  ai: z.string().trim().max(2000).optional(),
 });
 
 export const replyTriggerSchema = z.object({

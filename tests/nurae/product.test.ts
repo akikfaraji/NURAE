@@ -174,13 +174,20 @@ describe('agent tool layer', () => {
     const rec = await executeTool(
       ctx,
       'bot_create_draft',
-      { name: 'Shop Bot', description: 'Answers customers', commands: [{ command: '/hi', description: 'say hi', kind: 'static', response: 'Hello!' }] },
+      {
+        name: 'Shop Bot',
+        description: 'Answers customers',
+        behaviors: [
+          { id: 'hi', title: 'Say hi', when: { type: 'command', command: '/hi' }, steps: [{ type: 'message', text: 'Hello!' }] },
+        ],
+      },
       1,
     );
     expect(rec.status).toBe('ok');
 
     const bot = await db.bot.findFirst({ where: { ownerId: owner.id } });
     expect(bot?.name).toBe('Shop Bot');
+    // The behavior compiled into the executed menu command.
     expect(bot?.commandsJson).toContain('/hi');
 
     // Audit: one AgentStep + one sanitized platform Log row.

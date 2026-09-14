@@ -209,6 +209,13 @@ export async function handleBotMessage(
           'DEEPLINK_START',
         );
       }
+      // A behavior (or advanced rule) bound to /start replaces the built-in
+      // welcome — this is what makes "when someone starts the bot …" real.
+      const welcomeRule = replyWithCommandTrigger(bot, '/start');
+      if (welcomeRule) {
+        await sendMarkdownReply(bot, sender, msg.chatId, welcomeRule.messages, store, deps.signal, payload || '/start', deps.providerSelector);
+        return;
+      }
       await sendSafely(bot.id, sender, msg.chatId, START_TEXT(bot.name), store, deps.signal);
       return;
     }
@@ -217,20 +224,30 @@ export async function handleBotMessage(
     const custom = caps(bot).commands.find((c) => c.command.toLowerCase() === command);
     if (custom && custom.kind === 'static' && custom.response.trim()) {
       await sendMarkdownReply(
-        bot.id,
+        bot,
         sender,
         msg.chatId,
         [{ text: custom.response }],
         store,
         deps.signal,
+        trimmed,
       );
+      return;
+    }
+
+    // Custom AI command: the turn goes to the model with the command's
+    // response as extra guidance ("AI answers" in the behavior editor).
+    if (custom && custom.kind === 'ai') {
+      const argsText = trimmed.slice(trimmed.indexOf(' ') + 1).trim();
+      const userText = argsText && argsText !== trimmed ? argsText : command;
+      await runAiTurn(bot, sender, msg.chatId, userText, custom.response.trim() || undefined, store, deps.signal, deps.providerSelector);
       return;
     }
 
     // Reply rule bound to this command (buttons/workflows on /commands).
     const rule = replyWithCommandTrigger(bot, command);
     if (rule) {
-      await sendMarkdownReply(bot.id, sender, msg.chatId, rule.messages, store, deps.signal);
+      await sendMarkdownReply(bot, sender, msg.chatId, rule.messages, store, deps.signal, trimmed, deps.providerSelector);
       return;
     }
 
@@ -242,7 +259,7 @@ export async function handleBotMessage(
     // Unknown command → owner's fallback reply or the classic hint.
     const fb = fallbackReply(bot);
     if (fb) {
-      await sendMarkdownReply(bot.id, sender, msg.chatId, fb.messages, store, deps.signal);
+      await sendMarkdownReply(bot, sender, msg.chatId, fb.messages, store, deps.signal, trimmed, deps.providerSelector);
       return;
     }
     await sendSafely(
@@ -259,14 +276,14 @@ export async function handleBotMessage(
   // --- Keyword-triggered replies -------------------------------------------
   const keywordReply = replyForKeyword(bot, trimmed);
   if (keywordReply) {
-    await sendMarkdownReply(bot.id, sender, msg.chatId, keywordReply.messages, store, deps.signal);
+    await sendMarkdownReply(bot, sender, msg.chatId, keywordReply.messages, store, deps.signal, trimmed, deps.providerSelector);
     return;
   }
 
   // --- Fallback reply for free text (when configured) ----------------------
   const fb = fallbackReply(bot);
   if (fb) {
-    await sendMarkdownReply(bot.id, sender, msg.chatId, fb.messages, store, deps.signal);
+    await sendMarkdownReply(bot, sender, msg.chatId, fb.messages, store, deps.signal, trimmed, deps.providerSelector);
     return;
   }
 
@@ -276,13 +293,32 @@ export async function handleBotMessage(
   const noteForAI = msg.hasPhoto
     ? `${trimmed}\n\n(The user sent this together with a photo. NURAE reads the caption text only.)`
     : trimmed;
-  await store.appendUserMessage(bot.id, msg.chatId, noteForAI);
-  const history = await store.getRecentMessages(bot.id, msg.chatId, bot.memorySize);
-  const messages: ChatMessage[] = [{ role: 'system', content: bot.systemPrompt }, ...history];
+  await runAiTurn(bot, sender, msg.chatId, noteForAI, undefined, store, deps.signal, deps.providerSelector);
+}
+
+/**
+ * One full AI turn — memory, provider call, delivery, friendly failure.
+ * Shared by the free-text path, "AI answers" commands and compiled
+ * "Ask the AI" behavior steps (extraInstruction guides the model).
+ */
+async function runAiTurn(
+  bot: RuntimeBotRecord,
+  sender: MessageSender,
+  chatId: string,
+  userText: string,
+  extraInstruction: string | undefined,
+  store: RuntimeStore,
+  signal?: AbortSignal | null,
+  providerSelector?: PipelineDeps['providerSelector'],
+): Promise<void> {
+  await store.appendUserMessage(bot.id, chatId, userText);
+  const history = await store.getRecentMessages(bot.id, chatId, bot.memorySize);
+  const system = extraInstruction ? `${bot.systemPrompt}\n\n${extraInstruction}` : bot.systemPrompt;
+  const messages: ChatMessage[] = [{ role: 'system', content: system }, ...history];
 
   let reply: string;
   try {
-    const selector = deps.providerSelector ?? selectProvider;
+    const selector = providerSelector ?? selectProvider;
     const selection = selector(bot.provider, {
       apiKey: bot.apiKey,
       baseUrl: bot.baseUrl,
@@ -302,7 +338,7 @@ export async function handleBotMessage(
       maxTokens: bot.maxTokens,
       apiKey: selection.apiKey,
       baseUrl: selection.baseUrl,
-      signal: deps.signal ?? undefined,
+      signal: signal ?? undefined,
     });
     await store.createLog(bot.id, 'info', `AI response received (${reply.length} chars).`, 'AI_RESPONSE');
   } catch (err) {
@@ -310,15 +346,15 @@ export async function handleBotMessage(
     const message = aiErr ? `${aiErr.code}: ${aiErr.message}` : err instanceof Error ? err.message : String(err);
     await store.createLog(bot.id, 'error', `AI request failed — ${message}`, 'AI_REQUEST_FAILED');
     const friendly = AI_FAILURE_TEXT[aiErr?.code ?? 'api_error'] ?? AI_FAILURE_TEXT.api_error;
-    await sendSafely(bot.id, sender, msg.chatId, `⚠️ ${friendly}`, store, deps.signal);
+    await sendSafely(bot.id, sender, chatId, `⚠️ ${friendly}`, store, signal);
     return;
   }
 
-  await store.appendAssistantMessage(bot.id, msg.chatId, reply);
+  await store.appendAssistantMessage(bot.id, chatId, reply);
   if (bot.memorySize > 0) {
-    await store.trimConversation(bot.id, msg.chatId, bot.memorySize);
+    await store.trimConversation(bot.id, chatId, bot.memorySize);
   }
-  await sendMarkdownReply(bot.id, sender, msg.chatId, [{ text: reply }], store, deps.signal);
+  await sendMarkdownReply(bot, sender, chatId, [{ text: reply }], store, signal);
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +390,7 @@ export async function handleBotCallback(
     'BUTTON_PRESSED',
   );
   await answerSafely(bot.id, sender, cb.callbackId);
-  await sendMarkdownReply(bot.id, sender, cb.chatId, rule.messages, store, deps.signal);
+  await sendMarkdownReply(bot, sender, cb.chatId, rule.messages, store, deps.signal, rule.name, deps.providerSelector);
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +496,8 @@ async function answerSafely(
 interface ReplyMessage {
   text: string;
   buttons?: OutboundButtons;
+  /** Compiled "Ask the AI" step: run the AI with this guidance instead of sending text verbatim. */
+  ai?: string;
 }
 
 /**
@@ -469,14 +507,20 @@ interface ReplyMessage {
  * and a plain-text retry when Telegram rejects the entity markup.
  */
 async function sendMarkdownReply(
-  botId: string,
+  bot: RuntimeBotRecord,
   sender: MessageSender,
   chatId: string,
   replyMessages: ReplyMessage[],
   store: RuntimeStore,
   signal?: AbortSignal | null,
+  triggerText?: string,
+  providerSelector?: PipelineDeps['providerSelector'],
 ): Promise<void> {
   for (const [index, message] of replyMessages.entries()) {
+    if (message.ai !== undefined) {
+      await runAiTurn(bot, sender, chatId, triggerText ?? message.text, message.ai || undefined, store, signal, providerSelector);
+      continue;
+    }
     const chunks = chunkTelegramMessage(message.text);
     for (const [ci, chunk] of chunks.entries()) {
       const html = telegramHtmlFromMarkdown(chunk);
@@ -493,7 +537,7 @@ async function sendMarkdownReply(
           // Telegram refused the entity markup (should not happen — the
           // converter only emits balanced escaped HTML) — degrade to plain.
           await store.createLog(
-            botId,
+            bot.id,
             'warn',
             `Telegram rejected HTML entities for chat ${chatId}; resending as plain text.`,
             'TELEGRAM_HTML_FALLBACK',
@@ -502,17 +546,17 @@ async function sendMarkdownReply(
             await sender.sendMessage(chatId, chunk, { signal: signal ?? undefined, buttons });
           } catch (fallbackErr) {
             const detail = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-            await store.createLog(botId, 'warn', `Telegram send failed for chat ${chatId}: ${detail}`, 'TELEGRAM_SEND_FAILED');
+            await store.createLog(bot.id, 'warn', `Telegram send failed for chat ${chatId}: ${detail}`, 'TELEGRAM_SEND_FAILED');
           }
         } else {
           const detail = err instanceof Error ? err.message : String(err);
-          await store.createLog(botId, 'warn', `Telegram send failed for chat ${chatId}: ${detail}`, 'TELEGRAM_SEND_FAILED');
+          await store.createLog(bot.id, 'warn', `Telegram send failed for chat ${chatId}: ${detail}`, 'TELEGRAM_SEND_FAILED');
         }
       }
     }
   }
   await store.createLog(
-    botId,
+    bot.id,
     'info',
     `Reply delivered to chat ${chatId} (${replyMessages.length} message(s)).`,
     'TELEGRAM_MESSAGE_SENT',

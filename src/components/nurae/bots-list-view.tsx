@@ -3,8 +3,8 @@
 /**
  * NURAE — /bots: what has been built. List + the two creation paths.
  *
- *   Create bot      → manual configuration (/bots/new)
- *   Create with AI  → describe it; the Bot Builder agent configures it
+ *   Describe it (default) → the Bot Builder agent turns intent into a bot
+ *   Start from scratch    → manual configuration (/bots/new)
  *
  * The list is typographic rows (name, handle, status dot) — no card grid.
  */
@@ -52,11 +52,11 @@ export function BotsListView() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/bots/new">
-              <Button size="sm" variant="outline">Create bot</Button>
-            </Link>
             <Link href="/bots/new?ai=1">
-              <Button size="sm">Create with AI</Button>
+              <Button size="sm">New bot</Button>
+            </Link>
+            <Link href="/bots/new">
+              <Button size="sm" variant="outline">Start from scratch</Button>
             </Link>
           </div>
         </div>
@@ -66,10 +66,14 @@ export function BotsListView() {
         ) : bots.length === 0 ? (
           <div className="mt-16 max-w-lg">
             <p className="text-sm leading-relaxed text-muted-foreground">
-              No bots yet. Describe one in a sentence —
-              <span className="text-foreground"> “a bot for my clothing store that answers product questions” </span>
-              — and the Bot Builder agent drafts it for you, or configure one by hand.
+              Say what the bot should do —
+              <span className="text-foreground"> “when someone starts my restaurant bot, welcome them with buttons for Menu, Order and Contact” </span>
+              — and NURAE builds it. You approve everything before it goes live, and can fine-tune every detail afterwards.
             </p>
+            <div className="mt-4 flex gap-3">
+              <Link href="/bots/new?ai=1"><Button size="sm">Describe a bot</Button></Link>
+              <Link href="/bots/new" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from scratch</Link>
+            </div>
           </div>
         ) : (
           <ul className="mt-8 border-t border-border/60">
@@ -99,8 +103,12 @@ export function BotsListView() {
                     </span>
                   </span>
                   <span className="hidden text-xs text-muted-foreground sm:block">
-                    {b.commands.length > 0 && `${b.commands.length} cmd · `}
-                    {b.replies.length > 0 && `${b.replies.length} rules · `}
+                    {b.behaviors.length > 0
+                      ? `${b.behaviors.length} behavior${b.behaviors.length === 1 ? '' : 's'} · `
+                      : b.commands.length > 0
+                        ? `${b.commands.length} cmd · `
+                        : ''}
+                    {b.behaviors.length === 0 && b.replies.length > 0 ? `${b.replies.length} rules · ` : ''}
                     {b.status}
                   </span>
                   <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
@@ -153,11 +161,11 @@ export function BotCreateView() {
       <div className="flex min-h-dvh flex-col bg-background">
         <SiteHeader user={user} onSignOut={signOut} />
         <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-12 sm:px-6">
-          <h1 className="text-xl font-medium tracking-tight text-foreground">Describe your bot</h1>
+          <h1 className="text-xl font-medium tracking-tight text-foreground">What do you want your bot to do?</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            One or two sentences are enough. The Bot Builder agent turns this into a real
-            configuration — identity, commands, buttons, AI behavior — and you review everything
-            before it goes live.
+            Describe it the way you would tell a person — “when someone starts the bot, show a
+            welcome message with buttons for Menu, Order and Contact”. NURAE handles the technical
+            part and you review everything before it goes live.
           </p>
           <Textarea
             value={description}
@@ -165,13 +173,13 @@ export function BotCreateView() {
             maxLength={2000}
             rows={5}
             autoFocus
-            placeholder="Create a Telegram bot for my clothing store that answers product questions, shows products and lets customers contact us."
+            placeholder="Create a bot for my clothing store. When someone starts it, welcome them and show buttons for Products, Order and Contact Us. When someone mentions a price, answer with our price list."
             className="mt-6 border-border bg-transparent text-sm"
           />
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
           <div className="mt-4 flex items-center gap-3">
             <Button size="sm" disabled={busy || !description.trim()} onClick={() => void createWithAI()}>
-              {busy ? 'Starting the agent…' : 'Build with the agent'}
+              {busy ? 'Building…' : 'Build it'}
             </Button>
             <Link href="/bots/new" className="text-xs text-muted-foreground hover:text-foreground">
               Configure manually instead
@@ -233,9 +241,10 @@ function BotManualForm({ user, onSignOut }: { user: SessionUserDTO; onSignOut?: 
     <div className="flex min-h-dvh flex-col bg-background">
       <SiteHeader user={user} onSignOut={onSignOut} />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-12 sm:px-6">
-        <h1 className="text-xl font-medium tracking-tight text-foreground">New bot</h1>
+        <h1 className="text-xl font-medium tracking-tight text-foreground">Start from scratch</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          You can leave the token empty — the bot saves as a draft until you connect Telegram.
+          The manual path — name, prompt, token. You can leave the token empty; the bot saves as a
+          draft until you connect Telegram. Behaviors can be added on the next screen.
         </p>
         <form onSubmit={submit} className="mt-8 space-y-5">
           <div className="space-y-1.5">

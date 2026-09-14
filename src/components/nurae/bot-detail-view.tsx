@@ -3,13 +3,13 @@
 /**
  * NURAE — /bots/[id]: one bot, end to end.
  *
- * Sections (quiet sections, not tabs-of-cards):
- *   header row   name · status · publish / unpublish
+ * Sections (Behavior is the primary surface — the technical layer is underneath):
+ *   header row    name · status · publish / unpublish
+ *   behavior      what the bot does, in plain language (the source of truth)
+ *   preview       a REAL pipeline turn — exactly what Telegram will deliver
  *   configuration identity + AI settings (token/key write-only)
- *   commands     Telegram menu commands (structured, validated)
- *   replies      buttons, keyword answers, fallbacks, mini-workflows
- *   test console a REAL pipeline turn — exactly what Telegram will receive
- *   danger zone  archive / delete (two-step)
+ *   advanced      raw commands / replies (escape hatch; a later behavior save recompiles)
+ *   danger zone   archive / delete (two-step)
  *
  * Everything talks to ownership-checked /api/my/bots endpoints.
  */
@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
+import { BehaviorSection } from '@/components/nurae/bot-behavior-section';
 import {
   ApiError,
   CapturedSendDTO,
@@ -207,17 +208,27 @@ export function BotDetailView() {
         {savedAt && <p className="mt-1 text-[11px] text-muted-foreground/70">Saved {savedAt}</p>}
         {error && <p className="mt-1 text-xs text-destructive" role="alert">{error}</p>}
 
+        {/* Behavior — the primary surface */}
+        <BehaviorSection bot={bot} saving={saving} onSave={patch} />
+
+        {/* Preview — the real pipeline */}
+        <PreviewSection bot={bot} />
+
         {/* Configuration */}
         <ConfigSection bot={bot} catalog={catalog} saving={saving} onSave={patch} />
 
-        {/* Commands */}
-        <CommandsSection bot={bot} saving={saving} onSave={patch} />
-
-        {/* Replies / buttons */}
-        <RepliesSection bot={bot} saving={saving} onSave={patch} />
-
-        {/* Test console */}
-        <TestConsole bot={bot} />
+        {/* Advanced — the technical layer, by choice */}
+        <details className="mt-12 border-t border-border/60 pt-6">
+          <summary className="cursor-pointer text-xs font-medium uppercase tracking-widest text-muted-foreground hover:text-foreground">
+            Advanced · commands &amp; replies
+          </summary>
+          <p className="mt-2 max-w-2xl text-xs leading-relaxed text-muted-foreground/80">
+            The technical internals that Behaviors compile into. You can edit them by hand —
+            note that the next change to Behaviors recompiles and replaces them.
+          </p>
+          <CommandsSection bot={bot} saving={saving} onSave={patch} />
+          <RepliesSection bot={bot} saving={saving} onSave={patch} />
+        </details>
 
         {/* Danger zone */}
         <section className="mt-12 border-t border-border/60 pt-6">
@@ -621,10 +632,10 @@ function RepliesSection({ bot, saving, onSave }: { bot: UserBotDTO; saving: bool
 }
 
 // ---------------------------------------------------------------------------
-// Test console — the REAL pipeline, captured
+// Preview — the REAL pipeline, captured (talk to the bot before it goes live)
 // ---------------------------------------------------------------------------
 
-function TestConsole({ bot }: { bot: UserBotDTO }) {
+function PreviewSection({ bot }: { bot: UserBotDTO }) {
   const [draft, setDraft] = useState('');
   const [sends, setSends] = useState<CapturedSendDTO[]>([]);
   const [busy, setBusy] = useState(false);
@@ -648,8 +659,8 @@ function TestConsole({ bot }: { bot: UserBotDTO }) {
 
   return (
     <Section
-      title="Test console"
-      hint="Runs the real pipeline — commands, buttons, this bot's AI provider — and shows exactly what Telegram would deliver. Nothing is sent anywhere."
+      title="Preview"
+      hint="Talk to the bot before it goes live. This runs the real pipeline — behaviors, commands, buttons, this bot's AI provider — and shows exactly what Telegram will deliver. Nothing is sent anywhere."
     >
       <div ref={scrollRef} className="max-h-96 space-y-4 overflow-y-auto border border-border/60 p-4">
         {sends.length === 0 && (

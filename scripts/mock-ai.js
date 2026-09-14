@@ -31,46 +31,42 @@ const server = http.createServer((req, res) => {
       const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
       let content;
 
-      if (system.includes('Bot Builder agent')) {
+      if (system.includes('Bot Builder')) {
         const resultsRound = /TOOL RESULTS/i.test(lastUser);
         if (resultsRound) {
           content = JSON.stringify({
             message:
-              'Your bot is drafted with a `/start` welcome and a `/menu` command with buttons. **Publish it now?** Press *Approve & publish* below, or tell me what to change.',
+              'Done — your restaurant bot is drafted: **when someone starts it, they get a welcome with Menu, Order and Contact buttons**, and ordering asks for the order. Open it below to preview, then publish when ready.',
             actions: [],
             done: true,
           });
         } else {
           content = JSON.stringify({
-            message: 'Building your bot now — creating the draft.',
+            message: 'Building your restaurant bot now.',
             actions: [
               {
                 tool: 'bot_create_draft',
                 args: {
-                  name: 'Menu Bot',
-                  description: 'Restaurant menu bot built in browser verification',
-                  commands: [
-                    { command: '/menu', description: 'Show the menu', kind: 'static', response: 'Today: Pizza, Pasta, Salad.' },
-                  ],
-                  replies: [
+                  name: 'Trattoria Bot',
+                  description: 'Restaurant bot built in browser verification',
+                  behaviors: [
                     {
-                      id: 'r1',
-                      name: 'Reserve',
-                      trigger: { type: 'keyword', value: 'reserve' },
-                      messages: [
-                        { text: 'Reservations open at 5pm:', buttons: [[{ text: 'Call us', url: 'https://example.com' }]] },
+                      id: 'welcome',
+                      title: 'Welcome',
+                      when: { type: 'start' },
+                      steps: [
+                        {
+                          type: 'message',
+                          text: 'Welcome! What would you like to do?',
+                          buttons: [
+                            { label: 'Menu', action: { kind: 'flow', behaviorId: 'menu' } },
+                            { label: 'Order', action: { kind: 'message', text: 'Tell me your order and we will confirm right away.' } },
+                          ],
+                        },
                       ],
                     },
+                    { id: 'menu', title: 'Menu', when: { type: 'button' }, steps: [{ type: 'message', text: 'Today: Pizza, Pasta, Salad.' }] },
                   ],
-                },
-              },
-              {
-                tool: 'bot_set_commands',
-                args: {
-                  // Intentionally references the just-created draft via name so
-                  // the loop must resolve it — simplified: list then use id.
-                  botId: 'PENDING',
-                  commands: [{ command: '/menu', description: 'Show the menu', kind: 'static', response: 'Today: Pizza.' }],
                 },
               },
             ],

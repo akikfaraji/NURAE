@@ -98,11 +98,36 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.02.000-beta-03** — feature release 02: the product layer.
+**NURAE V00.02.001-beta-03** — behavior-first bot building.
 
-> «Chat is the interface. Agents are the workers. The user stays in control.»
+> «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
+
+**Behaviors — the primary concept of bot building (new in 02.001)**
+- A **Behavior** is the source of truth: “when someone starts the bot, welcome them
+  with buttons for Menu, Order, Contact”. The compiler (`src/lib/nurae/bots/behavior.ts`)
+  derives the executed configuration (menu commands, reply rules, inline keyboards,
+  callback wiring) from behaviors — the technical layer stays real, just not the
+  language people build in.
+- Plain-language triggers: someone starts the bot / types a command / mentions a word /
+  presses a button / anything else. Plain-language button actions: **show a message**,
+  **open a link**, **start a flow** (another behavior — the callback wiring is automatic),
+  **ask the AI** (the turn goes to the bot's model with guidance). AI steps can appear
+  anywhere in a flow.
+- The Bot Builder agent builds through `bot_set_behaviors` — intent in, compiled config
+  out. Its prompt is intent-first: speak in outcomes, ask one concise question when
+  ambiguous, proactively create the pieces a request implies (a button that starts a flow
+  gets its target behavior created in the same call). Raw `bot_set_commands` /
+  `bot_set_replies` remain as marked ADVANCED escape hatches.
+- `/bots/[id]` leads with the **Behavior** editor (when → then, plain language), then
+  **Preview** — the real pipeline captured, buttons clickable — then configuration;
+  the raw command/reply editors live under an *Advanced* disclosure with an honest note
+  that the next behavior save recompiles. Bots configured the old way get a one-click
+  **Import current configuration as behaviors** (derive → compile round-trip tested).
+- Custom `/start` welcome: a start behavior replaces the built-in text (deep-link
+  payloads still logged). Fixed: `kind: "ai"` menu commands now actually run the model
+  (they previously fell through to “Unknown command”).
 
 **Product surfaces**
 - Redesigned application chrome: one 48px hairline header — compact text navigation,
@@ -116,10 +141,10 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 - `/chats/agents` — the agent workbench: persistent agent sessions with durable task
   state, activity feed sourced from the audit trail, "Approve & publish" control,
   deep link into the built bot.
-- `/bots` — list + create (manual form, or "Create with AI" via the agent), bot detail
-  with configuration (provider/model/prompt/limits, token + key write-only fields),
-  structured command editor, reply-rule editor (triggers, inline buttons, multi-message
-  workflows), **real-pipeline test console**, publish/unpublish with explicit
+- `/bots` — list + create (**“What do you want your bot to do?”** describe-first via the
+  agent, or start from scratch), bot detail with behaviors, preview, configuration
+  (provider/model/prompt/limits, token + key write-only fields), advanced command/reply
+  editors, **real-pipeline preview console**, publish/unpublish with explicit
   confirmation, archive/delete.
 - `/featured` — small featured-conversation page; curated questions prefill a new chat.
 - Home redesigned: typographic hero, statement-based features, referral capture
@@ -164,7 +189,7 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 - Secrets encrypted at rest (AES-256-GCM), never returned by APIs, never logged.
 - Customer auth (scrypt, Gmail OTP with hashed codes, Google OAuth), sessions.
 - Structured logs with event codes; bot status state machine enforced in the DB.
-- 188 tests (vitest), lint-clean src, type-clean src.
+- 199 tests (vitest), lint-clean src, type-clean src.
 
 ### NOT in this release (do not assume these exist)
 
@@ -358,4 +383,4 @@ extracted text (what agents and chats actually read) is durable in the database.
 
 ---
 
-NURAE V00.02.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.02.001-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

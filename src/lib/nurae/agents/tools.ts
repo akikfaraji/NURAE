@@ -35,6 +35,7 @@ import {
   serializeCapabilities,
   type BotCapabilities,
 } from '../bots/capabilities';
+import { botBehaviorsSchema, describeWhen, type BotBehaviorSpec } from '../bots/behavior';
 import {
   createUserBot,
   updateUserBot,
@@ -148,7 +149,7 @@ const botGet: ToolSpec = {
 const botCreateDraft: ToolSpec = {
   name: 'bot_create_draft',
   description:
-    'Create a bot draft for the current user (name, description, system prompt, optional commands/replies). ' +
+    'Create a bot draft for the current user (name, description, system prompt, optional behaviors). ' +
     'Returns the new bot id. The bot is NOT live until published with a Telegram token.',
   kind: 'write',
   schema: z
@@ -156,8 +157,7 @@ const botCreateDraft: ToolSpec = {
       name: z.string().min(1).max(100),
       description: z.string().max(2000).optional(),
       systemPrompt: z.string().min(1).max(LIMITS.systemPromptMax).optional(),
-      commands: z.array(z.record(z.string(), z.unknown())).max(20).optional(),
-      replies: z.array(z.record(z.string(), z.unknown())).max(30).optional(),
+      behaviors: z.array(z.record(z.string(), z.unknown())).max(40).optional(),
     })
     .strict(),
   async exec(ctx, args) {
@@ -213,11 +213,60 @@ const botUpdate: ToolSpec = {
   },
 };
 
+const botSetBehaviors: ToolSpec = {
+  name: 'bot_set_behaviors',
+  description:
+    'THE primary way to configure what a bot does. Describe bot behavior in plain language; NURAE compiles ' +
+    'commands, buttons, callbacks and flows automatically. Each behavior: { id (short slug), title, ' +
+    'when: {type: "start"} | {type: "command", command: "/menu"} | {type: "says", text: "price"} | ' +
+    '{type: "button"} (a press target) | {type: "anything_else"}, steps: [{type: "message", text, buttons?: ' +
+    '[{label, action: {kind: "message", text} | {kind: "link", url} | {kind: "flow", behaviorId} | ' +
+    '{kind: "ai", instruction?}]}] | [{type: "ai", instruction?}]}. Replaces the full behavior list; pass [] to clear. ' +
+    'A "flow" button action starts ANOTHER behavior by id — create that behavior in the same call.',
+  kind: 'write',
+  schema: z
+    .object({
+      botId: botIdSchema,
+      behaviors: z.array(z.record(z.string(), z.unknown())).max(40),
+    })
+    .strict(),
+  async exec(ctx, args) {
+    const { botId, behaviors } = args as { botId: string; behaviors: unknown };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    let list: BotBehaviorSpec[];
+    try {
+      list = botBehaviorsSchema.parse(Array.isArray(behaviors) ? behaviors : []);
+    } catch (err) {
+      return fail(
+        'Behaviors invalid',
+        err instanceof z.ZodError ? err.issues.map((i) => `${i.path.join('.')}: ${i.message}`) : String(err),
+      );
+    }
+    const result = await updateUserBot(ctx.userId, botId, { behaviors: list });
+    if (result.error || !result.bot) return fail('Behaviors rejected', result.fields ?? result.error);
+    const summary = list.map((b) => `${describeWhen(b.when)} → ${b.title}`).join('; ').slice(0, 500);
+    return {
+      label:
+        list.length === 0
+          ? `Cleared behaviors on "${owned.name}"`
+          : `Set ${list.length} behavior(s) on "${owned.name}"`,
+      detail: summary || undefined,
+      data: {
+        botId,
+        behaviors: list.length,
+        list: list.map((b) => ({ id: b.id, title: b.title, when: b.when.type })),
+      },
+    };
+  },
+};
+
 const botSetCommands: ToolSpec = {
   name: 'bot_set_commands',
   description:
-    'Set a bot\u2019s menu commands (Telegram /commands). Each: { command: "/name", description \u2264 64 chars, ' +
-    'kind: "static"|"ai", response }. Replaces the full list; pass [] to clear.',
+    'ADVANCED (prefer bot_set_behaviors). Set a bot\u2019s raw menu commands (Telegram /commands). Each: ' +
+    '{ command: "/name", description \u2264 64 chars, kind: "static"|"ai", response }. Replaces the full list; pass [] to clear. ' +
+    'A later bot_set_behaviors call recompiles these.',
   kind: 'write',
   schema: z
     .object({
@@ -257,10 +306,10 @@ const botSetCommands: ToolSpec = {
 const botSetReplies: ToolSpec = {
   name: 'bot_set_replies',
   description:
-    'Set a bot\u2019s response rules: buttons, keyword answers and mini-workflows. Each reply: ' +
-    '{ id, name, trigger: {type: "command"|"keyword"|"button"|"fallback", value?}, ' +
+    'ADVANCED (prefer bot_set_behaviors). Set raw response rules: buttons, keyword answers and mini-workflows. ' +
+    'Each reply: { id, name, trigger: {type: "command"|"keyword"|"button"|"fallback", value?}, ' +
     'messages: [{ text, buttons?: [[{ text, url?|callback? }]] }] }. Button callbacks must start with "r:". ' +
-    'Replaces the full list; pass [] to clear.',
+    'Replaces the full list; pass [] to clear. A later bot_set_behaviors call recompiles these.',
   kind: 'write',
   schema: z
     .object({
@@ -450,6 +499,7 @@ export const TOOLS: readonly ToolSpec[] = [
   botGet,
   botCreateDraft,
   botUpdate,
+  botSetBehaviors,
   botSetCommands,
   botSetReplies,
   botAddKnowledge,

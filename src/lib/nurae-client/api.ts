@@ -213,7 +213,37 @@ export interface BotReplySpecDTO {
   id: string;
   name: string;
   trigger: { type: 'command' | 'keyword' | 'button' | 'fallback'; value?: string };
-  messages: Array<{ text: string; buttons?: BotReplyButtonDTO[][] }>;
+  messages: Array<{ text: string; ai?: string; buttons?: BotReplyButtonDTO[][] }>;
+}
+
+// Behaviors — the intent-first source of truth (compiled into commands/replies)
+export type BehaviorButtonActionDTO =
+  | { kind: 'message'; text: string }
+  | { kind: 'link'; url: string }
+  | { kind: 'flow'; behaviorId: string }
+  | { kind: 'ai'; instruction?: string };
+
+export interface BehaviorButtonDTO {
+  label: string;
+  action: BehaviorButtonActionDTO;
+}
+
+export type BehaviorStepDTO =
+  | { type: 'message'; text: string; buttons?: BehaviorButtonDTO[] }
+  | { type: 'ai'; instruction?: string };
+
+export type BehaviorWhenDTO =
+  | { type: 'start' }
+  | { type: 'command'; command: string }
+  | { type: 'says'; text: string }
+  | { type: 'button' }
+  | { type: 'anything_else' };
+
+export interface BotBehaviorDTO {
+  id: string;
+  title: string;
+  when: BehaviorWhenDTO;
+  steps: BehaviorStepDTO[];
 }
 
 export interface UserBotDTO extends BotDTO {
@@ -221,6 +251,7 @@ export interface UserBotDTO extends BotDTO {
   archived: boolean;
   commands: BotCommandSpecDTO[];
   replies: BotReplySpecDTO[];
+  behaviors: BotBehaviorDTO[];
 }
 
 export interface SessionDTO {

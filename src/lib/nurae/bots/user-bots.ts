@@ -22,6 +22,13 @@ import {
   serializeCapabilities,
   type BotCapabilities,
 } from './capabilities';
+import {
+  BehaviorCompileError,
+  compileBehaviors,
+  loadBehaviors,
+  serializeBehaviors,
+  type BotBehaviorSpec,
+} from './behavior';
 import { createPrismaRuntimeStore, type RuntimeBotRecord } from '../runtime/store';
 import {
   handleBotMessage,
@@ -60,6 +67,7 @@ export interface UserBotDTO extends BotDTO {
   archived: boolean;
   commands: BotCapabilities['commands'];
   replies: BotCapabilities['replies'];
+  behaviors: BotBehaviorSpec[];
 }
 
 type BotRowFull = {
@@ -80,6 +88,7 @@ type BotRowFull = {
   memorySize: number;
   commandsJson: string | null;
   repliesJson: string | null;
+  behaviorsJson: string | null;
   archived: boolean;
   enabled: boolean;
   status: string;
@@ -98,6 +107,7 @@ export function toUserBotDTO(row: BotRowFull): UserBotDTO {
     archived: row.archived,
     commands: caps.commands,
     replies: caps.replies,
+    behaviors: loadBehaviors(row),
   };
 }
 
@@ -136,6 +146,7 @@ export interface CreateUserBotInput {
   baseUrl?: string;
   commands?: BotCapabilities['commands'];
   replies?: BotCapabilities['replies'];
+  behaviors?: BotBehaviorSpec[];
 }
 
 /**
@@ -170,14 +181,29 @@ export async function createUserBot(
   }
   const data = parsed.data;
   let caps: { commandsJson: string | null; repliesJson: string | null };
+  let behaviorsJson: string | null = null;
   try {
     caps = serializeCapabilities({
       commands: Array.isArray(raw.commands) ? (raw.commands as BotCapabilities['commands']) : undefined,
       replies: Array.isArray(raw.replies) ? (raw.replies as BotCapabilities['replies']) : undefined,
     });
+    // Behaviors are the source of truth: when present they compile into the
+    // executed configuration (replacing any commands/replies passed along).
+    if (Array.isArray(raw.behaviors) && raw.behaviors.length) {
+      const compiled = compileBehaviors(raw.behaviors as BotBehaviorSpec[]);
+      const merged = serializeCapabilities({
+        commands: [...compiled.commands, ...(Array.isArray(raw.commands) ? (raw.commands as BotCapabilities['commands']) : [])],
+        replies: compiled.replies,
+      });
+      caps = merged;
+      behaviorsJson = serializeBehaviors(raw.behaviors as BotBehaviorSpec[]);
+    }
   } catch (err) {
     if (err instanceof z.ZodError) {
       return { error: 'Validation failed', fields: formatZodError(err) };
+    }
+    if (err instanceof BehaviorCompileError) {
+      return { error: err.issues.join(' '), fields: { behaviors: err.issues.join(' ') } };
     }
     throw err;
   }
@@ -201,6 +227,7 @@ export async function createUserBot(
       memorySize: data.memorySize,
       commandsJson: caps.commandsJson,
       repliesJson: caps.repliesJson,
+      behaviorsJson,
     },
   });
   await db.log.create({
@@ -230,6 +257,7 @@ export interface UpdateUserBotInput {
   baseUrl?: string;
   commands?: BotCapabilities['commands'];
   replies?: BotCapabilities['replies'];
+  behaviors?: BotBehaviorSpec[];
 }
 
 export async function updateUserBot(
@@ -265,7 +293,28 @@ export async function updateUserBot(
   if (data.baseUrl !== undefined) patch.baseUrl = data.baseUrl || null;
 
   const capsInput = input as UpdateUserBotInput;
-  if (capsInput.commands || capsInput.replies) {
+  if (capsInput.behaviors !== undefined) {
+    // Behavior save = recompile the executed configuration from behaviors.
+    // Empty array clears behaviors AND the compiled artifacts they owned.
+    try {
+      const behaviors = capsInput.behaviors as BotBehaviorSpec[];
+      const compiled = behaviors.length ? compileBehaviors(behaviors) : { commands: [], replies: [] };
+      const caps = serializeCapabilities({ commands: compiled.commands, replies: compiled.replies });
+      patch.commandsJson = caps.commandsJson;
+      patch.repliesJson = caps.repliesJson;
+      patch.behaviorsJson = serializeBehaviors(behaviors);
+    } catch (err) {
+      if (err instanceof BehaviorCompileError) {
+        return { error: err.issues.join(' '), fields: { behaviors: err.issues.join(' ') } };
+      }
+      if (err instanceof z.ZodError) {
+        return { error: 'Validation failed', fields: formatZodError(err) };
+      }
+      throw err;
+    }
+  } else if (capsInput.commands || capsInput.replies) {
+    // Advanced/manual path: direct edits to the executed configuration.
+    // They stand until the next behavior save recompiles (stated in the UI).
     const caps = serializeCapabilities({ commands: capsInput.commands, replies: capsInput.replies });
     patch.commandsJson = caps.commandsJson;
     patch.repliesJson = caps.repliesJson;
