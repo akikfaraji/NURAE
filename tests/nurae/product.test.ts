@@ -26,7 +26,7 @@ const { NextResponse } = await import('next/server');
 
 const { serializeCapabilities, loadCapabilities } = await import('../../src/lib/nurae/bots/capabilities');
 const { executeTool, toolDescriptors } = await import('../../src/lib/nurae/agents/tools');
-const { runBotBuilderTurn, parseAgentReply, ensureAgentSession } = await import('../../src/lib/nurae/agents/bot-builder');
+const { runBotBuilderTurn, parseAgentReply, ensureAgentSession, addFileRefs } = await import('../../src/lib/nurae/agents/bot-builder');
 const {
   createSession,
   chatTurn,
@@ -336,6 +336,82 @@ describe('bot builder agent', () => {
     const result = await runBotBuilderTurn({ userId: attacker.id, sessionId, userText: 'let me in' });
     expect(result.error).toMatch(/not found/i);
   });
+
+  test('agent attachments join the session fileRefs and files_list sees chat-attached files', async () => {
+    await wirePlatformAI();
+    const { saveUserFile } = await import('../../src/lib/nurae/files');
+    const { executeTool } = await import('../../src/lib/nurae/agents/tools');
+    const owner = await makeUser();
+    const sessionId = await ensureAgentSession(owner.id, { agent: 'bot-builder' });
+
+    // A file uploaded in the ORIGINATING chat (different session id) travels
+    // with the handoff via state fileRefs…
+    const chatFile = await saveUserFile({
+      userId: owner.id,
+      sessionId: null,
+      name: 'chat-price-list.txt',
+      mime: 'text/plain',
+      bytes: Buffer.from('T-shirt 12$\nHoodie 24$'),
+    });
+    await addFileRefs(sessionId, [{ fileId: chatFile.id, name: chatFile.name }]);
+
+    // …and a file attached directly to the AGENT turn is merged into state too.
+    const agentFile = await saveUserFile({
+      userId: owner.id,
+      sessionId,
+      name: 'agent-notes.txt',
+      mime: 'text/plain',
+      bytes: Buffer.from('Free shipping over 50$'),
+    });
+    telegramState.aiResponses.push(JSON.stringify({ message: 'Noted.', actions: [], done: true }));
+    const result = await runBotBuilderTurn({
+      userId: owner.id,
+      sessionId,
+      userText: 'Use my price list',
+      attachmentIds: [agentFile.id],
+    });
+    expect(result.error).toBeUndefined();
+
+    const session = await db.chatSession.findUnique({ where: { id: sessionId } });
+    const state = JSON.parse(session!.state ?? '{}') as { fileRefs?: Array<{ name: string }> };
+    expect(state.fileRefs?.map((f) => f.name)).toContain('chat-price-list.txt');
+    expect(state.fileRefs?.map((f) => f.name)).toContain('agent-notes.txt');
+
+    // files_list (the agent's door to files) sees BOTH — audited via AgentStep.
+    const listed = await executeTool({ userId: owner.id, sessionId }, 'files_list', {}, 1);
+    expect(listed.status).toBe('ok');
+    const stepRow = await db.agentStep.findFirst({ where: { sessionId, seq: 1 }, orderBy: { seq: 'desc' } });
+    expect(stepRow).toBeTruthy();
+    const data = JSON.parse(stepRow!.resultJson ?? '[]') as Array<{ id: string }>;
+    expect(data.map((f) => f.id)).toContain(chatFile.id);
+    expect(data.map((f) => f.id)).toContain(agentFile.id);
+
+    // Foreign attachment ids are dropped silently (chat rule, same here).
+    const attacker = await makeUser();
+    const foreign = await saveUserFile({
+      userId: attacker.id,
+      sessionId: null,
+      name: 'foreign.txt',
+      mime: 'text/plain',
+      bytes: Buffer.from('nope'),
+    });
+    telegramState.aiResponses.push(JSON.stringify({ message: 'Ok.', actions: [], done: true }));
+    await runBotBuilderTurn({ userId: owner.id, sessionId, userText: 'again', attachmentIds: [foreign.id] });
+    const sessionAfter = await db.chatSession.findUnique({ where: { id: sessionId } });
+    const stateAfter = JSON.parse(sessionAfter!.state ?? '{}') as { fileRefs?: Array<{ name: string }> };
+    expect(stateAfter.fileRefs?.map((f) => f.name)).not.toContain('foreign.txt');
+  });
+
+  test('approval-only turn writes no empty user entry', async () => {
+    await wirePlatformAI();
+    const owner = await makeUser();
+    const sessionId = await ensureAgentSession(owner.id, { agent: 'bot-builder' });
+    telegramState.aiResponses.push(JSON.stringify({ message: 'Published where approved.', actions: [], done: true }));
+    const result = await runBotBuilderTurn({ userId: owner.id, sessionId, userText: '', userConfirmed: true });
+    expect(result.error).toBeUndefined();
+    const userEntries = await db.chatEntry.findMany({ where: { sessionId, role: 'user' } });
+    expect(userEntries).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -398,17 +474,51 @@ describe('chat sessions', () => {
     expect(r.handoff?.agent).toBe('bot-builder');
     expect(r.handoff!.sessionId).toBeTruthy();
 
-    // The agent session received the task AND the file reference.
+    // The agent session received the task ONCE (as the first user entry —
+    // no duplicate system copy) and the file reference travels in state.
     const agentSession = await db.chatSession.findUnique({ where: { id: r.handoff!.sessionId } });
     expect(agentSession?.kind).toBe('agent');
     const agentEntries = await db.chatEntry.findMany({ where: { sessionId: agentSession!.id } });
-    const systemEntry = agentEntries.find((e) => e.role === 'system');
-    expect(systemEntry?.content).toContain('menu.txt');
+    const systemEntries = agentEntries.filter((e) => e.role === 'system');
+    expect(systemEntries).toHaveLength(0);
+    const userEntries = agentEntries.filter((e) => e.role === 'user');
+    expect(userEntries).toHaveLength(1);
+    expect(userEntries[0].content).toContain('Make me a Telegram bot');
+    const agentState = JSON.parse(agentSession!.state ?? '{}') as { fileRefs?: Array<{ name: string }> };
+    expect(agentState.fileRefs?.some((f) => f.name === 'menu.txt')).toBe(true);
 
     // The chat shows the reply + a handoff card.
     const loaded = await getSessionWithEntries(owner.id, s.id);
     const assistant = loaded!.entries.find((e) => e.role === 'assistant');
     expect(assistant?.handoff?.sessionId).toBe(r.handoff!.sessionId);
+  });
+
+  test('a second handoff CONTINUES the existing agent session', async () => {
+    await wirePlatformAI();
+    const owner = await makeUser();
+    const s = await createSession(owner.id, {});
+    // First handoff creates the session; the agent loop answers and stops.
+    telegramState.aiResponses.push(
+      'Let me take that on.\n{"handoff":"bot-builder","task":"Build a restaurant bot"}',
+    );
+    telegramState.aiResponses.push(
+      JSON.stringify({ message: 'Drafted.', actions: [], done: true }),
+    );
+    const first = await chatTurn({ userId: owner.id, sessionId: s.id, text: 'Build me a restaurant bot' });
+    expect(first.handoff?.sessionId).toBeTruthy();
+
+    // Second handoff: same user, later request → the SAME agent session is
+    // continued (no parallel workspace, no forked draft state).
+    telegramState.aiResponses.push(
+      'On it.\n{"handoff":"bot-builder","task":"Add a contact button"}',
+    );
+    telegramState.aiResponses.push(
+      JSON.stringify({ message: 'Added.', actions: [], done: true }),
+    );
+    const second = await chatTurn({ userId: owner.id, sessionId: s.id, text: 'Add a contact button' });
+    expect(second.handoff?.sessionId).toBe(first.handoff!.sessionId);
+    const turns = await db.chatEntry.findMany({ where: { sessionId: first.handoff!.sessionId, role: 'user' } });
+    expect(turns.map((t) => t.content)).toContain('Add a contact button');
   });
 
   test('attachment ids from another user are silently dropped', async () => {

@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
+import { SessionList } from '@/components/nurae/session-list';
 import {
   ApiError,
   EntryDTO,
@@ -27,13 +28,6 @@ import {
   nuraeApi,
 } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 
 const ACCEPTED_FILES = '.pdf,.md,.markdown,.txt,.csv,.docx,.json,.log,.png,.jpg,.jpeg,.gif,.webp,.svg';
 
@@ -119,8 +113,9 @@ export function ChatsView() {
     setError(null);
     setDraft('');
     const attachmentIds = attachments.map((a) => a.id);
+    const localId = `local-${Date.now()}`;
     const optimistic: EntryDTO = {
-      id: `local-${Date.now()}`,
+      id: localId,
       role: 'user',
       content: text,
       attachments: attachments.map((a) => ({ fileId: a.id, name: a.name, kind: a.kind })),
@@ -152,6 +147,9 @@ export function ChatsView() {
       ]);
       void refreshSessions();
     } catch (err) {
+      // The optimistic user entry was never persisted — remove it so the view
+      // matches the server (same rule as the agent view).
+      setEntries((e) => e.filter((x) => x.id !== localId));
       setError(err instanceof Error ? err.message : 'The assistant could not reply.');
     } finally {
       setSending(false);
@@ -277,6 +275,7 @@ export function ChatsView() {
           <SessionList
             sessions={sessions}
             activeId={activeId}
+            emptyText="No conversations yet. Start one — it stays here."
             onOpen={openSession}
             onRename={renameSession}
             onDelete={deleteSession}
@@ -307,6 +306,7 @@ export function ChatsView() {
               <SessionList
                 sessions={sessions}
                 activeId={activeId}
+                emptyText="No conversations yet. Start one — it stays here."
                 onOpen={openSession}
                 onRename={renameSession}
                 onDelete={deleteSession}
@@ -439,112 +439,6 @@ export function ChatsView() {
         </main>
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar list
-// ---------------------------------------------------------------------------
-
-function SessionList({
-  sessions,
-  activeId,
-  onOpen,
-  onRename,
-  onDelete,
-  onArchive,
-}: {
-  sessions: SessionDTO[];
-  activeId: string | null;
-  onOpen: (id: string) => void;
-  onRename: (id: string, title: string) => void;
-  onDelete: (id: string) => void;
-  onArchive: (id: string) => void;
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-
-  if (!sessions.length) {
-    return (
-      <div className="px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-        No conversations yet. Start one — it stays here.
-      </div>
-    );
-  }
-
-  return (
-    <nav className="min-h-0 flex-1 overflow-y-auto pb-4" aria-label="Conversations">
-      {sessions.map((s) => (
-        <div
-          key={s.id}
-          className={
-            'group flex items-center gap-1 px-2 ' +
-            (s.id === activeId ? 'bg-muted/70' : 'hover:bg-muted/40')
-          }
-        >
-          {editingId === s.id ? (
-            <form
-              className="flex-1 py-1.5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                onRename(s.id, editingTitle.trim() || s.title);
-                setEditingId(null);
-              }}
-            >
-              <Input
-                autoFocus
-                value={editingTitle}
-                onChange={(e) => setEditingTitle(e.target.value)}
-                onBlur={() => setEditingId(null)}
-                className="h-7 text-xs"
-                maxLength={60}
-              />
-            </form>
-          ) : (
-            <button type="button" onClick={() => onOpen(s.id)} className="min-w-0 flex-1 py-2 text-left">
-              <span className="block truncate text-xs text-foreground">{s.title}</span>
-              {s.preview && <span className="block truncate text-[11px] text-muted-foreground/70">{s.preview}</span>}
-            </button>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`Actions for ${s.title}`}
-              className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:!text-foreground data-[state=open]:text-foreground"
-            >
-              ⋯
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-40">
-              <DropdownMenuItem
-                className="text-xs"
-                onClick={() => {
-                  setEditingId(s.id);
-                  setEditingTitle(s.title);
-                }}
-              >
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-xs" onClick={() => onArchive(s.id)}>
-                Archive
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-xs text-destructive focus:text-destructive"
-                onClick={() => {
-                  if (confirmingId === s.id) {
-                    onDelete(s.id);
-                  } else {
-                    setConfirmingId(s.id);
-                    setTimeout(() => setConfirmingId((c) => (c === s.id ? null : c)), 3000);
-                  }
-                }}
-              >
-                {confirmingId === s.id ? 'Really delete?' : 'Delete'}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ))}
-    </nav>
   );
 }
 

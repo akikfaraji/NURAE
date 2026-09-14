@@ -434,7 +434,7 @@ const botUnpublish: ToolSpec = {
 const filesList: ToolSpec = {
   name: 'files_list',
   description:
-    'List files the user attached in this session (name, kind, whether text was extractable). Read-only.',
+    'List files available for this task: everything the user attached in this agent session AND files attached in the chat that started it (name, kind, fileId — read them with files_read). Read-only.',
   kind: 'read',
   schema: z.object({}).strict(),
   async exec(ctx) {
@@ -443,7 +443,29 @@ const filesList: ToolSpec = {
       orderBy: { createdAt: 'desc' },
       select: { id: true, name: true, kind: true, status: true, size: true },
     });
-    return { label: `Listed ${rows.length} file(s)`, data: rows };
+    // Files attached in the ORIGINATING chat travel with the handoff (session
+    // state fileRefs). They are stored against the chat session id, so the
+    // plain sessionId query cannot see them — union them in, still
+    // ownership-checked by files_read and the state itself.
+    const session = await db.chatSession.findUnique({
+      where: { id: ctx.sessionId },
+      select: { state: true },
+    });
+    let refs: Array<{ fileId: string; name: string }> = [];
+    if (session?.state) {
+      try {
+        const parsed = JSON.parse(session.state) as { fileRefs?: Array<{ fileId: string; name: string }> };
+        refs = Array.isArray(parsed.fileRefs) ? parsed.fileRefs.slice(0, 8) : [];
+      } catch {
+        /* corrupt state → no extras */
+      }
+    }
+    const seen = new Set(rows.map((r) => r.id));
+    const extras = refs
+      .filter((r) => !seen.has(r.fileId))
+      .map((r) => ({ id: r.fileId, name: r.name, kind: 'chat attachment', status: 'ready', size: null }));
+    const all = [...rows, ...extras];
+    return { label: `Listed ${all.length} file(s)`, data: all };
   },
 };
 

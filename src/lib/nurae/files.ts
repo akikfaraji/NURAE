@@ -18,6 +18,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { inflateSync, inflateRawSync } from 'node:zlib';
 import path from 'node:path';
+import { appRoot } from '@/lib/paths';
 import { db } from '@/lib/db';
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -256,7 +257,10 @@ export function extractDocxText(buf: Buffer): string {
 // ---------------------------------------------------------------------------
 
 function uploadsDir(): string {
-  return path.join(process.cwd(), 'db', 'uploads');
+  // Project-root anchored — the standalone production server chdirs into
+  // .next/standalone; a bare cwd path would fork uploads onto the build
+  // output (lost on every rebuild). See src/lib/paths.ts.
+  return path.join(appRoot(), 'db', 'uploads');
 }
 
 export interface SaveFileInput {

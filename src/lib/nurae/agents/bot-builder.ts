@@ -20,7 +20,11 @@ import { getOfficialBot } from '../auth/official-bot';
 import { selectProvider } from '../ai/registry';
 import type { ChatMessage } from '../ai/types';
 import { sanitizeForLog, truncateForLog } from '../sanitize';
+import { rateLimit } from '../auth/rate-limit';
 import { executeTool, toolDescriptors, type ExecRecord, type ToolContext } from './tools';
+
+const TURN_LIMIT = 20; // agent turns per minute per user — same budget as chat
+const TURN_WINDOW_MS = 60 * 1000;
 
 const MAX_ROUNDS = 3; // model rounds per user turn
 const MAX_ACTIONS_PER_ROUND = 6;
@@ -34,6 +38,8 @@ export interface AgentState {
   draftBotId?: string | null;
   pendingApproval?: { tool: string; botId: string } | null;
   lastSummary?: string | null;
+  /** Files attached in the ORIGINATING chat (handoff) or this agent session. */
+  fileRefs?: Array<{ fileId: string; name: string }>;
 }
 
 export function parseAgentState(raw: string | null): AgentState {
@@ -61,6 +67,13 @@ function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
 
   const stateLines: string[] = [];
   if (state.draftBotId) stateLines.push(`Current draft bot id: ${state.draftBotId}`);
+  if (state.fileRefs?.length) {
+    stateLines.push(
+      `Files the user attached for this task (read with files_read): ${state.fileRefs
+        .map((f) => `${f.name} (fileId: ${f.fileId})`)
+        .join(', ')}`,
+    );
+  }
   if (state.pendingApproval) {
     stateLines.push(
       `Pending approval: tool "${state.pendingApproval.tool}" on bot ${state.pendingApproval.botId}.` +
@@ -166,6 +179,8 @@ export interface AgentTurnInput {
   userText: string;
   /** True when the user clicked the explicit approval control this turn. */
   userConfirmed?: boolean;
+  /** File ids attached THIS turn (ownership-checked, same rule as chat). */
+  attachmentIds?: string[];
 }
 
 export interface AgentActivity {
@@ -200,6 +215,17 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
   }
   const state = parseAgentState(session.state);
 
+  // Same turn budget as chat — one shared politeness layer.
+  const rl = rateLimit(`agent-turn:${input.userId}`, TURN_LIMIT, TURN_WINDOW_MS);
+  if (!rl.allowed) {
+    return {
+      reply: '',
+      activity: [],
+      needsConfirm: false,
+      error: `Too fast — try again in ${rl.retryAfter}s.`,
+    };
+  }
+
   const platformBot = await getOfficialBot();
   if (!platformBot) {
     return {
@@ -228,14 +254,41 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
     };
   }
 
-  // Persist the user turn.
-  await db.chatEntry.create({
-    data: {
-      sessionId: session.id,
-      role: 'user',
-      content: input.userText.slice(0, 8000),
-    },
-  });
+  // Persist the user turn — but never an EMPTY one. Approval-only turns
+  // ("Approve & publish" sends no text) would otherwise write a blank user
+  // entry that renders as an empty bubble and pollutes model history; the
+  // model already learns about the approval through the system prompt.
+  const trimmedText = input.userText.trim().slice(0, 8000);
+
+  // Resolve attachments with ownership checks (the chat rule, unchanged).
+  const attachments: Array<{ fileId: string; name: string; kind: string }> = [];
+  for (const fileId of (input.attachmentIds ?? []).slice(0, 5)) {
+    const row = await db.userFile.findFirst({
+      where: { id: fileId, userId: input.userId },
+      select: { id: true, name: true, kind: true },
+    });
+    if (row) attachments.push({ fileId: row.id, name: row.name, kind: row.kind });
+  }
+  if (attachments.length) {
+    // Attachments join the session's fileRefs so files_list and the system
+    // prompt surface them on THIS and every later turn.
+    await addFileRefs(session.id, attachments.map((a) => ({ fileId: a.fileId, name: a.name })));
+    // Re-read so the final state write below preserves the merged refs.
+    const refreshed = await db.chatSession.findUnique({ where: { id: session.id }, select: { state: true } });
+    const merged = parseAgentState(refreshed?.state ?? null);
+    if (merged.fileRefs) state.fileRefs = merged.fileRefs;
+  }
+
+  if (trimmedText || attachments.length) {
+    await db.chatEntry.create({
+      data: {
+        sessionId: session.id,
+        role: 'user',
+        content: trimmedText,
+        meta: attachments.length ? JSON.stringify({ attachments }) : null,
+      },
+    });
+  }
 
   // Recent history for continuity.
   const historyRows = await db.chatEntry.findMany({
@@ -354,6 +407,7 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
     draftBotId,
     pendingApproval: needsConfirm ? pendingApproval : null,
     lastSummary: finalMessage.slice(0, 500) || null,
+    fileRefs: state.fileRefs ?? [],
   };
   await db.chatSession.update({
     where: { id: session.id },
@@ -386,6 +440,14 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
 // Session bootstrap (used by the handoff flow and the /chats/agents UI)
 // ---------------------------------------------------------------------------
 
+/**
+ * Create an agent session. The task itself is NOT written here — the caller
+ * passes it to runBotBuilderTurn, which persists it as the session's first
+ * USER entry (one visible task message, exactly like the chat flow; a second
+ * system copy used to render the task twice and hid the file note from the
+ * model). File references travel in session state and reach the model via
+ * the system prompt.
+ */
 export async function ensureAgentSession(
   userId: string,
   opts: { agent: 'bot-builder'; title?: string; task?: string; fileRefs?: Array<{ fileId: string; name: string }> },
@@ -401,17 +463,44 @@ export async function ensureAgentSession(
       } satisfies AgentState & { fileRefs?: unknown }),
     },
   });
-  if (opts.task) {
-    const fileNote = opts.fileRefs?.length
-      ? `\n\nAttached files (use files_list/files_read): ${opts.fileRefs.map((f) => f.name).join(', ')}`
-      : '';
-    await db.chatEntry.create({
-      data: {
-        sessionId: session.id,
-        role: 'system',
-        content: `TASK from the user's chat: ${opts.task}${fileNote}`,
-      },
-    });
-  }
   return session.id;
+}
+
+/**
+ * The user's most recent active agent session (for handoff CONTINUATION).
+ * Building is one ongoing workspace per user, not a new thread per request:
+ * when the chat hands over a new task within 7 days of the last build, it
+ * continues the existing agent session so the draft-bot state, file refs and
+ * conversation memory stay in one place.
+ */
+export async function latestActiveAgentSession(userId: string): Promise<string | null> {
+  const row = await db.chatSession.findFirst({
+    where: {
+      userId,
+      kind: 'agent',
+      agent: 'bot-builder',
+      status: 'active',
+      updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+    },
+    orderBy: { lastMessageAt: 'desc' },
+    select: { id: true },
+  });
+  return row?.id ?? null;
+}
+
+/** Merge file references into an agent session's state (idempotent). */
+export async function addFileRefs(sessionId: string, refs: Array<{ fileId: string; name: string }>): Promise<void> {
+  const session = await db.chatSession.findUnique({ where: { id: sessionId }, select: { state: true } });
+  if (!session) return;
+  const state = parseAgentState(session.state);
+  const existing = new Set((state.fileRefs ?? []).map((f) => f.fileId));
+  const merged = [...(state.fileRefs ?? [])];
+  for (const ref of refs) {
+    if (!existing.has(ref.fileId)) {
+      merged.push(ref);
+      existing.add(ref.fileId);
+    }
+  }
+  state.fileRefs = merged.slice(0, 8);
+  await db.chatSession.update({ where: { id: sessionId }, data: { state: JSON.stringify(state) } });
 }

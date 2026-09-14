@@ -3,9 +3,10 @@
 /**
  * NURAE — /chats/agents: where NURAE agents DO work.
  *
- * Not another chatbot page: each agent session is a workspace thread with
- * durable task state. The Bot Builder agent is the first real agent; the
- * registry grows only when new agents actually ship (no fake placeholders).
+ * The agent workspace mirrors the chat workflow one-to-one (same sidebar
+ * actions, same attachments, same optimistic sends, same Enter/Shift+Enter
+ * composer) — the only difference is that turns here DO work through the
+ * audited tool layer and show a live activity feed.
  *
  * The activity feed shows tool work as understandable progress
  * (✓ Created bot …) — sourced from the AgentStep audit trail, not logs.
@@ -17,8 +18,11 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
-import { ActivityStepDTO, ApiError, EntryDTO, SessionDTO, nuraeApi } from '@/lib/nurae-client/api';
+import { SessionList } from '@/components/nurae/session-list';
+import { ActivityStepDTO, ApiError, EntryDTO, FileDTO, SessionDTO, nuraeApi } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
+
+const ACCEPTED_FILES = '.pdf,.md,.markdown,.txt,.csv,.docx,.json,.log,.png,.jpg,.jpeg,.gif,.webp,.svg';
 
 export function AgentsView() {
   const { user, checked, signOut } = useSiteUser();
@@ -34,12 +38,16 @@ export function AgentsView() {
   const [needsConfirm, setNeedsConfirm] = useState(false);
   const [draftBotId, setDraftBotId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [attachments, setAttachments] = useState<FileDTO[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taskSentRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -65,6 +73,7 @@ export function AgentsView() {
         return;
       }
       setEntries(r.entries);
+      setAttachments([]);
       const lastAssistant = [...r.entries].reverse().find((e) => e.role === 'assistant');
       setNeedsConfirm(Boolean(lastAssistant?.needsConfirm));
       setDraftBotId(lastAssistant?.draftBotId ?? null);
@@ -93,27 +102,62 @@ export function AgentsView() {
     scrollDown(!busy);
   }, [entries, pendingSteps, busy, scrollDown]);
 
-  const createAndRun = async (task: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const { session } = await nuraeApi.createAgentSession(task.slice(0, 60) || 'Bot build');
-      setActiveId(session.id);
-      setEntries([]);
-      router.replace(`/chats/agents?session=${session.id}`);
-      await runTurn(session.id, task, false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start the agent.');
-      setBusy(false);
-    }
+  const openSession = (id: string | null) => {
+    setDrawerOpen(false);
+    router.push(id ? `/chats/agents?session=${id}` : '/chats/agents');
   };
 
-  const runTurn = async (sessionId: string, text: string, approve: boolean) => {
+  const renameSession = async (id: string, title: string) => {
+    setSessions((s) => s.map((x) => (x.id === id ? { ...x, title } : x)));
+    await nuraeApi.patchSession(id, { title }).catch(() => undefined);
+  };
+
+  const deleteSession = async (id: string) => {
+    setSessions((s) => s.filter((x) => x.id !== id));
+    if (id === activeId) openSession(null);
+    await nuraeApi.deleteSession(id).catch(() => undefined);
+  };
+
+  const archiveSession = async (id: string) => {
+    setSessions((s) => s.filter((x) => x.id !== id));
+    if (id === activeId) openSession(null);
+    await nuraeApi.patchSession(id, { status: 'archived' }).catch(() => undefined);
+  };
+
+  /** Optimistic user entry — skipped when the same task is already on screen
+   * (e.g. the handoff already persisted it server-side). */
+  const optimisticUser = (text: string) => {
+    setEntries((e) => {
+      const last = e[e.length - 1];
+      if (last && last.role === 'user' && last.content === text) return e;
+      return [
+        ...e,
+        {
+          id: `local-${Date.now()}`,
+          role: 'user',
+          content: text,
+          attachments: attachments.map((a) => ({ fileId: a.id, name: a.name, kind: a.kind })),
+          activity: [],
+          needsConfirm: false,
+          draftBotId: null,
+          handoff: null,
+          createdAt: new Date().toISOString(),
+        } satisfies EntryDTO,
+      ];
+    });
+  };
+
+  const runTurn = async (sessionId: string, text: string, approve: boolean, attachmentIds?: string[]) => {
     setBusy(true);
     setError(null);
     setPendingSteps([]);
+    const localId = `local-${Date.now()}`;
+    if (text || (attachmentIds ?? []).length) {
+      optimisticUser(text);
+      setAttachments([]);
+    }
     try {
-      const r = await nuraeApi.sendAgentMessage(sessionId, text, approve);
+      const r = await nuraeApi.sendAgentMessage(sessionId, text, approve, attachmentIds);
       // Show the activity feed with a small stagger for readability.
       for (const step of r.activity) {
         setPendingSteps((s) => [...s, step]);
@@ -121,19 +165,6 @@ export function AgentsView() {
       }
       setEntries((e) => [
         ...e,
-        ...(text
-          ? [{
-              id: `local-${Date.now()}`,
-              role: 'user',
-              content: text,
-              attachments: [],
-              activity: [],
-              needsConfirm: false,
-              draftBotId: null,
-              handoff: null,
-              createdAt: new Date().toISOString(),
-            } satisfies EntryDTO]
-          : []),
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
@@ -144,27 +175,51 @@ export function AgentsView() {
           draftBotId: r.draftBotId,
           handoff: null,
           createdAt: new Date().toISOString(),
-        },
+        } satisfies EntryDTO,
       ]);
       setPendingSteps([]);
       setNeedsConfirm(r.needsConfirm);
       setDraftBotId(r.draftBotId);
       void refreshSessions();
     } catch (err) {
+      // The optimistic user entry was never persisted — remove it (same rule
+      // as chat) and surface the error.
+      setEntries((e) => e.filter((x) => x.id !== localId));
       setError(err instanceof Error ? err.message : 'The agent could not continue.');
     } finally {
+      setBusy(false);
+      textareaRef.current?.focus();
+    }
+  };
+
+  const createAndRun = async (task: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { session } = await nuraeApi.createAgentSession(task.slice(0, 60) || 'Bot build');
+      setActiveId(session.id);
+      setEntries([]);
+      router.replace(`/chats/agents?session=${session.id}`);
+      // The sidebar must show the new build even when the first turn fails.
+      void refreshSessions();
+      await runTurn(session.id, task, false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start the agent.');
       setBusy(false);
     }
   };
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || busy || !activeId) return;
+    if ((!text && attachments.length === 0) || busy || !activeId) return;
+    const attachmentIds = attachments.map((a) => a.id);
     setDraft('');
-    await runTurn(activeId, text, false);
+    await runTurn(activeId, text, false, attachmentIds.length ? attachmentIds : undefined);
   };
 
-  // Deep link from the chat handoff: ?session=<new>&task=<text>
+  // Deep link from the chat handoff or the bot form: ?session=<id> — the
+  // server already ran the first turn before navigating here, so just load it.
+  // ?task=<text> without a session starts a fresh build with that task.
   useEffect(() => {
     if (!user || taskSentRef.current) return;
     const task = taskParam?.trim();
@@ -172,14 +227,30 @@ export function AgentsView() {
     taskSentRef.current = true;
     (async () => {
       if (sessionParam) {
-        // Session pre-seeded server-side: run the first turn with the task.
+        // Server already ran turn 1 — open the session.
         setActiveId(sessionParam);
-        await runTurn(sessionParam, task, false);
       } else {
         await createAndRun(task);
       }
     })();
   }, [user, taskParam, sessionParam]);
+
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files?.length || !activeId) return;
+    setUploading(true);
+    setError(null);
+    try {
+      for (const file of Array.from(files).slice(0, 5)) {
+        const r = await nuraeApi.uploadFile(file, activeId);
+        setAttachments((a) => [...a, r.file]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   if (!checked) return <SiteSplash />;
 
@@ -210,42 +281,21 @@ export function AgentsView() {
           <div className="p-3">
             <button
               type="button"
-              onClick={() => {
-                setActiveId(null);
-                router.push('/chats/agents');
-              }}
+              onClick={() => openSession(null)}
               className="w-full border border-border px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
             >
               + New build
             </button>
           </div>
-          <nav className="min-h-0 flex-1 overflow-y-auto pb-4" aria-label="Agent sessions">
-            {!sessions.length && (
-              <p className="px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-                No builds yet. Describe what to build and the agent does the work.
-              </p>
-            )}
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => {
-                  setActiveId(s.id);
-                  setDrawerOpen(false);
-                  router.push(`/chats/agents?session=${s.id}`);
-                }}
-                className={
-                  'block w-full px-3 py-2 text-left ' +
-                  (s.id === activeId ? 'bg-muted/70' : 'hover:bg-muted/40')
-                }
-              >
-                <span className="block truncate text-xs text-foreground">{s.title}</span>
-                <span className="block text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                  {s.agent ?? 'agent'}
-                </span>
-              </button>
-            ))}
-          </nav>
+          <SessionList
+            sessions={sessions}
+            activeId={activeId}
+            emptyText="No builds yet. Describe what to build and the agent does the work."
+            onOpen={(id) => { setActiveId(id); openSession(id); }}
+            onRename={renameSession}
+            onDelete={deleteSession}
+            onArchive={archiveSession}
+          />
         </aside>
 
         {/* Main */}
@@ -253,48 +303,40 @@ export function AgentsView() {
           {drawerOpen && (
             <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true">
               <div className="absolute inset-0 bg-black/60" onClick={() => setDrawerOpen(false)} />
-              <div className="absolute inset-y-0 left-0 w-72 border-r border-border bg-background p-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveId(null);
-                    setDrawerOpen(false);
-                    router.push('/chats/agents');
-                  }}
-                  className="mb-2 w-full border border-border px-3 py-1.5 text-left text-xs"
-                >
-                  + New build
-                </button>
-                {sessions.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveId(s.id);
-                      setDrawerOpen(false);
-                      router.push(`/chats/agents?session=${s.id}`);
-                    }}
-                    className={'block w-full px-2 py-2 text-left text-xs ' + (s.id === activeId ? 'bg-muted/70' : '')}
-                  >
-                    {s.title}
+              <div className="absolute inset-y-0 left-0 flex w-72 flex-col border-r border-border bg-background">
+                <div className="flex items-center justify-between p-3">
+                  <span className="text-xs uppercase tracking-widest text-muted-foreground">Builds</span>
+                  <button type="button" onClick={() => setDrawerOpen(false)} className="text-xs text-muted-foreground hover:text-foreground">
+                    Close
                   </button>
-                ))}
+                </div>
+                <div className="px-3 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => openSession(null)}
+                    className="w-full border border-border px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60"
+                  >
+                    + New build
+                  </button>
+                </div>
+                <SessionList
+                  sessions={sessions}
+                  activeId={activeId}
+                  emptyText="No builds yet."
+                  onOpen={(id) => { setActiveId(id); openSession(id); }}
+                  onRename={renameSession}
+                  onDelete={deleteSession}
+                  onArchive={archiveSession}
+                />
               </div>
             </div>
           )}
 
           {!activeId ? (
-            <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24">
-              <h1 className="text-lg font-medium text-foreground">Bot Builder</h1>
-              <p className="mt-2 max-w-sm text-center text-sm leading-relaxed text-muted-foreground">
-                Describe the Telegram bot you want. The agent creates the configuration,
-                adds commands and buttons, attaches knowledge from your files — and asks
-                before anything goes live.
-              </p>
-              <Link href="/bots/new?ai=1" className="mt-6 inline-flex">
-                <Button size="sm" variant="outline">Describe a bot →</Button>
-              </Link>
-            </div>
+            <EmptyAgent
+              busy={busy}
+              onPick={(text) => void createAndRun(text)}
+            />
           ) : (
             <>
               <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 sm:px-6">
@@ -357,8 +399,44 @@ export function AgentsView() {
                       </div>
                     </div>
                   )}
+                  {attachments.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {attachments.map((a) => (
+                        <span key={a.id} className="inline-flex items-center gap-1.5 border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {a.name}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${a.name}`}
+                            onClick={() => setAttachments((x) => x.filter((y) => y.id !== a.id))}
+                            className="hover:text-foreground"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex items-end gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept={ACCEPTED_FILES}
+                      className="hidden"
+                      onChange={(e) => void uploadFiles(e.target.files)}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Attach files"
+                      title="Attach files (price lists, menus, docs…)"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                    >
+                      {uploading ? <span className="animate-pulse">…</span> : '+'}
+                    </button>
                     <textarea
+                      ref={textareaRef}
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -380,12 +458,15 @@ export function AgentsView() {
                     <button
                       type="button"
                       onClick={() => void send()}
-                      disabled={busy || !draft.trim()}
+                      disabled={busy || (!draft.trim() && attachments.length === 0)}
                       className="flex h-9 shrink-0 items-center border border-border px-3 text-xs text-foreground hover:bg-muted/60 disabled:opacity-40"
                     >
                       {busy ? '…' : 'Send'}
                     </button>
                   </div>
+                  <p className="mt-1.5 hidden text-[10px] text-muted-foreground/70 sm:block">
+                    Enter sends · Shift+Enter breaks the line · files you attach travel with the task
+                  </p>
                 </div>
               </div>
             </>
@@ -396,10 +477,59 @@ export function AgentsView() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Empty state — same shape as the chat empty state: pick a task, it starts.
+// ---------------------------------------------------------------------------
+
+function EmptyAgent({ onPick, busy }: { onPick: (text: string) => void; busy: boolean }) {
+  const examples = [
+    'Make a customer support bot for my store.',
+    'Build a restaurant bot with a welcome flow and an order flow.',
+    'Add a Contact button that shows our support channels.',
+  ];
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24">
+      <h1 className="text-lg font-medium text-foreground">Bot Builder</h1>
+      <p className="mt-2 max-w-sm text-center text-sm leading-relaxed text-muted-foreground">
+        Describe the Telegram bot you want — the agent builds it, and you approve
+        anything before it goes live. Files you attach travel with the task.
+      </p>
+      <div className="mt-8 w-full max-w-md space-y-px">
+        {examples.map((t) => (
+          <button
+            key={t}
+            type="button"
+            disabled={busy}
+            onClick={() => onPick(t)}
+            className="block w-full border border-border/60 px-3 py-2 text-left text-xs text-muted-foreground transition-colors first:border-t hover:border-border hover:text-foreground disabled:opacity-50"
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      <Link href="/bots/new?ai=1" className="mt-4 inline-flex">
+        <Button size="sm" variant="outline">Describe a bot →</Button>
+      </Link>
+      <p className="mt-6 text-[11px] text-muted-foreground/70">
+        The agent works inside your account — every step is audited and reversible.
+      </p>
+    </div>
+  );
+}
+
 function AgentMessage({ entry }: { entry: EntryDTO }) {
   if (entry.role === 'user') {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1">
+        {entry.attachments.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {entry.attachments.map((a) => (
+              <span key={a.fileId} className="border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                {a.name}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="max-w-[85%] whitespace-pre-wrap bg-muted/70 px-3.5 py-2 text-sm leading-relaxed text-foreground">
           {entry.content}
         </div>

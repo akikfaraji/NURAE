@@ -133,12 +133,19 @@ npm run dev        # http://localhost:3000, hot reload
 ### Production standalone (what you will serve on a real server)
 
 ```bash
-npm run build      # compiles .next/standalone (the heavy step)
-npm run start      # serves it; honors PORT / HOSTNAME from .env
+npm run build      # compiles .next/standalone (the heavy step) and strips live data from it
+npm run start      # launcher: loads .env, pins the data root, then serves; honors PORT / HOSTNAME
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.02.001-beta-03",...}`
+`{"status":"ok","version":"V00.02.002-beta-03",...}`
+
+> **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
+> silently open a build-time SNAPSHOT of your database (bots worked in dev, died in
+> production). All data paths are now pinned to the project root — dev and production
+> share one database, one secret key, one uploads folder. `npm run start` is the
+> supported production launcher (a bare `node .next/standalone/server.js` also stays
+> on the right database, but it will not read `.env`).
 
 > **Note:** bots run in an in-memory manager. After a process restart, start
 > your bots again from the dashboard (one click each). Configuration and
@@ -387,5 +394,7 @@ Complete, commented list: **`.env.example`** in the repo root. Summary:
 | Forgot `NURAE_ADMIN_TOKEN` | Read it from `.env`; it is not hashed (it is a bearer credential) |
 | Port already in use | `PORT=3000` taken → change `PORT` in `.env` and restart |
 | Login works but bots vanish after restart | In-memory runtime — start bots again from the dashboard; config persists in the DB |
+| Bot works in `npm run dev` but is dead under `npm run build && npm run start` | **Pre-02.002 installs only:** the standalone server chdir'd into `.next/standalone` and forked the database + secret key there → fixed in V00.02.002. `git pull`, `npm run build`, start again; if a stray `.next/standalone/db/` folder exists on your disk, delete it |
+| Production suddenly shows old/missing data after a rebuild | Same root cause as above (build-time DB snapshot inside `.next/standalone`) — fixed in V00.02.002; the live database always lives at your `DATABASE_URL` now |
 | `verification mail … failed: connect ENETUNREACH 2404:…:465` | Your network has no IPv6 route while DNS answered with an AAAA record → fixed in V00.01.011 (NURAE forces IPv4); `git pull`, restart, try again. If it persists, switch Wi-Fi ↔ mobile data or check VPN |
 | Verification email never arrives (no error in logs) | Check spam; codes expire in 15 min — register again and use the NEWEST mail; verify `NURAE_GMAIL_USER` / `NURAE_GMAIL_APP_PASSWORD` (16 chars, no spaces) in `.env`, then restart |

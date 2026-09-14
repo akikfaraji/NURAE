@@ -29,6 +29,12 @@ async function rewrites() {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // NOTE: live data (db/, .env, uploads) would otherwise be COPIED into
+  // .next/standalone by the file tracer — its include/exclude hooks do not
+  // apply to static-page and instrumentation trace files, so the exclusion is
+  // done deterministically in the `build` script instead (rm -rf after copy).
+  // The production server (scripts/start-prod.mjs + src/lib/paths.ts) always
+  // resolves data paths against the PROJECT root, never the build output.
   // Pin the Turbopack workspace root to THIS directory. Without this, Turbopack
   // infers the root from the nearest lockfile — if NURAE is cloned inside
   // another JS project (or a stray lockfile sits in a parent folder), the

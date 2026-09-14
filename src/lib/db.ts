@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaLibSQL } from '@prisma/adapter-libsql'
+import { databaseUrl } from '@/lib/paths'
 
 /**
  * NURAE database client.
@@ -20,11 +21,11 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-function databaseUrl(): string {
-  return process.env.DATABASE_URL || 'file:./db/custom.db'
-}
-
 function createClient(): PrismaClient {
+  // databaseUrl() makes relative file: paths absolute against the PROJECT
+  // root — the standalone production server chdirs into .next/standalone, and
+  // without this the production server would silently open a DIFFERENT
+  // (build-time snapshot) database. See src/lib/paths.ts.
   const url = databaseUrl()
   // PrismaLibSQL is a driver-adapter FACTORY: it accepts the libSQL config
   // ({ url, authToken }) and manages the underlying @libsql/client itself.

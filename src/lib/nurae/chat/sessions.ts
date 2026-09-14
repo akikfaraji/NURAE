@@ -23,7 +23,7 @@ import { getOfficialBot } from '../auth/official-bot';
 import { selectProvider } from '../ai/registry';
 import type { ChatMessage } from '../ai/types';
 import { pickFileContext, type FileRef } from '../files';
-import { ensureAgentSession, runBotBuilderTurn, type AgentActivity } from '../agents/bot-builder';
+import { ensureAgentSession, latestActiveAgentSession, addFileRefs, runBotBuilderTurn, type AgentActivity } from '../agents/bot-builder';
 
 const TURN_LIMIT = 20; // messages per minute per user
 const TURN_WINDOW_MS = 60 * 1000;
@@ -319,12 +319,24 @@ export async function chatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
     }
     const cleanReply = reply.slice(0, reply.length - m[0].length).trim();
 
-    const agentSessionId = await ensureAgentSession(input.userId, {
-      agent: 'bot-builder',
-      title: task.slice(0, 60),
-      task: text || task,
-      fileRefs: attachments.map((a) => ({ fileId: a.fileId, name: a.name })),
-    });
+    // ONE ongoing build workspace: a new handoff CONTINUES the user's latest
+    // agent session (draft-bot state, file refs and memory stay in one
+    // place) instead of forking a parallel session — and possibly a parallel
+    // draft bot — on every build request. Older than 7 days (or none) → a
+    // fresh session is started.
+    const fileRefs = attachments.map((a) => ({ fileId: a.fileId, name: a.name }));
+    const existingSessionId = await latestActiveAgentSession(input.userId);
+    let agentSessionId: string;
+    if (existingSessionId) {
+      agentSessionId = existingSessionId;
+      if (fileRefs.length) await addFileRefs(agentSessionId, fileRefs);
+    } else {
+      agentSessionId = await ensureAgentSession(input.userId, {
+        agent: 'bot-builder',
+        title: task.slice(0, 60),
+        fileRefs,
+      });
+    }
     const agentResult = await runBotBuilderTurn({
       userId: input.userId,
       sessionId: agentSessionId,

@@ -434,10 +434,10 @@ export const nuraeApi = {
       method: 'POST',
       body: JSON.stringify({ title }),
     }),
-  sendAgentMessage: (id: string, text: string, approve = false) =>
+  sendAgentMessage: (id: string, text: string, approve = false, attachmentIds?: string[]) =>
     api<{ reply: string; activity: ActivityStepDTO[]; needsConfirm: boolean; draftBotId: string | null }>(
       `/api/agents/sessions/${id}/messages`,
-      { method: 'POST', body: JSON.stringify({ text, approve }) },
+      { method: 'POST', body: JSON.stringify({ text, approve, attachmentIds }) },
     ),
 
   // --- Files ----------------------------------------------------------------

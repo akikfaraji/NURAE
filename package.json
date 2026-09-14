@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "node node_modules/next/dist/bin/next dev -p 3000 2>&1 | tee dev.log",
-    "build": "node node_modules/next/dist/bin/next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
+    "build": "node node_modules/next/dist/bin/next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && rm -rf .next/standalone/db .next/standalone/upload .next/standalone/.env .next/standalone/dev.log .next/standalone/server.log",
+    "start": "NODE_ENV=production node scripts/start-prod.mjs 2>&1 | tee server.log",
     "lint": "node node_modules/eslint/bin/eslint.js .",
     "test": "vitest run",
     "db:push": "node node_modules/prisma/build/index.js db push --accept-data-loss",

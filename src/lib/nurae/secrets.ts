@@ -16,6 +16,7 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { resolveDataPath } from '@/lib/paths';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12;
@@ -24,10 +25,13 @@ const KEY_BYTES = 32;
 let cachedKey: Buffer | null = null;
 
 function keyFilePath(): string {
-  const dbUrl = process.env.DATABASE_URL || 'file:./db/custom.db';
+  // Resolved against the PROJECT root (never the bare cwd): the standalone
+  // production server chdirs into .next/standalone — a cwd-relative key file
+  // would fork the master key and make every stored secret undecryptable.
+  const dbUrl = process.env.DATABASE_URL?.trim() || 'file:./db/custom.db';
   const dbFile = dbUrl.startsWith('file:') ? dbUrl.slice(5) : './db/custom.db';
-  const dir = dirname(dbFile.startsWith('/') ? dbFile : join(process.cwd(), dbFile));
-  return join(dir, '.nurae-secret-key');
+  if (!dbFile || dbFile.startsWith(':')) return resolveDataPath(join('db', '.nurae-secret-key'));
+  return join(dirname(resolveDataPath(dbFile)), '.nurae-secret-key');
 }
 
 function loadKey(): Buffer {

@@ -1,6 +1,6 @@
 /**
  * NURAE — POST /api/agents/sessions/[id]/messages: one Bot Builder turn.
- * Body: { text, approve?: boolean }.
+ * Body: { text, attachmentIds?, approve?: boolean }.
  * `approve: true` is set ONLY by the explicit approval control in the UI —
  * it unlocks consequential tools (publish/unpublish) for this turn. The
  * model can never set it; the server derives identity from the session.
@@ -14,6 +14,7 @@ import { runBotBuilderTurn } from '@/lib/nurae/agents/bot-builder';
 
 const BodySchema = z.object({
   text: z.string().max(8000).default(''),
+  attachmentIds: z.array(z.string().min(1).max(64)).max(5).optional(),
   approve: z.boolean().default(false),
 });
 
@@ -34,7 +35,7 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
     }
     const parsed = BodySchema.safeParse(body);
     if (!parsed.success) return apiError('Invalid agent payload', 422);
-    if (!parsed.data.text.trim() && !parsed.data.approve) {
+    if (!parsed.data.text.trim() && !parsed.data.approve && !(parsed.data.attachmentIds ?? []).length) {
       return apiError('Type a task for the agent (or approve the pending action).', 422);
     }
 
@@ -42,6 +43,7 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
       userId: user.id,
       sessionId: id,
       userText: parsed.data.text,
+      attachmentIds: parsed.data.attachmentIds,
       userConfirmed: parsed.data.approve,
     });
     if (result.error && !result.reply) {

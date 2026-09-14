@@ -98,7 +98,7 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.02.001-beta-03** — behavior-first bot building.
+**NURAE V00.02.002-beta-03** — one workflow, one database.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
@@ -138,9 +138,11 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
   (mobile), new/rename/archive/delete chats, typography-led messages (no giant
   bubbles), markdown + GFM rendering, auto-growing composer with Enter/Shift+Enter,
   file attach chips, honest loading/error states, human empty state.
-- `/chats/agents` — the agent workbench: persistent agent sessions with durable task
-  state, activity feed sourced from the audit trail, "Approve & publish" control,
-  deep link into the built bot.
+- `/chats/agents` — the agent workbench, **workflow-identical to chat**: persistent agent
+  sessions with durable task state, the same sidebar actions (rename/archive/delete),
+  the same composer rules, **file attachments** (ownership-checked, merged into the
+  session's file refs), optimistic sends with honest rollback on error, activity feed
+  sourced from the audit trail, "Approve & publish" control, deep link into the built bot.
 - `/bots` — list + create (**“What do you want your bot to do?”** describe-first via the
   agent, or start from scratch), bot detail with behaviors, preview, configuration
   (provider/model/prompt/limits, token + key write-only fields), advanced command/reply
@@ -153,9 +155,22 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 **Chat → Agent routing**
 - The chat AI answers questions directly and detects build/modify requests; on
-  handoff NURAE creates an agent session, seeds it with the task and the referenced
-  files **by reference** (no re-upload), runs the agent's first turn, and offers
-  [Open in Agent].
+  handoff NURAE continues the user's latest agent session (one ongoing build
+  workspace — no parallel threads or duplicate draft bots), seeds it with the task
+  and referenced files **by reference** (no re-upload), runs the agent's first turn,
+  and offers [Open in Agent]. Files attached in the chat are visible to the agent
+  through `files_list` and the system prompt.
+
+**One workflow, one database (new in 02.002)**
+- Production no longer forks your data. The standalone server used to chdir into
+  `.next/standalone` and silently open a build-time SNAPSHOT of the SQLite database
+  (plus a second secret key and forked uploads) — bots worked in dev and died in
+  production. All data paths now resolve against the project root
+  (`src/lib/paths.ts`), `npm run start` boots through a launcher that pins
+  `NURAE_APP_ROOT` + an absolute `DATABASE_URL` and loads the project `.env`, and the
+  build script strips `db/`, `.env` and uploads out of the deployable output.
+  Verified end-to-end in production mode: publish → Telegram webhook → behavior
+  replies + AI turn.
 
 **Files**
 - Upload API (multipart, ownership-checked, 10 MB cap, extension allowlist) with
@@ -189,7 +204,7 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 - Secrets encrypted at rest (AES-256-GCM), never returned by APIs, never logged.
 - Customer auth (scrypt, Gmail OTP with hashed codes, Google OAuth), sessions.
 - Structured logs with event codes; bot status state machine enforced in the DB.
-- 199 tests (vitest), lint-clean src, type-clean src.
+- 202 tests (vitest), lint-clean src, type-clean src.
 
 ### NOT in this release (do not assume these exist)
 
@@ -383,4 +398,4 @@ extracted text (what agents and chats actually read) is durable in the database.
 
 ---
 
-NURAE V00.02.001-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.02.002-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
