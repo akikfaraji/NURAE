@@ -540,6 +540,27 @@ export class TelegramAdapter {
     await this.call<unknown>('refundStarPayment', { telegram_payment_charge_id: chargeId }, opts);
   }
 
+  /**
+   * Create a pay-anywhere Stars invoice link (no chat needed — the URL works
+   * on the web, in apps, anywhere). Used by the platform topup flow.
+   */
+  async createInvoiceLink(
+    params: { title: string; description: string; payload: string; priceStars: number },
+    opts?: { signal?: AbortSignal },
+  ): Promise<string> {
+    return this.call<string>(
+      'createInvoiceLink',
+      {
+        title: params.title.slice(0, 32),
+        description: params.description.slice(0, 255),
+        payload: params.payload.slice(0, 128),
+        currency: 'XTR',
+        prices: [{ label: params.title.slice(0, 32), amount: Math.max(1, Math.round(params.priceStars)) }],
+      },
+      opts,
+    );
+  }
+
   /** Approve/deny a pre-checkout query — MUST be answered within 10 seconds. */
   async answerPreCheckoutQuery(
     queryId: string,

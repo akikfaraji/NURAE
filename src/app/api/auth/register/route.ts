@@ -18,6 +18,7 @@ import { gmailConfig, sendVerificationMail, maskEmail, mailFailureHint } from '@
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
 import { getSiteInfo } from '@/lib/nurae/auth/settings';
 import { recordReferralSignup } from '@/lib/nurae/referral';
+import { ensureSignupTrial } from '@/lib/nurae/billing/wallet';
 
 const BodySchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -63,6 +64,9 @@ export async function POST(req: Request): Promise<Response> {
     // Record the invite (if any). Guards inside: unknown code / self-invite /
     // duplicate invited user all no-op. The reward only QUALIFIES at verify.
     await recordReferralSignup(user.id, ref);
+
+    // Start the 7-day free week (idempotent — never shortened or re-granted).
+    await ensureSignupTrial(user.id);
 
     // Invalidate previous codes, issue a fresh one (hashed — never stored plain).
     await db.verificationToken.deleteMany({ where: { userId: user.id, purpose: 'email_verify' } });

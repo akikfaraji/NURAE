@@ -28,6 +28,8 @@ import { selectProvider } from '../ai/registry';
 import { AIError, ChatMessage } from '../ai/types';
 import type { RuntimeBotRecord, RuntimeStore, BotUserStateData } from './store';
 import type { BotReplySpec, BotCommandSpec, BotCapabilities } from '../bots/capabilities';
+import { chargeFeature } from '../billing/wallet';
+import { formatUsd, parseTopupPayload } from '../billing/catalog';
 
 // ---------------------------------------------------------------------------
 // Sender surface
@@ -556,6 +558,32 @@ export async function handleBotMessage(
 }
 
 /**
+ * Pay-as-you-use gate for platform-key AI calls: customer bots answering on
+ * NURAE's AI key cost the owner one `ai_reply` unit; BYOK bots are free
+ * (they pay their own provider). Returns false when the charge was skipped
+ * (out of credits — the reply is NOT generated, the skip is logged).
+ * Billing outages fail open.
+ */
+async function meterPlatformAiCall(bot: RuntimeBotRecord, store: RuntimeStore, feature: 'ai_reply'): Promise<boolean> {
+  if (!bot.ownerId || bot.apiKey) return true;
+  try {
+    const result = await chargeFeature(bot.ownerId, feature, { refId: bot.id });
+    if (result.outcome === 'skipped') {
+      await store.createLog(
+        bot.id,
+        'warn',
+        `AI reply NOT generated — owner out of credits (needs ${formatUsd(result.chargedMicros)}). Top up in Billing.`,
+        'BILLING_SKIP',
+      );
+      return false;
+    }
+    return true;
+  } catch {
+    return true; // billing outage — never take a conversation down
+  }
+}
+
+/**
  * One full AI turn — typing indicator, memory, per-user context, provider
  * call, delivery, friendly failure. Shared by the free-text path, "AI
  * answers" commands and compiled "Ask the AI" behavior steps.
@@ -593,6 +621,7 @@ async function runAiTurn(
     if (selection.info.requiresKey && !selection.apiKey) {
       throw new AIError('missing_credentials', `No API key configured for provider "${selection.info.id}".`);
     }
+    if (!(await meterPlatformAiCall(bot, store, 'ai_reply'))) return;
     await store.createLog(
       bot.id,
       'info',
@@ -707,6 +736,7 @@ async function parseAndSchedule(
     if (selection.info.requiresKey && !selection.apiKey) {
       throw new AIError('missing_credentials', 'No API key configured.');
     }
+    if (!(await meterPlatformAiCall(bot, store, 'ai_reply'))) return;
     raw = await selection.provider.generate(
       [
         { role: 'system', content: bot.systemPrompt },
@@ -843,6 +873,18 @@ async function handleSuccessfulPayment(
     payload: p.payload,
     title: paymentTitleFor(bot, p.payload),
   });
+
+  // Platform topups ride on the official bot: payload nurae_topup_<orderNo>.
+  // Customer bots cannot mint such payloads (their payment steps compile to
+  // p_<behavior>_<step>), and the ownerId===null guard keeps it that way.
+  if (bot.ownerId === null) {
+    const orderNo = parseTopupPayload(p.payload);
+    if (orderNo) {
+      await handlePlatformTopupPayment(sender, msg.chatId, orderNo, p.chargeId, p.amount);
+      return;
+    }
+  }
+
   await patchState(store, bot.id, msg.chatId, {
     attributes: { [`paid_${p.payload}`]: 'yes' },
     touch: true,
@@ -856,6 +898,31 @@ async function handleSuccessfulPayment(
   const successText = successTextFor(bot, p.payload);
   if (successText) {
     await executeReplyMessages(bot, sender, [{ text: successText }], `pay_${p.payload.slice(0, 32)}`, 0, ctx, state, store, signal);
+  }
+}
+
+/**
+ * A wallet topup paid in Stars on the official bot: mark the order paid and
+ * credit the buyer's wallet. Every failure is logged, never thrown — the
+ * payment DID happen; reconciliation is always possible from BotPayment rows.
+ */
+async function handlePlatformTopupPayment(
+  sender: MessageSender,
+  chatId: string,
+  orderNo: string,
+  chargeId: string,
+  stars: number,
+): Promise<void> {
+  try {
+    const { completeStarsTopup } = await import('../billing/topups');
+    const result = await completeStarsTopup(orderNo, { chargeId, stars });
+    const micros = stars * (await import('../billing/catalog')).starsRateMicros();
+    const text = result.credited
+      ? `✅ Payment received — ${stars}★ (${formatUsd(micros)}) added to your NURAE balance.\nThank you! Manage your usage at NURAE → Billing.`
+      : `✅ Payment confirmed (${stars}★). Your balance was already credited for order ${orderNo}.`;
+    await sender.sendMessage(chatId, text);
+  } catch (err) {
+    console.error('[billing] topup settlement failed:', err instanceof Error ? err.message : err);
   }
 }
 

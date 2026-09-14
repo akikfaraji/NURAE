@@ -10,6 +10,8 @@ import { db } from '@/lib/db';
 import { apiError, internalError } from '@/lib/nurae/api/base';
 import { sessionUser } from '@/lib/nurae/auth/sessions';
 import { MAX_UPLOAD_BYTES, saveUserFile } from '@/lib/nurae/files';
+import { chargeFeature } from '@/lib/nurae/billing/wallet';
+import { formatUsd } from '@/lib/nurae/billing/catalog';
 
 const ALLOWED_EXTENSIONS = /\.(pdf|md|markdown|txt|csv|docx|json|log|png|jpe?g|gif|webp|svg)$/i;
 
@@ -48,6 +50,18 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     const bytes = Buffer.from(await file.arrayBuffer());
+
+    // Pay-as-you-use: storage is billed per MB (rounded up); free tier covers
+    // the first 20 MB/day, the trial and premium weeks cover everything.
+    const units = Math.max(1, Math.ceil(bytes.length / (1024 * 1024)));
+    const charge = await chargeFeature(user.id, 'file_upload_mb', { units }).catch(() => null);
+    if (charge?.outcome === 'skipped') {
+      return apiError(
+        `Out of credits — this upload needs ${units} MB (${formatUsd(charge.chargedMicros)}). Top up in Billing first.`,
+        402,
+      );
+    }
+
     const stored = await saveUserFile({
       userId: user.id,
       sessionId,

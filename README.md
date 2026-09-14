@@ -98,9 +98,60 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.04.000-beta-03** — built-in bots: the growth release.
+**NURAE V00.05.000-beta-03** — billing: the pay-as-you-use release.
 
 > «Users describe what they want. NURAE figures out how to build it.»
+
+### IMPLEMENTED
+
+**Pay-as-you-use billing (new in 05.000) — usage, not subscriptions**
+- **Per-feature metering over an integer micro-dollar ledger** (`1,000,000 µ$ = $1`).
+  Every metered event — free, trial, premium or charged — writes a `LedgerEntry`
+  row (the same journal powers analytics, daily quotas and the /billing ledger
+  view). Prices live in the `PricingRule` table, seeded from the compiled
+  catalog (`src/lib/nurae/billing/catalog.ts`), editable live via the admin API.
+- **The price book**: bot AI reply $0.0015 (free: 50/day), NURAE assistant turn
+  $0.002 (25/day), agent builder round $0.005 (10/day), bot message sent
+  $0.00005 (500/day), broadcast per recipient $0.0001, hosted bot $0.01/day,
+  file upload $0.002/MB (20 MB/day). **Bring your own provider key → bot AI
+  replies are free.**
+- **Free week + free tier**: every signup gets a 7-day free server week
+  (`trial_ends_at`, granted at both the email and Google signup paths); after
+  that each feature keeps its free daily allowance (midnight UTC reset).
+  Referral "premium days" (the existing entitlement primitive, now finally
+  consumed) make ALL usage free while they last.
+- **Enforcement without cruelty**: platform AI features hard-gate with an
+  honest 402-style message + top-up CTA; bot traffic fails *silently skip* —
+  the send is not made, a `BILLING_SKIP` log explains why, the bot resumes the
+  instant balance exists. Billing infrastructure errors fail OPEN (never take
+  a conversation down). Broadcasts stop mid-fan-out with an honest lastError;
+  scheduled sends fail with "Out of credits". Three distinct unpaid hosting
+  days stop a bot (webhook deleted, status detail explains); nothing is ever
+  deleted.
+- **Topups — Telegram Stars**: `createInvoiceLink` on the official platform bot
+  (new adapter method); the buyer pays inside Telegram and the
+  `successful_payment` update (payload `nurae_topup_<orderNo>`, platform-owned
+  bots only) credits the wallet idempotently. Rate env `NURAE_STARS_RATE_MICROS`.
+- **Topups — crypto**: manual flow always available (per-asset deposit
+  addresses from `NURAE_CRYPTO_ADDRESS_*`, unique order reference, tx-hash
+  submission, admin approval queue at `/api/admin/billing/orders`), plus an
+  optional auto rail via @CryptoBot Pay (`NURAE_CRYPTOBOT_API_TOKEN`, USD
+  invoices credited by the 60 s poller — UNTESTED against the live API).
+  Assets: TON (Gram), BTC, USDT, ETH, LTC, TRX. Admin grants + live price
+  tuning: `/api/admin/billing/grant`.
+- **UI**: public `/pricing` (catalog-rendered price table, free week, payment
+  methods, subscription comparison, FAQ) and authed `/billing` (balance,
+  trial/premium banner, Stars presets + crypto topup flow incl. tx-hash
+  submission, usage-today, price book, topup history, full ledger). Nav updated
+  in both shells.
+- **BR-020 closed (again, for real)**: the Preview `/test` route — twice
+  claimed shipped, twice absent from the commit — now exists AND is covered by
+  an ecosystem test that imports it, so it cannot silently vanish again.
+
+The 04.000 release (built-in bots + growth hooks) is described in the release
+notes below and remains fully in force.
+
+<details><summary><strong>04.000 — built-in bots: the growth release (previous)</strong></summary>
 
 ### IMPLEMENTED
 
@@ -303,6 +354,8 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 - Customer auth (scrypt, Gmail OTP with hashed codes, Google OAuth), sessions.
 - Structured logs with event codes; bot status state machine enforced in the DB.
 - 239 tests (vitest), lint-clean src, type-clean src.
+
+</details>
 
 ### NOT in this release (do not assume these exist)
 
@@ -520,4 +573,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.04.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.05.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

@@ -23,6 +23,7 @@ import { getOfficialBot } from '../auth/official-bot';
 import { selectProvider } from '../ai/registry';
 import type { ChatMessage } from '../ai/types';
 import { pickFileContext, type FileRef } from '../files';
+import { chargeFeature } from '../billing/wallet';
 import { ensureAgentSession, latestActiveAgentSession, addFileRefs, runBotBuilderTurn, type AgentActivity } from '../agents/bot-builder';
 
 const TURN_LIMIT = 20; // messages per minute per user
@@ -292,6 +293,16 @@ export async function chatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
     .join('\n');
 
   const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }, ...history];
+
+  // Pay-as-you-use: one assistant turn (trial/premium/free-quota absorb it).
+  const charge = await chargeFeature(input.userId, 'ai_assistant').catch(() => null);
+  if (charge?.outcome === 'skipped') {
+    return {
+      reply: '',
+      handoff: null,
+      error: 'Out of credits — a turn costs $0.002. Top up in Billing (Stars or crypto) to keep chatting.',
+    };
+  }
 
   let reply: string;
   try {

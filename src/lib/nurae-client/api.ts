@@ -374,6 +374,70 @@ export interface ReferralResponse {
 // Endpoints
 // ---------------------------------------------------------------------------
 
+// --- Billing DTOs -----------------------------------------------------------
+
+export interface PriceRowDTO {
+  feature: string;
+  displayName: string;
+  description: string;
+  unit: string;
+  unitPriceMicros: number;
+  freeDailyUnits: number;
+  enabled: boolean;
+  hardGate: boolean;
+}
+
+export interface UsageTodayDTO {
+  feature: string;
+  used: number;
+  freeDailyUnits: number;
+  unitPriceMicros: number;
+  chargedTodayMicros: number;
+}
+
+export interface BillingSummary {
+  balanceMicros: number;
+  freeRide: { mode: 'trial' | 'premium' | null; trialEndsAt: string | null; premiumEndsAt: string | null };
+  usageToday: UsageTodayDTO[];
+  prices: PriceRowDTO[];
+  topup: {
+    starsAvailable: boolean;
+    starsRateMicros: number;
+    starsPresets: number[];
+    cryptoAuto: boolean;
+    assets: Array<{ asset: string; name: string; network: string }>;
+  };
+}
+
+export interface LedgerEntryDTO {
+  id: string;
+  kind: string;
+  feature: string | null;
+  amountMicros: number;
+  balanceAfter: number;
+  unitCount: number;
+  note: string | null;
+  refId: string | null;
+  createdAt: string;
+}
+
+export interface TopupOrderDTO {
+  id: string;
+  orderNo: string;
+  provider: string;
+  asset: string | null;
+  address: string | null;
+  expectedStars: number | null;
+  expectedUsdMicros: number | null;
+  status: string;
+  payUrl: string | null;
+  txHash: string | null;
+  creditedMicros: number | null;
+  note: string | null;
+  createdAt: string;
+  paidAt: string | null;
+}
+
 export const nuraeApi = {
   authStatus: () => api<{ authRequired: boolean; authenticated: boolean }>('/api/auth/status'),
   login: (token: string) =>
@@ -557,4 +621,24 @@ export const nuraeApi = {
 
   // --- Referral -------------------------------------------------------------
   referral: () => api<ReferralResponse>('/api/referral'),
+
+  // --- Billing (pay-as-you-use) --------------------------------------------
+  billingSummary: () => api<BillingSummary>('/api/billing'),
+  billingLedger: (limit = 50) => api<{ entries: LedgerEntryDTO[] }>(`/api/billing/ledger?limit=${limit}`),
+  billingTopupStars: (stars: number) =>
+    api<{ order: TopupOrderDTO }>('/api/billing/topup', {
+      method: 'POST',
+      body: JSON.stringify({ provider: 'stars', stars }),
+    }),
+  billingTopupCrypto: (asset: string, usdMicros: number) =>
+    api<{ order: TopupOrderDTO }>('/api/billing/topup', {
+      method: 'POST',
+      body: JSON.stringify({ provider: 'crypto', asset, usdMicros }),
+    }),
+  billingTopupSubmitTx: (orderId: string, txHash: string) =>
+    api<{ order: TopupOrderDTO }>('/api/billing/topup-tx', {
+      method: 'POST',
+      body: JSON.stringify({ orderId, txHash }),
+    }),
+  billingOrders: () => api<{ orders: TopupOrderDTO[] }>('/api/billing/topup'),
 };

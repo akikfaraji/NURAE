@@ -22,6 +22,7 @@ import { routeBotUpdate, TelegramUpdateLike } from './pipeline';
 import { RuntimeBotRecord, RuntimeStore } from './store';
 import { BotStatus } from './state-machine';
 import { telegramMenuCommands } from '../bots/capabilities';
+import { meteredSender } from '../billing/meter-sender';
 import type { selectProvider } from '../ai/registry';
 
 export type { BotStatus };
@@ -153,7 +154,24 @@ export class BotRuntime {
           offset = Math.max(offset, update.update_id + 1);
           // The SAME router the webhook uses — callbacks, inline queries,
           // payments and membership updates work identically in polling.
-          await routeBotUpdate(this.record, adapter, update as TelegramUpdateLike, {
+          // Real customer traffic is metered exactly like the webhook path.
+          const sender = this.record.ownerId
+            ? meteredSender(adapter, {
+                ownerId: this.record.ownerId,
+                botId: this.botId,
+                feature: 'bot_message',
+                onSkip: (result) =>
+                  this.store
+                    .createLog(
+                      this.botId,
+                      'warn',
+                      `Message NOT sent — owner out of credits (needs $${(result.chargedMicros / 1_000_000).toFixed(4)}). Top up in Billing.`,
+                      'BILLING_SKIP',
+                    )
+                    .catch(() => undefined),
+              })
+            : adapter;
+          await routeBotUpdate(this.record, sender, update as TelegramUpdateLike, {
             store: this.store,
             signal,
             providerSelector: this.providerSelector,

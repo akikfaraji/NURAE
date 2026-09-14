@@ -614,7 +614,11 @@ describe('task engine — scheduler and broadcast', () => {
   });
 
   test('broadcasts fan out to every chat, paced, with honest counters', async () => {
-    const { botId, store } = await makeBot({});
+    const { id: userId } = await makeUser();
+    const { botId, store } = await makeBot(userId);
+    // Broadcasts are metered per recipient (V00.05.000) — put the owner on a
+    // trial so this test exercises fan-out mechanics, not billing.
+    await db.user.update({ where: { id: userId }, data: { trialEndsAt: new Date(Date.now() + 86_400_000) } });
     await store.updateUserState(botId, '900001', { touch: true });
     await store.updateUserState(botId, '900002', { touch: true });
     await store.updateUserState(botId, '900003', { touch: true });

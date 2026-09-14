@@ -35,10 +35,12 @@ const NAV = [
   { href: '/chats/agents', label: 'Agents' },
   { href: '/bots', label: 'Bots' },
   { href: '/featured', label: 'Featured' },
+  { href: '/billing', label: 'Billing' },
 ] as const;
 
 const PUBLIC_NAV = [
   { href: '/', label: 'Home' },
+  { href: '/pricing', label: 'Pricing' },
   { href: '/help', label: 'Help' },
   { href: '/about', label: 'About' },
 ] as const;

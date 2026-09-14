@@ -56,7 +56,7 @@ local-*
 *.log
 dev.log
 dev.out.log
-test
+/test/ # root-level scratch dir only — a bare "test" once silently ignored src/app/api/my/bots/[id]/test/ (BR-019/020/021 root cause)
 prompt
 
 server.log

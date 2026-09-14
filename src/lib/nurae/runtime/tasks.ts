@@ -23,6 +23,9 @@
 import { TelegramAdapter } from '../telegram/adapter';
 import { telegramHtmlFromMarkdown } from '../telegram/markdown';
 import type { RuntimeStore } from './store';
+import { chargeFeature } from '../billing/wallet';
+import { runDailyHostingBilling } from '../billing/hosting';
+import { pollCryptoTopups } from '../billing/topups';
 
 const TICK_MS = 60_000;
 /** Broadcast pacing: 50 ms between sends ≈ 20 msg/s (< Telegram's ~30/s). */
@@ -70,6 +73,21 @@ export async function runDueBotWork(store: RuntimeStore, opts?: { botId?: string
       result.schedulesFailed += 1;
       continue;
     }
+    // Prepaid: one `bot_message` unit per scheduled send. Out of credits →
+    // the schedule fails honestly instead of silently skipping the send.
+    if (bot.ownerId) {
+      try {
+        const charge = await chargeFeature(bot.ownerId, 'bot_message', { refId: bot.id });
+        if (charge.outcome === 'skipped') {
+          await store.markScheduleFailed(schedule.id, 'Out of credits — the message was not sent. Top up in Billing.');
+          await store.createLog(bot.id, 'warn', 'Scheduled message NOT sent — owner out of credits.', 'BILLING_SKIP');
+          result.schedulesFailed += 1;
+          continue;
+        }
+      } catch {
+        /* billing outage → fail open */
+      }
+    }
     const adapter = new TelegramAdapter({ token: bot.telegramToken });
     try {
       const html = telegramHtmlFromMarkdown(schedule.text);
@@ -99,13 +117,30 @@ async function runBroadcast(store: RuntimeStore, broadcastId: string, botId: str
   await store.createLog(botId, 'info', `Broadcast started — ${chats.length} chat(s).`, 'BROADCAST_STARTED');
 
   const adapter = new TelegramAdapter({ token: bot.telegramToken });
+  // The per-recipient charge happens explicitly below (prepaid fan-out) —
+  // no meteredSender wrapper here or every message would bill twice.
+  const sender = adapter;
   const html = telegramHtmlFromMarkdown(text);
   let sent = 0;
   let failed = 0;
+  let outOfCredits = false;
   for (const [i, chatId] of chats.entries()) {
     if (i >= BROADCAST_MAX_SENDS_PER_RUN) break;
+    // Prepaid fan-out: one unit per recipient. Out of credits → stop honestly.
+    if (bot.ownerId) {
+      try {
+        const charge = await chargeFeature(bot.ownerId, 'broadcast_message', { refId: botId });
+        if (charge.outcome === 'skipped') {
+          outOfCredits = true;
+          await store.createLog(botId, 'warn', `Broadcast stopped after ${sent} send(s) — owner out of credits. Top up in Billing.`, 'BILLING_SKIP');
+          break;
+        }
+      } catch {
+        /* billing outage → fail open */
+      }
+    }
     try {
-      await adapter.sendMessage(chatId, html, { parseMode: 'HTML' });
+      await sender.sendMessage(chatId, html, { parseMode: 'HTML' });
       sent += 1;
     } catch (err) {
       // 429 → wait out retry_after once, then give up on this chat.
@@ -113,7 +148,7 @@ async function runBroadcast(store: RuntimeStore, broadcastId: string, botId: str
       if (typeof retryAfter === 'number' && retryAfter > 0 && retryAfter < 15_000) {
         await sleep(retryAfter);
         try {
-          await adapter.sendMessage(chatId, html, { parseMode: 'HTML' });
+          await sender.sendMessage(chatId, html, { parseMode: 'HTML' });
           sent += 1;
         } catch {
           failed += 1;
@@ -128,7 +163,11 @@ async function runBroadcast(store: RuntimeStore, broadcastId: string, botId: str
     }
     if (i < chats.length - 1) await sleep(BROADCAST_GAP_MS);
   }
-  const lastError = failed > 0 ? `${failed} chat(s) could not be reached (blocked bot or rate limit).` : undefined;
+  const lastError = failed > 0
+    ? `${failed} chat(s) could not be reached (blocked bot or rate limit).`
+    : outOfCredits
+      ? 'Stopped early — out of credits. The remaining chats were not messaged.'
+      : undefined;
   await store.updateBroadcastProgress(broadcastId, sent, failed, { done: true, lastError });
   await store.createLog(botId, 'info', `Broadcast finished — sent ${sent}, failed ${failed}.`, 'BROADCAST_DONE');
   return { sent, failed };
@@ -151,6 +190,20 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Periodic billing work on the ticker: daily hosting charges (idempotent per
+ * bot+day) and the CryptoBot invoice poller (idempotent per order). Runs on
+ * the Node ticker only — the serverless webhook sweep skips it.
+ */
+async function runPeriodicBilling(): Promise<void> {
+  await runDailyHostingBilling().catch((err) =>
+    console.warn('[billing] hosting pass failed:', err instanceof Error ? err.message : err),
+  );
+  await pollCryptoTopups().catch((err) =>
+    console.warn('[billing] crypto poll failed:', err instanceof Error ? err.message : err),
+  );
+}
+
+/**
  * Start the in-process 60 s ticker (Node runtimes only; serverless relies on
  * the webhook-adjacent sweep). Idempotent per process.
  */
@@ -159,6 +212,7 @@ export function startTaskTicker(store: RuntimeStore): void {
   if (globalForTicker.nuraeTaskTicker) return;
   const timer = setInterval(() => {
     void runDueBotWork(store).catch(() => undefined);
+    void runPeriodicBilling().catch(() => undefined);
   }, TICK_MS);
   // Never hold the process open just for the ticker.
   if (typeof timer.unref === 'function') timer.unref();

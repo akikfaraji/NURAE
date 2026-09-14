@@ -18,6 +18,8 @@ import { loadCapabilities, type BotCapabilities } from '../bots/capabilities';
 export interface RuntimeBotRecord {
   id: string;
   projectId: string;
+  /** Customer id this bot belongs to; null = platform-owned (never billed). */
+  ownerId: string | null;
   name: string;
   systemPrompt: string;
   provider: string;
@@ -202,6 +204,7 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
       return {
         id: row.id,
         projectId: row.projectId,
+        ownerId: row.ownerId,
         name: row.name,
         systemPrompt: row.systemPrompt,
         provider: row.provider,

@@ -28,6 +28,7 @@ import { BotRuntime } from './bot-runtime';
 import { createPrismaRuntimeStore, RuntimeStore } from './store';
 import { routeBotUpdate, TelegramUpdateLike } from './pipeline';
 import { runDueBotWork, startTaskTicker } from './tasks';
+import { meteredSender } from '../billing/meter-sender';
 import { loadCapabilities, telegramMenuCommands } from '../bots/capabilities';
 import { db } from '@/lib/db';
 import { SecretManager } from '../secrets';
@@ -423,7 +424,25 @@ export async function ingestWebhookUpdate(botId: string, update: TelegramUpdateL
 
   // One router for every update family (messages, callbacks, inline,
   // payments, membership, polls) — webhook and polling stay identical.
-  await routeBotUpdate(record, adapterFor(record.telegramToken), update, { store }, {
+  // Real customer traffic is metered (owner pays per outbound message);
+  // platform-owned bots and owner test-sends are never metered here.
+  const sender = record.ownerId
+    ? meteredSender(adapterFor(record.telegramToken), {
+        ownerId: record.ownerId,
+        botId: record.id,
+        feature: 'bot_message',
+        onSkip: (result) =>
+          store
+            .createLog(
+              record.id,
+              'warn',
+              `Message NOT sent — owner out of credits (needs $${(result.chargedMicros / 1_000_000).toFixed(4)}). Top up in Billing.`,
+              'BILLING_SKIP',
+            )
+            .catch(() => undefined),
+      })
+    : adapterFor(record.telegramToken);
+  await routeBotUpdate(record, sender, update, { store }, {
     botUsername: record.telegramUsername ?? undefined,
   });
 

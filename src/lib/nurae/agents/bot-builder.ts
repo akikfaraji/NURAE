@@ -21,6 +21,8 @@ import { selectProvider } from '../ai/registry';
 import type { ChatMessage } from '../ai/types';
 import { sanitizeForLog, truncateForLog } from '../sanitize';
 import { rateLimit } from '../auth/rate-limit';
+import { chargeFeature } from '../billing/wallet';
+import { formatUsd } from '../billing/catalog';
 import { executeTool, toolDescriptors, type ExecRecord, type ToolContext } from './tools';
 
 const TURN_LIMIT = 20; // agent turns per minute per user — same budget as chat
@@ -371,6 +373,17 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
         { role: 'system', content: builderSystemPrompt({ ...state, draftBotId, pendingApproval }, Boolean(ctx.userConfirmed)) },
         ...history,
       ];
+
+      // Pay-as-you-use: every builder round is one `ai_build` unit.
+      try {
+        const charge = await chargeFeature(input.userId, 'ai_build');
+        if (charge.outcome === 'skipped') {
+          finalMessage = finalMessage || `Out of credits — this turn needs ${formatUsd(charge.chargedMicros)}. Top up in Billing (Stars or crypto) and I will continue exactly where we stopped.`;
+          break;
+        }
+      } catch {
+        /* billing outage → fail open */
+      }
 
       const text = await selection.provider.generate(messages, {
         model: platformBot.model,

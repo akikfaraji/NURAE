@@ -18,6 +18,7 @@ import { AIError, type ChatMessage } from '../ai/types';
 import { createPrismaRuntimeStore } from '../runtime/store';
 import { getSiteInfo, officialBotPrompt } from './settings';
 import { rateLimit } from './rate-limit';
+import { chargeFeature } from '../billing/wallet';
 
 export const OFFICIAL_PROJECT_NAME = 'NURAE Official';
 export const OFFICIAL_BOT_NAME = 'NURAE CS Bot';
@@ -207,6 +208,17 @@ export async function supportChatTurn(userId: string, text: string): Promise<Cha
   const messages: ChatMessage[] = [{ role: 'system', content: bot.systemPrompt }, ...history];
 
   try {
+    // Pay-as-you-use: the web support chat is an `ai_assistant` turn too.
+    const charge = await chargeFeature(userId, 'ai_assistant').catch(() => null);
+    if (charge?.outcome === 'skipped') {
+      return {
+        ok: false,
+        reply: null,
+        error: 'insufficient_credits',
+        message: 'Out of credits — top up in Billing (Telegram Stars or crypto) to keep chatting.',
+        status: 402,
+      };
+    }
     const resolvedKey = apiKey ?? selection.apiKey ?? null;
     let reply = await selection.provider.generate(messages, {
       model: bot.model,

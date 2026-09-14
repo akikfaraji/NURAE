@@ -138,7 +138,7 @@ npm run start      # launcher: loads .env, pins the data root, then serves; hono
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.04.000-beta-03",...}`
+`{"status":"ok","version":"V00.05.000-beta-03",...}`
 
 > **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
 > silently open a build-time SNAPSHOT of your database (bots worked in dev, died in
@@ -377,6 +377,26 @@ Complete, commented list: **`.env.example`** in the repo root. Summary:
 | `NURAE_LINK_FRONTEND_URL` | split | Frontend the backend registers with |
 | `NURAE_BACKEND_URL` | split (legacy) | Build-time fixed proxy target |
 | `NURAE_TELEGRAM_API_BASE` | tests | Override Telegram API base (integration tests) |
+| `NURAE_SITE_URL` / `NURAE_COMMUNITY_URL` / `NURAE_CHANNEL_URL` | growth | Links carried by the built-in bot templates |
+| `NURAE_STARS_RATE_MICROS` | billing | Micro-dollars credited per Telegram Star (default 14000 ≈ $0.014) |
+| `NURAE_CRYPTO_ADDRESS_TON` … `_TRX` | billing | Per-asset deposit addresses — each address enables that asset in /billing |
+| `NURAE_CRYPTO_NETWORK_<ASSET>` | billing | Optional network label shown next to an asset |
+| `NURAE_CRYPTOBOT_API_TOKEN` | billing | Optional @CryptoBot Pay auto-invoicing (poller credits paid invoices) |
+
+---
+
+### Billing in one paragraph
+
+NURAE is pay-as-you-use: every feature has a per-unit price in micro-dollars,
+every signup gets a **7-day free week**, and every feature keeps a **free daily
+allowance** after that. Users top up with **Telegram Stars** (needs the official
+platform bot token, set in the admin dashboard) or **crypto** (TON/BTC/USDT/
+ETH/LTC/TRX addresses above; buyers submit a tx hash, you approve in
+`GET/POST /api/admin/billing/orders` — guard it with `NURAE_ADMIN_TOKEN`).
+Out of credits: platform AI features refuse with a top-up message; bot sends
+pause (BILLING_SKIP logs) and resume automatically after a top-up; a bot left
+unpaid for 3 days is stopped (nothing deleted). Operators can credit any wallet
+via `POST /api/admin/billing/grant` and tune prices via the same endpoint.
 
 ---
 

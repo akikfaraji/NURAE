@@ -18,6 +18,7 @@ import {
 } from '@/lib/nurae/auth/google';
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
 import { createUserSession } from '@/lib/nurae/auth/sessions';
+import { ensureSignupTrial } from '@/lib/nurae/billing/wallet';
 
 function fail(origin: string, reason: string): Response {
   return new NextResponse(null, {
@@ -72,6 +73,9 @@ export async function GET(req: NextRequest): Promise<Response> {
             lastLoginAt: new Date(),
           },
         });
+
+    // Start the 7-day free week (idempotent — never shortened or re-granted).
+    await ensureSignupTrial(user.id);
 
     const res = new NextResponse(null, {
       status: 302,
