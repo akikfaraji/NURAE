@@ -398,4 +398,23 @@ extracted text (what agents and chats actually read) is durable in the database.
 
 ---
 
+## 16. Telegram platform research
+
+`docs/telegram/` carries the platform knowledge base that keeps NURAE's
+bots specific instead of generic:
+
+- [`PLATFORM.md`](./docs/telegram/PLATFORM.md) — the full Telegram Bot
+  platform surface as of Bot API 10.3 (Aug 2026): update types, messaging,
+  interaction primitives, monetization, mini apps, AI-native features,
+  limits, ops, anti-patterns.
+- [`COMMUNITY.md`](./docs/telegram/COMMUNITY.md) — the ecosystem taxonomy:
+  what bots people actually build (16 categories, named examples),
+  distribution playbooks, failure patterns.
+- [`NURAE.md`](./docs/telegram/NURAE.md) — the mapping: NURAE's verified
+  capability surface, a 22-item gap analysis with priorities, a 22-blueprint
+  library for the builder agent, and the anti-generic agent preparation
+  rules.
+
+---
+
 NURAE V00.02.002-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
