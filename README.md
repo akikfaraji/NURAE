@@ -104,7 +104,7 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.08.002-beta-03** — the live-testing bug round (no new features):
+**NURAE V00.09.000-beta-03** — the live-testing bug round (no new features):
 the chat and agent pages now open your history directly instead of a blank
 default, phones see exactly ONE menu button per screen, every bot has honest
 **Run / Stop / Restart** controls (restart re-registers the Telegram webhook),
@@ -742,4 +742,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.08.002-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.09.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

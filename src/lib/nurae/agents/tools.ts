@@ -36,6 +36,7 @@ import {
   type BotCapabilities,
 } from '../bots/capabilities';
 import { botBehaviorsSchema, describeWhen, type BotBehaviorSpec } from '../bots/behavior';
+import { skillPlaybook, AGENT_SKILLS } from './skills';
 import {
   createUserBot,
   updateUserBot,
@@ -726,6 +727,28 @@ const docsRead: ToolSpec = {
   },
 };
 
+const skillRead: ToolSpec = {
+  name: 'skill_read',
+  description:
+    'Read one of NURAE\u2019s agent SKILLS — a proven step-by-step playbook for a common job ' +
+    '(builder: build-from-brief, order-form-alerts, shop-with-stars, reminders-drip, grow-audience, ' +
+    'diagnose-bot, audience-outreach, polish-copy · operator: morning-brief, fleet-health, ' +
+    'diagnose-down-bot, customer-review, settings-change). Call it when the task matches a skill ' +
+    'and follow its steps. Read-only.',
+  kind: 'read',
+  schema: z.object({ skill: z.string().min(1).max(64) }).strict(),
+  async exec(_ctx, args) {
+    const { skill } = args as { skill: string };
+    const text = skillPlaybook(skill);
+    if (!text) {
+      return fail(
+        `Unknown skill "${skill}" — available: ${AGENT_SKILLS.map((s) => s.id).join(', ')}`,
+      );
+    }
+    return { label: `Read the "${skill}" playbook`, data: { skill, text } };
+  },
+};
+
 const templateList: ToolSpec = {
   name: 'template_list',
   description:
@@ -788,6 +811,41 @@ const templateUse: ToolSpec = {
       label: `Created "${result.bot.name}" from the ${templateId} template`,
       detail: 'Draft saved \u2014 refine with bot_set_behaviors, then publish',
       data: { botId: result.bot.id, name: result.bot.name, behaviors: built.behaviors.length },
+    };
+  },
+};
+
+const botSetOwnerChat: ToolSpec = {
+  name: 'bot_set_owner_chat',
+  description:
+    'Wire INSTANT owner alerts: the bot pushes every completed order/intake form and every Stars payment ' +
+    'to the owner\u2019s own Telegram the moment they happen. Args: botId, chatId (the owner\u2019s own numeric ' +
+    'Telegram chat id — they get it by messaging @userinfobot; pass "" (empty) to clear the wiring). The owner must have ' +
+    'sent /start to their own bot once, or delivery fails. After saving, remind the owner to press "Send test" ' +
+    '(or restart the bot) to verify.',
+  kind: 'write',
+  schema: z
+    .object({
+      botId: botIdSchema,
+      chatId: z.string().trim().max(32),
+    })
+    .strict(),
+  async exec(ctx, args) {
+    const { botId, chatId } = args as { botId: string; chatId: string };
+    const owned = await ownedBot(ctx, botId);
+    if (!owned) return fail(`Bot not found (or not yours): ${botId}`);
+    const clean = chatId.trim();
+    if (clean && !/^\d{3,32}$/.test(clean)) {
+      return fail(
+        'Chat id must be 3-32 digits. The owner gets their numeric id by messaging @userinfobot in Telegram.',
+      );
+    }
+    const result = await updateUserBot(ctx.userId, botId, { ownerChatId: clean });
+    if (result.error || !result.bot) return fail('Update rejected', result.fields ?? result.error);
+    return {
+      label: clean ? `Instant alerts wired to chat ${clean}` : 'Instant alerts cleared',
+      detail: clean ? 'Completed forms and payments now arrive in the owner\u2019s Telegram' : undefined,
+      data: { botId, ownerChatId: clean || null },
     };
   },
 };
@@ -887,6 +945,7 @@ export const TOOLS: readonly ToolSpec[] = [
   botSetReplies,
   botAddKnowledge,
   botSetProfile,
+  botSetOwnerChat,
   botListUsers,
   botBroadcast,
   botScheduleMessage,
@@ -897,6 +956,7 @@ export const TOOLS: readonly ToolSpec[] = [
   filesList,
   filesRead,
   docsRead,
+  skillRead,
   templateList,
   templateUse,
 ];

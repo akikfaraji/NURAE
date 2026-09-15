@@ -109,6 +109,14 @@ export const updateBotConfigSchema = z.object({
     .optional(),
   apiKey: z.string().trim().max(500).optional().or(z.literal('')),
   baseUrl: z.string().trim().url('Base URL must be a valid URL').max(LIMITS.baseUrlMax).optional().or(z.literal('')),
+  // Owner's own Telegram chat id for instant alerts — digits only (Telegram
+  // chat ids are numeric), '' clears the wiring.
+  ownerChatId: z
+    .string()
+    .trim()
+    .regex(/^\d{3,32}$/, 'Telegram chat id must be 3-32 digits (get it from @userinfobot)')
+    .optional()
+    .or(z.literal('')),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

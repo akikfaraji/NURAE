@@ -41,6 +41,7 @@ import {
   TrashIcon,
 } from '@/components/nurae/icons';
 import {
+  AdminBotDTO,
   BotDTO,
   Catalog,
   CustomerDTO,
@@ -853,6 +854,7 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
                   <TableHead>Sign-up</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Chats</TableHead>
+                  <TableHead className="text-right">Bots</TableHead>
                   <TableHead className="text-right">Sessions</TableHead>
                   <TableHead>Joined</TableHead>
                   <TableHead className="w-12" />
@@ -887,6 +889,7 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
                       </span>
                     </TableCell>
                     <TableCell className="text-right text-sm tabular-nums text-foreground">{c.chatMessages}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums text-foreground">{c.botCount}</TableCell>
                     <TableCell className="text-right text-sm tabular-nums text-foreground">{c.activeSessions}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {new Date(c.createdAt).toLocaleDateString()}
@@ -902,8 +905,8 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
                           <AlertDialogHeader>
                             <AlertDialogTitle>Delete customer?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This permanently removes {c.email} with their sessions, verification state and support chat
-                              history. This cannot be undone.
+                              This permanently removes {c.email} with their {c.botCount} bot(s) (stopped and deleted),
+                              sessions, verification state, wallet history and support chat history. This cannot be undone.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -912,6 +915,180 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bots monitor — EVERY bot on the platform (official + customer-owned), with
+// lifecycle override (start/stop/restart) and one-click log access.
+// ---------------------------------------------------------------------------
+
+export function AdminBotsView() {
+  const [bots, setBots] = useState<AdminBotDTO[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await nuraeApi.listAdminBots();
+      setBots(r.bots);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load bots');
+      setBots([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    const kick = setTimeout(() => void refresh(), 0);
+    return () => clearTimeout(kick);
+  }, [refresh]);
+
+  const lifecycle = async (id: string, action: 'start' | 'stop' | 'restart') => {
+    setBusyId(id + action);
+    try {
+      if (action === 'start') await nuraeApi.startBot(id);
+      else if (action === 'stop') await nuraeApi.stopBot(id);
+      else await nuraeApi.restartBot(id);
+      toast.success(`Bot ${action === 'start' ? 'started' : action === 'stop' ? 'stopped' : 'restarted'}`);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `${action} failed`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const visible = (bots ?? []).filter((b) => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      b.name.toLowerCase().includes(q) ||
+      (b.owner.email ?? '').toLowerCase().includes(q) ||
+      (b.telegramUsername ?? '').toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Bots</h1>
+          <p className="text-sm text-muted-foreground">
+            Every bot on this platform — official fleet and customer builds. You can stop, start or restart any of them.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by name, owner or @username"
+            className="h-9 w-64"
+          />
+          <Button variant="outline" size="sm" onClick={() => void refresh()}>
+            <RefreshIcon className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
+      </div>
+
+      <Card className="border-border">
+        <CardContent className="p-0">
+          {bots === null ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading bots…</div>
+          ) : visible.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              {filter ? 'No bots match that filter.' : 'No bots yet.'}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Bot</TableHead>
+                  <TableHead>Owner</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Audience</TableHead>
+                  <TableHead className="text-right">Messages</TableHead>
+                  <TableHead>Updated</TableHead>
+                  <TableHead className="text-right">Controls</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{b.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {b.telegramUsername ? `${b.telegramUsername} · ` : ''}
+                          {b.transport ?? 'never started'}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={
+                          'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ' +
+                          (b.owner.kind === 'platform'
+                            ? 'border-border bg-muted text-foreground'
+                            : 'border-border text-muted-foreground')
+                        }
+                      >
+                        {b.owner.kind === 'platform' ? 'Official' : b.owner.email ?? 'customer'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={b.status} />
+                      {b.statusDetail && (
+                        <p className="mt-1 max-w-56 truncate text-[11px] text-muted-foreground" title={b.statusDetail}>
+                          {b.statusDetail}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums text-foreground">{b.audience}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums text-foreground">{b.messages}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      {new Date(b.updatedAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        {b.status === 'running' ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busyId === b.id + 'stop'}
+                              onClick={() => void lifecycle(b.id, 'stop')}
+                            >
+                              Stop
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busyId === b.id + 'restart'}
+                              onClick={() => void lifecycle(b.id, 'restart')}
+                            >
+                              Restart
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busyId === b.id + 'start'}
+                            onClick={() => void lifecycle(b.id, 'start')}
+                          >
+                            Start
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

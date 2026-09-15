@@ -97,6 +97,8 @@ export interface BotDTO {
   maxTokens: number;
   memorySize: number;
   enabled: boolean;
+  /** Owner's own Telegram chat id for instant alerts (null = off). */
+  ownerChatId: string | null;
   status: string;
   statusDetail: string | null;
   /** Transport used at last start: "webhook" | "polling" (null: never started). */
@@ -123,6 +125,7 @@ export interface BotRowLike {
   maxTokens: number;
   memorySize: number;
   enabled: boolean;
+  ownerChatId: string | null;
   status: string;
   statusDetail: string | null;
   transport: string | null;
@@ -148,6 +151,7 @@ export function toBotDTO(row: BotRowLike): BotDTO {
     maxTokens: row.maxTokens,
     memorySize: row.memorySize,
     enabled: row.enabled,
+    ownerChatId: row.ownerChatId ?? null,
     status: row.status,
     statusDetail: row.statusDetail,
     transport: row.transport,

@@ -24,6 +24,7 @@ import { rateLimit } from '../auth/rate-limit';
 import { chargeFeature } from '../billing/wallet';
 import { formatUsd } from '../billing/catalog';
 import { executeTool, toolDescriptors, type ExecRecord, type ToolContext } from './tools';
+import { skillIndexLines } from './skills';
 import type { GrowthLinks } from '../bots/templates';
 
 const TURN_LIMIT = 20; // agent turns per minute per user — same budget as chat
@@ -158,6 +159,19 @@ function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
     'TOOLS (the only capabilities you have \u2014 never invent others):',
     toolLines,
     '',
+    'SKILLS (proven playbooks for the common jobs \u2014 call skill_read with the id BEFORE acting when',
+    'the task matches one, then follow its steps; adapt to the request, don\u2019t recite):',
+    skillIndexLines('builder'),
+    '',
+    'SHOW YOUR WORK (how a real agent communicates):',
+    '- Before acting, one short line in "message" saying what you are about to do ("Setting up the',
+    '  order flow and wiring your alerts now"). The activity feed already shows each tool call \u2014',
+    '  narrate DECISIONS and results, not mechanics.',
+    '- After tool results come back, READ them and react: fix what failed, verify what succeeded,',
+    '  never assume a call worked without its result. Quote real numbers the tools returned.',
+    '- If a tool returns an error, fix the cause (wrong id, missing field) and retry once; then',
+    '  explain plainly what is blocking and what you need from the user.',
+    '',
     'OUTPUT PROTOCOL (strict): reply with ONE JSON object and nothing else:',
     '{"message": "markdown text for the user (or empty while still working)",',
     ' "actions": [{"tool": "tool_name", "args": {…}}],',
@@ -193,18 +207,37 @@ function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
     .join('\n');
 }
 
-/** Lenient JSON envelope extraction — models add prose despite instructions. */
+/**
+ * Lenient JSON envelope extraction — models add prose despite instructions.
+ *
+ * Hardening (V00.09.000): users must never see raw model JSON. The parser
+ *   1. strips markdown code fences the model wrapped the envelope in,
+ *   2. parses the widest {...} window as the envelope,
+ *   3. on a broken envelope, salvages the "message" string field directly,
+ *   4. otherwise shows only the prose OUTSIDE the braces (never the raw blob),
+ *   5. and as a last resort replaces the malformed reply with a clean notice.
+ */
+const MALFORMED_NOTICE =
+  'My reply came back malformed, so I discarded it instead of showing you raw data. Please send that again.';
+
 export function parseAgentReply(text: string): {
   message: string;
   actions: Array<{ tool: string; args: Record<string, unknown> }>;
   done: boolean;
   jsonOk: boolean;
 } {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
+  // 1. Code fences off — ```json … ``` around the envelope is common.
+  const cleaned = text.replace(/```(?:json)?/gi, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end <= start) {
+    // Closing brace BEFORE the opening one — structural garbage.
+    return { message: MALFORMED_NOTICE, actions: [], done: true, jsonOk: false };
+  }
   if (start !== -1 && end > start) {
+    const window = cleaned.slice(start, end + 1);
     try {
-      const parsed = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+      const parsed = JSON.parse(window) as Record<string, unknown>;
       const actions = Array.isArray(parsed.actions) ? parsed.actions : [];
       return {
         message: typeof parsed.message === 'string' ? parsed.message : '',
@@ -219,10 +252,52 @@ export function parseAgentReply(text: string): {
         jsonOk: true,
       };
     } catch {
-      /* fall through to plain-text */
+      // 2. Broken envelope — salvage the human message if one exists.
+      const salvaged = salvageMessageField(window);
+      if (salvaged) return { message: salvaged, actions: [], done: true, jsonOk: false };
+      // 3. Show only the prose outside the braces, never the raw blob.
+      const outside = (cleaned.slice(0, start) + ' ' + cleaned.slice(end + 1)).trim();
+      if (outside) return { message: outside, actions: [], done: true, jsonOk: false };
+      // 4. Nothing but a broken envelope — clean notice, not raw JSON.
+      return { message: MALFORMED_NOTICE, actions: [], done: true, jsonOk: false };
     }
   }
-  return { message: text, actions: [], done: true, jsonOk: false };
+  if (start !== -1 && end === -1) {
+    // Unclosed envelope (truncated generation). Salvage or notice — never raw.
+    const salvaged = salvageMessageField(cleaned.slice(start));
+    if (salvaged) return { message: salvaged, actions: [], done: true, jsonOk: false };
+    return { message: MALFORMED_NOTICE, actions: [], done: true, jsonOk: false };
+  }
+  return { message: cleaned, actions: [], done: true, jsonOk: false };
+}
+
+/** Best-effort extraction of a "message": "…" string from broken JSON. */
+function salvageMessageField(blob: string): string | null {
+  const closed = blob.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (closed) {
+    try {
+      const unescaped = JSON.parse(`"${closed[1]}"`) as string;
+      if (unescaped.trim()) return unescaped;
+    } catch {
+      /* fall through to the unterminated salvage */
+    }
+  }
+  // Truncated generation: the message value never got its closing quote.
+  const open = blob.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)$/);
+  if (open && open[1].trim()) return open[1];
+  return null;
+}
+
+/** Compact preview of a tool result for persistence + UI inspection. */
+export function toolDataPreview(data: unknown, max = 700): string | undefined {
+  if (data === undefined || data === null) return undefined;
+  try {
+    const raw = typeof data === 'string' ? data : JSON.stringify(data);
+    if (!raw) return undefined;
+    return raw.length > max ? raw.slice(0, max) + '…' : raw;
+  } catch {
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -504,7 +579,14 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
       role: 'assistant',
       content: finalMessage,
       meta: JSON.stringify({
-        activity: activity.map((a) => ({ seq: a.seq, tool: a.tool, label: a.label, status: a.status, detail: a.detail })),
+        activity: activity.map((a) => ({
+          seq: a.seq,
+          tool: a.tool,
+          label: a.label,
+          status: a.status,
+          detail: a.detail,
+          dataPreview: toolDataPreview(a.data),
+        })),
         needsConfirm,
         draftBotId,
       }),

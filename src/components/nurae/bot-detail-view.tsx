@@ -30,6 +30,7 @@ import {
 } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -321,6 +322,8 @@ function ConfigSection({
   const [memorySize, setMemorySize] = useState(String(bot.memorySize));
   const [token, setToken] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [ownerChatId, setOwnerChatId] = useState(bot.ownerChatId ?? '');
+  const [testingAlert, setTestingAlert] = useState(false);
 
   // Reset local fields when the bot record changes (render-phase update —
   // the React-sanctioned alternative to a setState-in-effect). 
@@ -337,6 +340,7 @@ function ConfigSection({
     setTemperature(String(bot.temperature));
     setMaxTokens(String(bot.maxTokens));
     setMemorySize(String(bot.memorySize));
+    setOwnerChatId(bot.ownerChatId ?? '');
   }
 
   const providerInfo = catalog?.providers.find((p) => p.id === provider);
@@ -407,6 +411,54 @@ function ConfigSection({
             AI provider key {bot.hasApiKey ? <span className="text-foreground/60">· set — leave empty to keep</span> : ''}
           </Label>
           <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-or-…" autoComplete="off" className="bg-transparent font-mono text-xs" />
+        </div>
+      </div>
+      <div className="mt-4 rounded-md border border-border/70 p-3">
+        <p className="text-xs font-medium text-foreground">Instant updates in your Telegram</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Get every completed order, intake form and Stars payment pushed to your own Telegram the moment it
+          happens — no site-checking. Message <span className="font-mono">@userinfobot</span> to get your numeric
+          chat id, paste it here, save, then send a test. Your account must have sent /start to this bot once.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-40 flex-1 space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Your chat id {bot.ownerChatId ? <span className="text-foreground/60">· wired to {bot.ownerChatId}</span> : '· not set'}
+            </Label>
+            <Input
+              value={ownerChatId}
+              onChange={(e) => setOwnerChatId(e.target.value.replace(/[^\d]/g, ''))}
+              placeholder="e.g. 6123456789"
+              inputMode="numeric"
+              className="bg-transparent font-mono text-xs"
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saving}
+            onClick={() => onSave({ ownerChatId: ownerChatId.trim() })}
+          >
+            {saving ? 'Saving…' : 'Save alert wiring'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={testingAlert}
+            onClick={async () => {
+              setTestingAlert(true);
+              try {
+                await nuraeApi.testOwnerAlert(bot.id);
+                toast.success('Test alert sent — check your Telegram');
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Test failed');
+              } finally {
+                setTestingAlert(false);
+              }
+            }}
+          >
+            {testingAlert ? 'Sending…' : 'Send test'}
+          </Button>
         </div>
       </div>
       <div className="mt-5">

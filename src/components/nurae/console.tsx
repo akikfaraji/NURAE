@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * NURAE admin console — application shell (lives at /admin).
- * Single-page dashboard: auth gate → overview (with the official bot card) →
- * projects → project → bot → customers → site settings.
- * The public site (landing + NURAE CS chat) lives at `/`.
+ * NURAE admin console — application shell (lives under /admin/*).
+ * URL-driven sections: /admin/dashboard · /admin/bots · /admin/customers ·
+ * /admin/agent · /admin/settings. Deep views (projects → project → bot)
+ * keep their section's URL. The public site (landing + NURAE CS chat) lives at `/`.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { OverviewView, ProjectView, ProjectsView, CustomersView, SiteSettingsView, OfficialBotCard, OfficialFleetCard } from '@/components/nurae/views';
+import { OverviewView, ProjectView, ProjectsView, CustomersView, AdminBotsView, SiteSettingsView, OfficialBotCard, OfficialFleetCard } from '@/components/nurae/views';
 import { BotView } from '@/components/nurae/bot-view';
 import { OperatorAgentView } from '@/components/nurae/operator-view';
 import { Catalog, nuraeApi } from '@/lib/nurae-client/api';
@@ -27,17 +27,67 @@ type View =
   | { type: 'projects' }
   | { type: 'project'; id: string }
   | { type: 'bot'; id: string; projectId: string }
+  | { type: 'bots' }
   | { type: 'customers' }
   | { type: 'agent' }
   | { type: 'settings' };
 
-export function NuraeConsole() {
+type Section = 'dashboard' | 'bots' | 'projects' | 'customers' | 'agent' | 'settings';
+
+/** The URL section a view belongs to (deep views ride their parent section). */
+function sectionOf(view: View): Section {
+  switch (view.type) {
+    case 'overview':
+      return 'dashboard';
+    case 'bots':
+      return 'bots';
+    case 'customers':
+      return 'customers';
+    case 'agent':
+      return 'agent';
+    case 'settings':
+      return 'settings';
+    default:
+      return 'projects';
+  }
+}
+
+function viewFromSection(section: string | undefined): View {
+  switch (section) {
+    case 'bots':
+      return { type: 'bots' };
+    case 'customers':
+      return { type: 'customers' };
+    case 'agent':
+      return { type: 'agent' };
+    case 'settings':
+      return { type: 'settings' };
+    case 'projects':
+      return { type: 'projects' };
+    default:
+      return { type: 'overview' };
+  }
+}
+
+export function NuraeConsole({ initialSection }: { initialSection?: string }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [authed, setAuthed] = useState(true);
   const [checked, setChecked] = useState(false);
-  const [view, setView] = useState<View>({ type: 'overview' });
+  const [view, setView] = useState<View>(() => viewFromSection(initialSection));
   const [coreUp, setCoreUp] = useState<boolean | null>(null);
+
+  // Every navigation keeps the URL honest (/admin/<section>) without a router
+  // round-trip — deep views (project/bot) map back to their section.
+  const go = useCallback((next: View) => {
+    setView(next);
+    try {
+      const url = `/admin/${sectionOf(next)}`;
+      if (window.location.pathname !== url) window.history.replaceState(null, '', url);
+    } catch {
+      /* SSR-ish edge — URL sync is best-effort */
+    }
+  }, []);
 
   // Load catalog + auth state. Catalog lives behind the auth guard, so fetch
   // it only once authenticated.
@@ -73,21 +123,21 @@ export function NuraeConsole() {
   }, [loadCatalog]);
 
   const openProject = async (id: string) => {
-    setView({ type: 'project', id });
+    go({ type: 'project', id });
   };
 
   const openBotById = async (botId: string) => {
     // The official bot card knows the bot id but not its project — resolve it.
     try {
       const { bot } = await nuraeApi.getBot(botId);
-      setView({ type: 'bot', id: bot.id, projectId: bot.projectId });
+      go({ type: 'bot', id: bot.id, projectId: bot.projectId });
     } catch {
-      setView({ type: 'projects' });
+      go({ type: 'projects' });
     }
   };
 
   const goHome = async () => {
-    setView({ type: 'overview' });
+    go({ type: 'overview' });
   };
 
   if (!checked) {
@@ -108,7 +158,7 @@ export function NuraeConsole() {
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
           <button
             className="flex items-center gap-3 text-left"
-            onClick={() => setView({ type: 'overview' })}
+            onClick={() => go({ type: 'overview' })}
             aria-label="Go to overview"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground font-bold text-background">
@@ -129,15 +179,23 @@ export function NuraeConsole() {
               variant="ghost"
               size="sm"
               className={view.type === 'overview' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => setView({ type: 'overview' })}
+              onClick={() => go({ type: 'overview' })}
             >
               Dashboard
             </Button>
             <Button
               variant="ghost"
               size="sm"
+              className={view.type === 'bots' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
+              onClick={() => go({ type: 'bots' })}
+            >
+              Bots
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               className={view.type === 'projects' || view.type === 'project' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => setView({ type: 'projects' })}
+              onClick={() => go({ type: 'projects' })}
             >
               Projects
             </Button>
@@ -145,7 +203,7 @@ export function NuraeConsole() {
               variant="ghost"
               size="sm"
               className={view.type === 'agent' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => setView({ type: 'agent' })}
+              onClick={() => go({ type: 'agent' })}
             >
               Agent
             </Button>
@@ -153,7 +211,7 @@ export function NuraeConsole() {
               variant="ghost"
               size="sm"
               className={view.type === 'customers' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => setView({ type: 'customers' })}
+              onClick={() => go({ type: 'customers' })}
             >
               <UsersIcon className="mr-1.5 h-3.5 w-3.5" /> Customers
             </Button>
@@ -161,7 +219,7 @@ export function NuraeConsole() {
               variant="ghost"
               size="sm"
               className={view.type === 'settings' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => setView({ type: 'settings' })}
+              onClick={() => go({ type: 'settings' })}
             >
               <SettingsIcon className="mr-1.5 h-3.5 w-3.5" /> Site
             </Button>
@@ -209,6 +267,8 @@ export function NuraeConsole() {
         )}
         {view.type === 'customers' ? (
           <CustomersView onBack={goHome} />
+        ) : view.type === 'bots' ? (
+          <AdminBotsView />
         ) : view.type === 'agent' ? (
           <OperatorAgentView />
         ) : view.type === 'settings' ? (
@@ -223,7 +283,7 @@ export function NuraeConsole() {
           <OverviewView
             catalog={catalog!}
             onOpenProject={openProject}
-            onGoProjects={() => setView({ type: 'projects' })}
+            onGoProjects={() => go({ type: 'projects' })}
           />
         ) : view.type === 'projects' ? (
           <ProjectsView catalog={catalog!} onOpenProject={openProject} />
@@ -231,8 +291,8 @@ export function NuraeConsole() {
           <ProjectView
             projectId={view.id}
             catalog={catalog!}
-            onOpenBot={(botId) => setView({ type: 'bot', id: botId, projectId: view.id })}
-            onBack={() => setView({ type: 'projects' })}
+            onOpenBot={(botId) => go({ type: 'bot', id: botId, projectId: view.id })}
+            onBack={() => go({ type: 'projects' })}
           />
         ) : (
           <BotView

@@ -24,7 +24,12 @@ Telegram commands, inline keyboards, callbacks and flows:
 ## For AI agents and MCP clients
 
 - Tool manifest (MCP-compatible): `GET /api/agents/tools` — the full tool
-  registry as JSON-schema descriptors (kind: read/write, consequential flags).
+  registry as JSON-schema descriptors (kind: read/write, consequential flags),
+  plus the SKILL LIBRARY: named playbooks (build-from-brief, order-form-alerts,
+  shop-with-stars, reminders-drip, grow-audience, diagnose-bot, audience-outreach,
+  polish-copy · operator: morning-brief, fleet-health, diagnose-down-bot,
+  customer-review, settings-change). Agents read a playbook with `skill_read`
+  and follow it step by step.
 - Bot Builder agent: a signed-in user's agent that builds and manages THEIR bots
   through that registry (drafts, behaviors, publishing, broadcasts, schedules).
 - Operator agent: the instance admin's platform agent — server overview, fleet
@@ -39,6 +44,9 @@ Telegram commands, inline keyboards, callbacks and flows:
 - Bots follow the Telegram Bot API honestly: no first-contact DMs (the API
   refuses), no unsolicited email (consent-first only). Growth comes from
   join-gates, streaks, referral loops and shareable deep links.
+- Owner instant alerts: a bot owner registers their own Telegram chat id
+  (bot_set_owner_chat / bot page) and every completed order, intake form and
+  Stars payment is pushed to their Telegram the moment it happens.
 - Self-hosting: one Node process + SQLite; point NURAE_SITE_URL at the public
   origin, add a Telegram token per bot, an AI provider key (OpenRouter has free
   models), and the fleet + agents wake up on their own.

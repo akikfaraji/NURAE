@@ -94,6 +94,7 @@ type BotRowFull = {
   status: string;
   statusDetail: string | null;
   transport: string | null;
+  ownerChatId: string | null;
   lastStartedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -255,6 +256,8 @@ export interface UpdateUserBotInput {
   telegramToken?: string;
   apiKey?: string;
   baseUrl?: string;
+  /** Owner's own Telegram chat id for instant alerts ('' clears). */
+  ownerChatId?: string;
   commands?: BotCapabilities['commands'];
   replies?: BotCapabilities['replies'];
   behaviors?: BotBehaviorSpec[];
@@ -283,6 +286,8 @@ export async function updateUserBot(
   if (data.maxTokens !== undefined) patch.maxTokens = data.maxTokens;
   if (data.memorySize !== undefined) patch.memorySize = data.memorySize;
   if (data.enabled !== undefined) patch.enabled = data.enabled;
+  // Instant-owner-alerts wiring: '' clears it, digits set it.
+  if (data.ownerChatId !== undefined) patch.ownerChatId = data.ownerChatId ? data.ownerChatId : null;
   if (typeof (input as UpdateUserBotInput).archived === 'boolean') {
     patch.archived = (input as UpdateUserBotInput).archived;
   }

@@ -29,6 +29,8 @@ export interface RuntimeBotRecord {
   memorySize: number;
   enabled: boolean;
   status: string;
+  /** Owner's own Telegram chat id for instant alerts (null = off). */
+  ownerChatId: string | null;
   /** Validated capabilities loaded from the JSON columns (degrade to empty). */
   capabilities: BotCapabilities;
   /** Decrypted Telegram token — runtime-internal use only. */
@@ -216,6 +218,7 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
         memorySize: row.memorySize,
         enabled: row.enabled,
         status: row.status,
+        ownerChatId: row.ownerChatId ?? null,
         capabilities: loadCapabilities(row),
         telegramToken,
         apiKey,

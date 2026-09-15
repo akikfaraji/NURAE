@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
+import { AgentActivity } from '@/components/nurae/agent-activity';
 import { SessionList } from '@/components/nurae/session-list';
 import { ActivityStepDTO, ApiError, EntryDTO, FileDTO, SessionDTO, nuraeApi } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
@@ -404,7 +405,7 @@ export function AgentsView() {
                       <span className="animate-pulse">●</span> working…
                     </p>
                   )}
-                  {pendingSteps.length > 0 && <Activity steps={pendingSteps} live />}
+                  {pendingSteps.length > 0 && <AgentActivity steps={pendingSteps} live />}
                   {error && (
                     <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
                       {error}
@@ -582,35 +583,10 @@ function AgentMessage({ entry }: { entry: EntryDTO }) {
   }
   return (
     <div className="space-y-3">
-      {entry.activity.length > 0 && <Activity steps={entry.activity} />}
+      {entry.activity.length > 0 && <AgentActivity steps={entry.activity} />}
       {entry.content ? <Markdown>{entry.content}</Markdown> : null}
     </div>
   );
 }
 
-/** Understandable progress — subtle, sourced from the audit trail. */
-function Activity({ steps, live }: { steps: ActivityStepDTO[]; live?: boolean }) {
-  return (
-    <ul className="space-y-1 border-l border-border/70 pl-3" aria-live={live ? 'polite' : undefined}>
-      {steps.map((s) => (
-        <li key={s.seq} className="flex items-baseline gap-2 text-xs">
-          <span
-            className={
-              s.status === 'ok'
-                ? 'text-foreground'
-                : s.status === 'error'
-                  ? 'text-destructive'
-                  : 'animate-pulse text-muted-foreground'
-            }
-            aria-hidden
-          >
-            {s.status === 'ok' ? '✓' : s.status === 'error' ? '×' : '…'}
-          </span>
-          <span className={s.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}>
-            {s.label}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
+/** Understandable progress — subtle, sourced from the audit trail. Shared AgentActivity renders tool calls AND their outputs. */

@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Markdown } from '@/components/nurae/markdown';
+import { AgentActivity } from '@/components/nurae/agent-activity';
 import { ApiError, OperatorEntryDTO, OperatorStepDTO, OperatorToolDTO, nuraeApi } from '@/lib/nurae-client/api';
 
 const QUICK_GOALS = [
@@ -29,29 +30,7 @@ const QUICK_GOALS = [
 
 function StepChips({ steps }: { steps: OperatorStepDTO[] }) {
   if (!steps.length) return null;
-  return (
-    <div className="mt-2 space-y-1">
-      {steps.map((s) => (
-        <div key={s.seq} className="flex items-start gap-2 text-xs">
-          <span
-            className={
-              'mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ' +
-              (s.status === 'ok'
-                ? 'bg-foreground'
-                : s.status === 'confirm'
-                  ? 'bg-muted-foreground'
-                  : 'bg-destructive')
-            }
-            aria-hidden
-          />
-          <span className="text-muted-foreground">
-            <span className="font-mono text-[11px] text-foreground/70">{s.tool}</span>
-            {s.detail ? ` — ${s.label} (${s.detail})` : ` — ${s.label}`}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
+  return <AgentActivity steps={steps} />;
 }
 
 export function OperatorAgentView() {

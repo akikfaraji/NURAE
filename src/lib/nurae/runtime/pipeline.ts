@@ -698,7 +698,18 @@ async function handleAwaitingAnswer(
   const ruleId = state.resumeRuleId;
   const resumeStep = state.resumeStep ?? 0;
   const rule = ruleId ? caps(bot).replies.find((r) => r.id === ruleId) : undefined;
-  if (!rule || resumeStep + 1 >= rule.messages.length) return; // flow ended — nothing more to send
+  const mergedAttributes = { ...state.attributes, [awaiting]: answer };
+  if (!rule || resumeStep + 1 >= rule.messages.length) {
+    // The flow just COMPLETED (order / intake / booking) — the owner gets the
+    // whole collected intake in their own Telegram the moment it happens.
+    if (bot.ownerChatId) {
+      const { sendOwnerAlert, ownerFlowAlert } = await import('../bots/owner-notify');
+      await sendOwnerAlert(bot.id, ownerFlowAlert(bot.name, ctx.chatId, ctx.fromFirstName, mergedAttributes)).catch(
+        () => undefined,
+      );
+    }
+    return; // flow ended — nothing more to send
+  }
   await executeReplyMessages(
     bot,
     sender,
@@ -706,11 +717,18 @@ async function handleAwaitingAnswer(
     rule.id,
     resumeStep + 1,
     ctx,
-    { ...state, attributes: { ...state.attributes, [awaiting]: answer }, awaiting: null, resumeRuleId: null, resumeStep: null },
+    { ...state, attributes: mergedAttributes, awaiting: null, resumeRuleId: null, resumeStep: null },
     store,
     signal,
     providerSelector,
   );
+  if (resumeStep + 2 >= rule.messages.length && bot.ownerChatId) {
+    // The message just sent was the LAST step — the form is now complete.
+    const { sendOwnerAlert, ownerFlowAlert } = await import('../bots/owner-notify');
+    await sendOwnerAlert(bot.id, ownerFlowAlert(bot.name, ctx.chatId, ctx.fromFirstName, mergedAttributes)).catch(
+      () => undefined,
+    );
+  }
 }
 
 /**
@@ -899,6 +917,14 @@ async function handleSuccessfulPayment(
     `Stars payment received (chat ${msg.chatId}): ${p.amount} ${p.currency} payload=${p.payload.slice(0, 64)}.`,
     'PAYMENT_RECEIVED',
   );
+  // Customer bot + alerts wired → the owner hears about the sale instantly.
+  if (bot.ownerId !== null && bot.ownerChatId) {
+    const { sendOwnerAlert, ownerPaymentAlert } = await import('../bots/owner-notify');
+    await sendOwnerAlert(
+      bot.id,
+      ownerPaymentAlert(bot.name, msg.chatId, paymentTitleFor(bot, p.payload), p.amount, p.currency, p.payload),
+    ).catch(() => undefined);
+  }
   const successText = successTextFor(bot, p.payload);
   if (successText) {
     await executeReplyMessages(bot, sender, [{ text: successText }], `pay_${p.payload.slice(0, 32)}`, 0, ctx, state, store, signal);

@@ -64,6 +64,10 @@ model Bot {
   commandsJson         String? @map("commands_json")
   repliesJson          String? @map("replies_json")
   behaviorsJson        String? @map("behaviors_json")
+  // Owner's own Telegram chat id for INSTANT updates (new orders, completed
+  // forms, Stars payments). Null = alerts off; the owner connects it from the
+  // bot page (or asks the agent) and receives a verification message.
+  ownerChatId          String? @map("owner_chat_id")
   // Archived bots stay runnable-but-hidden for their owner; delete removes rows.
   archived             Boolean @default(false)
   enabled              Boolean @default(true)

@@ -25,8 +25,9 @@ import type { ChatMessage } from '../ai/types';
 import { sanitizeForLog, truncateForLog } from '../sanitize';
 import { rateLimit } from '../auth/rate-limit';
 import { executeTool, getTool, toolDescriptors, type ExecRecord, type ToolContext } from './tools';
-import { parseAgentReply } from './bot-builder';
+import { parseAgentReply, toolDataPreview } from './bot-builder';
 import { platformToolDescriptors } from './platform-tools';
+import { skillIndexLines } from './skills';
 
 const TURN_LIMIT = 20; // operator turns per minute — same budget as chat
 const TURN_WINDOW_MS = 60 * 1000;
@@ -122,6 +123,17 @@ function operatorSystemPrompt(state: OperatorState, userConfirmed: boolean): str
     '',
     `You may also call these user-tier read/reference tools when useful: ${userLines.join(', ')}.`,
     'Everything else is dashboard work — point the admin there honestly.',
+    '',
+    'SKILLS (proven playbooks for the common jobs — call skill_read with the id BEFORE acting when',
+    'the task matches one, then follow its steps):',
+    skillIndexLines('operator'),
+    '',
+    'SHOW YOUR WORK (how a real operator communicates):',
+    '- Before acting, one short line saying what you are about to do. The activity feed shows each',
+    '  tool call — narrate DECISIONS and results, not mechanics.',
+    '- READ every tool result and react to it; quote the real numbers it returned. Never assume a',
+    '  call worked without its result, and never invent a number a tool did not give you.',
+    '- If a tool errors, fix the cause and retry once, then report plainly what is blocking.',
     '',
     'OUTPUT PROTOCOL (strict): reply with ONE JSON object and nothing else:',
     '{"message": "markdown text for the operator (or empty while still working)",',
@@ -325,7 +337,14 @@ export async function runOperatorTurn(input: OperatorTurnInput): Promise<Operato
       role: 'assistant',
       content: finalMessage,
       meta: JSON.stringify({
-        activity: activity.map((a) => ({ seq: a.seq, tool: a.tool, label: a.label, status: a.status, detail: a.detail })),
+        activity: activity.map((a) => ({
+          seq: a.seq,
+          tool: a.tool,
+          label: a.label,
+          status: a.status,
+          detail: a.detail,
+          dataPreview: toolDataPreview(a.data),
+        })),
         needsConfirm,
       }),
     },

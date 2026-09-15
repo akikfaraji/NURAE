@@ -18,13 +18,14 @@ import { z } from 'zod';
 import { apiError, guard, internalError } from '@/lib/nurae/api/base';
 import { operatorHistory, runOperatorTurn } from '@/lib/nurae/agents/operator';
 import { platformToolDescriptors } from '@/lib/nurae/agents/platform-tools';
+import { skillManifest } from '@/lib/nurae/agents/skills';
 
 export async function GET(req: Request): Promise<Response> {
   const denied = guard(req);
   if (denied) return denied;
   try {
     const history = await operatorHistory();
-    return NextResponse.json({ ...history, tools: platformToolDescriptors() });
+    return NextResponse.json({ ...history, tools: platformToolDescriptors(), skills: skillManifest('operator') });
   } catch (err) {
     return internalError(err, 'agent.operator.get');
   }

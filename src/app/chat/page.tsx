@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-/** /chat moved to /chats — old links keep working. */
+/** /chat → /dashboard — the console's front door is the user dashboard now. */
 export default function Page() {
-  redirect('/chats');
+  redirect('/dashboard');
 }

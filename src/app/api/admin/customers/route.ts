@@ -24,11 +24,20 @@ export async function GET(req: Request): Promise<Response> {
         googleId: true,
         passwordHash: true,
         role: true,
+        balanceMicros: true,
+        planId: true,
         lastLoginAt: true,
         createdAt: true,
         _count: { select: { sessions: true } },
       },
     });
+
+    // Bots per customer (ownerId is not a schema FK — group it explicitly).
+    const botCounts = new Map<string, number>();
+    const botGroups = await db.bot.groupBy({ by: ['ownerId'], _count: { _all: true } });
+    for (const g of botGroups) {
+      if (g.ownerId) botCounts.set(g.ownerId, g._count._all);
+    }
 
     // Chat volume per user: conversations of the official bot keyed web:<userId>.
     const officialPointer = await db.siteSetting.findUnique({ where: { key: 'official_bot_id' } });
@@ -53,6 +62,9 @@ export async function GET(req: Request): Promise<Response> {
       role: u.role,
       chatMessages: chatCounts.get(u.id) ?? 0,
       activeSessions: u._count.sessions,
+      botCount: botCounts.get(u.id) ?? 0,
+      balanceMicros: u.balanceMicros,
+      planId: u.planId ?? null,
       lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
       createdAt: u.createdAt.toISOString(),
     }));

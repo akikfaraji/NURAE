@@ -175,8 +175,52 @@ export interface CustomerDTO {
   role: string;
   chatMessages: number;
   activeSessions: number;
+  botCount: number;
+  balanceMicros: number;
+  planId: string | null;
   lastLoginAt: string | null;
   createdAt: string;
+}
+
+/** One bot on the platform, from the admin monitor (GET /api/admin/bots). */
+export interface AdminBotDTO {
+  id: string;
+  name: string;
+  owner: { id: string | null; email: string | null; name: string; kind: 'platform' | 'customer' };
+  status: string;
+  statusDetail: string | null;
+  transport: string | null;
+  telegramUsername: string | null;
+  archived: boolean;
+  enabled: boolean;
+  audience: number;
+  messages: number;
+  logs: number;
+  lastStartedAt: string | null;
+  updatedAt: string;
+}
+
+/** GET /api/my/dashboard — the user dashboard payload. */
+export interface MyDashboardDTO {
+  slug: string;
+  user: { name: string; email: string };
+  bots: Array<{
+    id: string;
+    name: string;
+    status: string;
+    statusDetail: string | null;
+    telegramUsername: string | null;
+    ownerChatId: string | null;
+    hasTelegramToken: boolean;
+    updatedAt: string;
+  }>;
+  wallet: {
+    balanceMicros: number;
+    planId: string | null;
+    planExpiresAt: string | null;
+    trialEndsAt: string | null;
+  };
+  agentSessions: Array<{ id: string; title: string; lastMessageAt: string | null }>;
 }
 
 export interface FleetEntry {
@@ -319,6 +363,10 @@ export interface ActivityStepDTO {
   label: string;
   status: 'ok' | 'error' | 'confirm';
   detail?: string;
+  /** Compact preview of the tool's result (persisted so reloads keep it). */
+  dataPreview?: string;
+  /** Full live result data (present only on the live turn response). */
+  data?: unknown;
 }
 
 export interface OperatorStepDTO {
@@ -327,6 +375,8 @@ export interface OperatorStepDTO {
   label: string;
   status: 'ok' | 'error' | 'confirm';
   detail?: string;
+  dataPreview?: string;
+  data?: unknown;
 }
 
 export interface OperatorToolDTO {
@@ -596,7 +646,13 @@ export const nuraeApi = {
   saveSettings: (patch: Partial<SiteInfoDTO>) =>
     api<{ settings: SiteInfoDTO }>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   listCustomers: () => api<{ customers: CustomerDTO[]; total: number }>('/api/admin/customers'),
-  deleteCustomer: (id: string) => api<{ ok: true }>(`/api/admin/customers/${id}`, { method: 'DELETE' }),
+  deleteCustomer: (id: string) => api<{ ok: true; botsDeleted: number; botsStopped: number }>(`/api/admin/customers/${id}`, { method: 'DELETE' }),
+  listAdminBots: () => api<{ bots: AdminBotDTO[]; total: number }>('/api/admin/bots'),
+  testOwnerAlert: (id: string) =>
+    api<{ ok: true }>(`/api/my/bots/${id}/notify-test`, { method: 'POST' }),
+
+  myDashboard: () =>
+    api<MyDashboardDTO>('/api/my/dashboard'),
 
   // --- Chats + agents -------------------------------------------------------
   listSessions: (kind?: 'chat' | 'agent') =>
@@ -657,6 +713,10 @@ export const nuraeApi = {
     api<{ bot: UserBotDTO }>(`/api/my/bots/${id}/publish`, { method: 'DELETE' }),
   restartMyBot: (id: string) =>
     api<{ bot: UserBotDTO }>(`/api/my/bots/${id}/restart`, { method: 'POST' }),
+  startMyBot: (id: string) =>
+    api<{ ok: boolean; status: string }>(`/api/my/bots/${id}/publish`, { method: 'POST', body: JSON.stringify({ confirm: true }) }),
+  stopMyBot: (id: string) =>
+    api<{ ok: boolean }>(`/api/my/bots/${id}/publish`, { method: 'DELETE' }),
   testMyBot: (id: string, input: { text?: string; callback?: string }) =>
     api<{ sends: CapturedSendDTO[]; error: string | null }>(`/api/my/bots/${id}/test`, {
       method: 'POST',

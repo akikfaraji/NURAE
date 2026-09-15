@@ -31,10 +31,12 @@ import { SessionUserDTO, nuraeApi } from '@/lib/nurae-client/api';
 import { NURAE_VERSION } from '@/lib/nurae/version';
 
 const NAV = [
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/chats', label: 'Chats' },
   { href: '/chats/agents', label: 'Agents' },
   { href: '/bots', label: 'Bots' },
   { href: '/featured', label: 'Featured' },
+  { href: '/pricing', label: 'Pricing' },
   { href: '/billing', label: 'Billing' },
 ] as const;
 
