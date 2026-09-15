@@ -88,7 +88,7 @@ export function NMark({ className }: { className?: string }) {
     <span
       aria-hidden
       className={
-        'flex h-6 w-6 shrink-0 items-center justify-center border border-border text-[11px] font-semibold leading-none text-foreground ' +
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-[11px] font-semibold leading-none text-foreground ' +
         (className ?? '')
       }
     >
@@ -199,7 +199,7 @@ export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => 
                 void navigator.clipboard?.writeText(link);
                 setCopied(true);
               }}
-              className="mt-4 w-full truncate border border-border px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:bg-muted/50"
+              className="mt-4 w-full truncate rounded-md border border-border px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:bg-muted/50"
             >
               {copied ? 'Copied to clipboard' : link}
             </button>
@@ -327,7 +327,10 @@ export function SiteFooter({ siteName }: { siteName: string }) {
 export function SiteSplash() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-xs text-muted-foreground">Loading…</div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" aria-hidden />
+        Loading…
+      </div>
     </div>
   );
 }

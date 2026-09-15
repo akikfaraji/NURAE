@@ -17,6 +17,7 @@ import { ApiError, SessionUserDTO, UserBotDTO, nuraeApi } from '@/lib/nurae-clie
 import { TEMPLATE_CATALOG } from '@/lib/nurae/bots/templates';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { LoadingRow } from '@/components/nurae/bits';
 
 export function BotsListView() {
   const { user, checked, signOut } = useSiteUser();
@@ -53,12 +54,12 @@ export function BotsListView() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/bots/new?ai=1">
-              <Button size="sm">New bot</Button>
-            </Link>
-            <Link href="/bots/new">
-              <Button size="sm" variant="outline">Start from scratch</Button>
-            </Link>
+            <Button size="sm" asChild>
+              <Link href="/bots/new?ai=1">New bot</Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/bots/new">Start from scratch</Link>
+            </Button>
           </div>
         </div>
 
@@ -70,7 +71,9 @@ export function BotsListView() {
         </div>
 
         {!loaded ? (
-          <p className="mt-4 text-xs text-muted-foreground">Loading…</p>
+          <div className="mt-4">
+            <LoadingRow />
+          </div>
         ) : bots.length === 0 ? (
           <div className="mt-6 max-w-lg">
             <p className="text-sm leading-relaxed text-muted-foreground">
@@ -79,7 +82,9 @@ export function BotsListView() {
               — and NURAE builds it. You approve everything before it goes live, and can fine-tune every detail afterwards.
             </p>
             <div className="mt-4 flex gap-3">
-              <Link href="/bots/new?ai=1"><Button size="sm">Describe a bot</Button></Link>
+              <Button size="sm" asChild>
+                <Link href="/bots/new?ai=1">Describe a bot</Link>
+              </Button>
               <Link href="/bots" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from a built-in bot above</Link>
             </div>
           </div>
@@ -384,9 +389,9 @@ function PublicGate({ title, body }: { title: string; body: string }) {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-16">
         <h1 className="text-lg font-medium text-foreground">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
-        <Link href="/" className="mt-6 inline-flex w-fit">
-          <Button size="sm">Sign in</Button>
-        </Link>
+        <Button size="sm" asChild className="mt-6 w-fit">
+          <Link href="/">Sign in</Link>
+        </Button>
       </main>
     </div>
   );

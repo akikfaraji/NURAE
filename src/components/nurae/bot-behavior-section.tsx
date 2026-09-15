@@ -228,7 +228,7 @@ export function BehaviorSection({
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="text-sm text-foreground">{whenLabel(b.when)}</span>
                 <span className="text-xs text-muted-foreground">→ {b.title}</span>
-                <span className="ml-auto flex gap-3 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <span className="ml-auto flex gap-3 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
                   <button
                     type="button"
                     className="text-[11px] text-muted-foreground hover:text-foreground"
@@ -460,7 +460,7 @@ function BehaviorEditor({
                               : { type: 'anything_else' },
               }));
             }}
-            className="h-9 w-full border border-border bg-transparent px-2 text-sm text-foreground"
+            className="h-9 w-full rounded-md border border-border bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
           >
             {WHEN_OPTIONS.map((o) => (
               <option key={o.value} value={o.value} className="bg-background">{o.label}</option>
@@ -593,7 +593,7 @@ function BehaviorEditor({
                         ),
                       }))
                     }
-                    className="h-9 w-full border border-border bg-transparent px-2 text-xs text-foreground"
+                    className="h-9 w-full rounded-md border border-border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                   >
                     {['photo', 'video', 'audio', 'voice', 'animation', 'document', 'sticker'].map((k) => (
                       <option key={k} value={k} className="bg-background">{k}</option>
@@ -809,7 +809,7 @@ function BehaviorEditor({
                           ),
                         }))
                       }
-                      className="h-9 w-full border border-border bg-transparent px-2 text-xs text-foreground"
+                      className="h-9 w-full rounded-md border border-border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                     >
                       <option value="set" className="bg-background">set to</option>
                       <option value="add" className="bg-background">add</option>
@@ -990,7 +990,7 @@ function BehaviorEditor({
                                             : { kind: 'ai' };
                                 patchButton(si, bi, { action });
                               }}
-                              className="h-9 w-full border border-border bg-transparent px-2 text-xs text-foreground"
+                              className="h-9 w-full rounded-md border border-border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                             >
                               {ACTION_OPTIONS.map((o) => (
                                 <option key={o.value} value={o.value} className="bg-background">{o.label}</option>
@@ -1053,7 +1053,7 @@ function BehaviorEditor({
                               <select
                                 value={b.action.behaviorId}
                                 onChange={(e) => patchButton(si, bi, { action: { kind: 'flow', behaviorId: e.target.value } })}
-                                className="h-9 w-full max-w-xs border border-border bg-transparent px-2 text-xs text-foreground"
+                                className="h-9 w-full max-w-xs rounded-md border border-border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                               >
                                 <option value="" className="bg-background">Pick a flow…</option>
                                 {otherBehaviors.map((ob) => (

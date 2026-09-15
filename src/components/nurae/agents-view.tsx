@@ -263,9 +263,9 @@ export function AgentsView() {
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             Agents build real things for you — they run inside your account.
           </p>
-          <Link href="/" className="mt-6 inline-flex w-fit">
-            <Button size="sm">Sign in</Button>
-          </Link>
+          <Button size="sm" asChild className="mt-6 w-fit">
+            <Link href="/">Sign in</Link>
+          </Button>
         </main>
       </div>
     );
@@ -282,7 +282,7 @@ export function AgentsView() {
             <button
               type="button"
               onClick={() => openSession(null)}
-              className="w-full border border-border px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
+              className="w-full rounded-md border border-border px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
             >
               + New build
             </button>
@@ -314,7 +314,7 @@ export function AgentsView() {
                   <button
                     type="button"
                     onClick={() => openSession(null)}
-                    className="w-full border border-border px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60"
+                    className="w-full rounded-md border border-border px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60"
                   >
                     + New build
                   </button>
@@ -369,7 +369,7 @@ export function AgentsView() {
                   )}
                   {pendingSteps.length > 0 && <Activity steps={pendingSteps} live />}
                   {error && (
-                    <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
                       {error}
                     </div>
                   )}
@@ -381,7 +381,7 @@ export function AgentsView() {
               <div className="shrink-0 border-t border-border/60">
                 <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6">
                   {needsConfirm && (
-                    <div className="mb-2 flex flex-wrap items-center gap-3 border border-border bg-muted/40 px-3 py-2">
+                    <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md border border-border bg-muted/40 px-3 py-2">
                       <p className="text-xs text-muted-foreground">
                         The agent is waiting for your approval to make the bot live.
                       </p>
@@ -402,7 +402,7 @@ export function AgentsView() {
                   {attachments.length > 0 && (
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       {attachments.map((a) => (
-                        <span key={a.id} className="inline-flex items-center gap-1.5 border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                        <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                           {a.name}
                           <button
                             type="button"
@@ -431,7 +431,7 @@ export function AgentsView() {
                       title="Attach files (price lists, menus, docs…)"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
                     >
                       {uploading ? <span className="animate-pulse">…</span> : '+'}
                     </button>
@@ -448,7 +448,7 @@ export function AgentsView() {
                       rows={1}
                       maxLength={8000}
                       placeholder="Tell the agent what to build or change…"
-                      className="max-h-40 min-h-9 flex-1 resize-none border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/40"
+                      className="max-h-40 min-h-9 flex-1 resize-none rounded-md border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                       onInput={(e) => {
                         const el = e.currentTarget;
                         el.style.height = 'auto';
@@ -459,7 +459,7 @@ export function AgentsView() {
                       type="button"
                       onClick={() => void send()}
                       disabled={busy || (!draft.trim() && attachments.length === 0)}
-                      className="flex h-9 shrink-0 items-center border border-border px-3 text-xs text-foreground hover:bg-muted/60 disabled:opacity-40"
+                      className="flex h-9 shrink-0 items-center rounded-md border border-border px-3 text-xs text-foreground hover:bg-muted/60 disabled:opacity-40"
                     >
                       {busy ? '…' : 'Send'}
                     </button>
@@ -507,9 +507,9 @@ function EmptyAgent({ onPick, busy }: { onPick: (text: string) => void; busy: bo
           </button>
         ))}
       </div>
-      <Link href="/bots/new?ai=1" className="mt-4 inline-flex">
-        <Button size="sm" variant="outline">Describe a bot →</Button>
-      </Link>
+      <Button size="sm" variant="outline" asChild className="mt-4">
+        <Link href="/bots/new?ai=1">Describe a bot →</Link>
+      </Button>
       <p className="mt-6 text-[11px] text-muted-foreground/70">
         The agent works inside your account — every step is audited and reversible.
       </p>
@@ -524,13 +524,13 @@ function AgentMessage({ entry }: { entry: EntryDTO }) {
         {entry.attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1.5">
             {entry.attachments.map((a) => (
-              <span key={a.fileId} className="border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              <span key={a.fileId} className="rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                 {a.name}
               </span>
             ))}
           </div>
         )}
-        <div className="max-w-[85%] whitespace-pre-wrap bg-muted/70 px-3.5 py-2 text-sm leading-relaxed text-foreground">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted/70 px-3.5 py-2 text-sm leading-relaxed text-foreground">
           {entry.content}
         </div>
       </div>

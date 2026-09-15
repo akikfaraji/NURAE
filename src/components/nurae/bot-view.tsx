@@ -5,7 +5,7 @@
  * configuration editor, and live logs.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -15,9 +15,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BotForm } from '@/components/nurae/bot-form';
-import { BotMeta, StatusBadge } from '@/components/nurae/bits';
+import { BotMeta, Pill, StatusBadge } from '@/components/nurae/bits';
 import { BotDTO, Catalog, LogEntry, nuraeApi } from '@/lib/nurae-client/api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -48,7 +59,6 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
   const [configOpen, setConfigOpen] = useState(false);
   const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
   const [logFilter, setLogFilter] = useState<'all' | LogEntry['level']>('all');
-  const logsEndRef = useRef<HTMLDivElement | null>(null);
 
   const refreshBot = useCallback(async () => {
     try {
@@ -142,7 +152,6 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
 
   const removeBot = async () => {
     if (!bot) return;
-    if (!window.confirm(`Delete bot "${bot.name}"? Conversations and logs will be removed.`)) return;
     setBusy('delete');
     try {
       await nuraeApi.deleteBot(botId);
@@ -181,9 +190,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
             </h2>
             <StatusBadge status={bot.status} />
             {bot.transport && (
-              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                {bot.transport === 'webhook' ? 'webhook transport' : 'polling transport'}
-              </span>
+              <Pill>{bot.transport === 'webhook' ? 'webhook transport' : 'polling transport'}</Pill>
             )}
             {runtime.managed && runtime.pendingUpdateCount !== null && runtime.pendingUpdateCount > 5 && (
               <span className="text-xs text-muted-foreground">{runtime.pendingUpdateCount} updates queued</span>
@@ -246,9 +253,36 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
               <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)} data-testid="edit-config">
                 Edit configuration
               </Button>
-              <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={removeBot} disabled={busy !== null}>
-                Delete
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:bg-destructive/10"
+                    disabled={busy !== null}
+                    data-testid="delete-bot"
+                  >
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete bot “{bot.name}”?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Conversations and logs will be removed. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-white hover:bg-destructive/90"
+                      onClick={() => void removeBot()}
+                    >
+                      Delete bot
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </CardContent>
         </Card>
@@ -291,7 +325,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
                   key={level}
                   size="sm"
                   variant={logFilter === level ? 'default' : 'ghost'}
-                  className={logFilter === level ? 'bg-foreground text-white' : 'text-muted-foreground'}
+                  className={logFilter === level ? 'bg-foreground text-background' : 'text-muted-foreground'}
                   onClick={() => setLogFilter(level)}
                 >
                   {level}
@@ -313,7 +347,6 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
                 </p>
               ))
             )}
-            <div ref={logsEndRef} />
           </div>
         </CardContent>
       </Card>

@@ -2,7 +2,8 @@
 
 /**
  * NURAE dashboard — shared presentational bits.
- * Visual language: zinc neutrals + emerald accent, clean ops-console look.
+ * Visual language: premium black monochrome (zero chroma except the
+ * restrained error red), rounded-md controls, clean ops-console look.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -42,7 +43,7 @@ export function StatCard({
 }: {
   label: string;
   value: number | string;
-  accent?: 'emerald' | 'zinc' | 'red';
+  accent?: 'zinc' | 'red';
 }) {
   return (
     <Card className="border-border shadow-sm">
@@ -51,13 +52,39 @@ export function StatCard({
         <p
           className={cn(
             'mt-1 text-2xl font-semibold tabular-nums sm:text-3xl',
-            (!accent || accent === 'zinc') && 'text-foreground',
+            accent === 'red' ? 'text-destructive' : 'text-foreground',
           )}
         >
           {value}
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+/** Small all-caps label chip — one shared shape for official/category/
+ *  transport/verified markers (was hand-rolled at three sizes). */
+export function Pill({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'rounded-full border-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground',
+        className,
+      )}
+    >
+      {children}
+    </Badge>
+  );
+}
+
+/** Inline loading row — replaces bare “Loading…” paragraphs. */
+export function LoadingRow({ label = 'Loading…' }: { label?: string }) {
+  return (
+    <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" aria-hidden />
+      {label}
+    </p>
   );
 }
 

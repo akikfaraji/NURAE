@@ -206,7 +206,7 @@ export function BotDetailView() {
         {bot.statusDetail && (
           <p className="mt-1 text-xs text-destructive">{bot.statusDetail}</p>
         )}
-        {savedAt && <p className="mt-1 text-[11px] text-muted-foreground/70">Saved {savedAt}</p>}
+        {savedAt && <p className="mt-1 text-[11px] text-muted-foreground">Saved {savedAt}</p>}
         {error && <p className="mt-1 text-xs text-destructive" role="alert">{error}</p>}
 
         {/* Behavior — the primary surface */}
@@ -331,7 +331,7 @@ function ConfigSection({
               setProvider(e.target.value);
               if (p) setModel(p.defaultModel);
             }}
-            className="h-9 w-full border border-border bg-transparent px-2 text-sm text-foreground"
+            className="h-9 w-full rounded-md border border-border bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
           >
             {(catalog?.providers ?? []).map((p) => (
               <option key={p.id} value={p.id} className="bg-background">{p.label}</option>
@@ -442,7 +442,7 @@ function CommandsSection({ bot, saving, onSave }: { bot: UserBotDTO; saving: boo
               <select
                 value={c.kind}
                 onChange={(e) => update(i, { kind: e.target.value as Command['kind'] })}
-                className="h-8 w-full border border-border bg-transparent px-2 text-xs text-foreground"
+                className="h-8 w-full rounded-md border border-border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
               >
                 <option value="static" className="bg-background">static reply</option>
                 <option value="ai" className="bg-background">AI-guided</option>
@@ -533,7 +533,7 @@ function RepliesSection({ bot, saving, onSave }: { bot: UserBotDTO; saving: bool
                     },
                   });
                 }}
-                className="h-9 border border-border bg-transparent px-2 text-xs text-foreground"
+                className="h-9 rounded-md border border-border bg-transparent px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
               >
                 <option value="command" className="bg-background">on command</option>
                 <option value="keyword" className="bg-background">on keyword</option>

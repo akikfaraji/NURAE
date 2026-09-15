@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import {
   ApiError,
@@ -148,7 +149,7 @@ export function BillingView() {
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Billing</p>
           <h1 className="mt-2 text-xl font-medium">Sign in to see your wallet</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your balance, usage and topups live in your account. See <a className="underline" href="/pricing">Pricing</a> for how pay-as-you-use works.
+            Your balance, usage and topups live in your account. See <Link className="underline" href="/pricing">Pricing</Link> for how pay-as-you-use works.
           </p>
         </main>
       </div>
@@ -197,7 +198,7 @@ export function BillingView() {
         {summary && (
           <section className="mt-8">
             <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Your plan</p>
-            <div className="mt-3 border border-border/60 p-4">
+            <div className="mt-3 rounded-lg border border-border/60 p-4">
               <div className="flex flex-wrap items-baseline gap-x-3">
                 <span className="text-sm font-medium">{summary.plan.active ? `${summary.plan.name} — active` : 'Free'}</span>
                 {summary.plan.active && summary.plan.expiresAt && (
@@ -309,7 +310,7 @@ export function BillingView() {
           </div>
 
           {activeOrder && (
-            <div className="mt-5 border border-border/60 p-4">
+            <div className="mt-5 rounded-lg border border-border/60 p-4">
               <p className="text-xs font-medium">Order {activeOrder.orderNo}</p>
               {activeOrder.provider === 'stars' && (
                 <p className="mt-1 text-xs text-muted-foreground">

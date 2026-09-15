@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
+import { LoadingRow } from '@/components/nurae/bits';
 import { SessionList } from '@/components/nurae/session-list';
 import {
   ApiError,
@@ -246,9 +247,9 @@ export function ChatsView() {
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             NURAE chats are part of your account — conversations, files and agents stay yours.
           </p>
-          <Link href="/" className="mt-6 inline-flex w-fit">
-            <Button size="sm">Sign in or create an account</Button>
-          </Link>
+          <Button size="sm" asChild className="mt-6 w-fit">
+            <Link href="/">Sign in or create an account</Link>
+          </Button>
         </main>
       </div>
     );
@@ -267,7 +268,7 @@ export function ChatsView() {
             <button
               type="button"
               onClick={() => openSession(null)}
-              className="w-full border border-border px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
+              className="w-full rounded-md border border-border px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
             >
               + New chat
             </button>
@@ -298,7 +299,7 @@ export function ChatsView() {
                 <button
                   type="button"
                   onClick={() => openSession(null)}
-                  className="w-full border border-border px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60"
+                  className="w-full rounded-md border border-border px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60"
                 >
                   + New chat
                 </button>
@@ -334,7 +335,7 @@ export function ChatsView() {
                 >
                   ☰ Chats
                 </button>
-                <h1 className="truncate text-xs text-muted-foreground md:text-sm">{activeTitle}</h1>
+                <h1 className="truncate text-sm font-medium text-foreground">{activeTitle}</h1>
                 <Link href="/chats/agents" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
                   Agents
                 </Link>
@@ -342,7 +343,7 @@ export function ChatsView() {
 
               <div className="min-h-0 flex-1 overflow-y-auto" onClick={() => setError(null)}>
                 <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
-                  {loadingSession && <p className="text-xs text-muted-foreground">Loading…</p>}
+                  {loadingSession && <LoadingRow label="Loading conversation…" />}
                   {entries.map((m) => (
                     <Message key={m.id} entry={m} />
                   ))}
@@ -352,7 +353,7 @@ export function ChatsView() {
                     </p>
                   )}
                   {error && (
-                    <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
                       {error}
                     </div>
                   )}
@@ -366,7 +367,7 @@ export function ChatsView() {
                   {attachments.length > 0 && (
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       {attachments.map((a) => (
-                        <span key={a.id} className="inline-flex items-center gap-1.5 border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                        <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                           {a.name}
                           <button
                             type="button"
@@ -395,7 +396,7 @@ export function ChatsView() {
                       title={activeId ? 'Attach files' : 'Open a chat first'}
                       onClick={() => fileInputRef.current?.click()}
                       disabled={!activeId || uploading}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
                     >
                       {uploading ? <span className="animate-pulse">…</span> : '+'}
                     </button>
@@ -412,7 +413,7 @@ export function ChatsView() {
                       rows={1}
                       maxLength={8000}
                       placeholder="Write a message…"
-                      className="max-h-40 min-h-9 flex-1 resize-none border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/40"
+                      className="max-h-40 min-h-9 flex-1 resize-none rounded-md border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                       style={{ height: 'auto' }}
                       onInput={(e) => {
                         const el = e.currentTarget;
@@ -424,7 +425,7 @@ export function ChatsView() {
                       type="button"
                       onClick={() => void send()}
                       disabled={sending || (!draft.trim() && attachments.length === 0)}
-                      className="flex h-9 shrink-0 items-center border border-border px-3 text-xs text-foreground transition-colors hover:bg-muted/60 disabled:opacity-40"
+                      className="flex h-9 shrink-0 items-center rounded-md border border-border px-3 text-xs text-foreground transition-colors hover:bg-muted/60 disabled:opacity-40"
                     >
                       {sending ? '…' : 'Send'}
                     </button>
@@ -454,13 +455,13 @@ function Message({ entry }: { entry: EntryDTO }) {
         {entry.attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1.5">
             {entry.attachments.map((a) => (
-              <span key={a.fileId} className="border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              <span key={a.fileId} className="rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                 {a.name}
               </span>
             ))}
           </div>
         )}
-        <div className="max-w-[85%] whitespace-pre-wrap bg-muted/70 px-3.5 py-2 text-sm leading-relaxed text-foreground">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted/70 px-3.5 py-2 text-sm leading-relaxed text-foreground">
           {entry.content}
         </div>
       </div>
@@ -538,7 +539,7 @@ function EmptyChat({ userName, onPick, busy }: { userName: string; onPick: (text
           type="button"
           onClick={() => onPick(prefill)}
           disabled={busy}
-          className="mt-4 max-w-md border border-border px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
+          className="mt-4 max-w-md rounded-md border border-border px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
         >
           Continue: “{prefill}”
         </button>

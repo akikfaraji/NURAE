@@ -12,14 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { nuraeApi, ApiError, type BroadcastDTO, type BotScheduleDTO, type BotPaymentDTO, type BotUserStateDTO } from '@/lib/nurae-client/api';
+import { LoadingRow } from '@/components/nurae/bits';
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <section className="mt-10 border-t border-border/60 pt-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-medium tracking-tight">{title}</h2>
-        {hint && <p className="max-w-xl text-xs text-muted-foreground">{hint}</p>}
-      </div>
+      <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{title}</h2>
+      {hint && <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -58,7 +57,7 @@ export function AudienceSection({ botId, refreshKey }: { botId: string; refreshK
       hint="Everyone who has talked to this bot, with what it remembered — collected answers, carts, the link they arrived from."
     >
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
-      {!error && users === null && <p className="text-xs text-muted-foreground">Loading…</p>}
+      {!error && users === null && <LoadingRow />}
       {users !== null && users.length === 0 && (
         <p className="text-xs text-muted-foreground">No one yet. Publish the bot and the first conversation appears here.</p>
       )}
@@ -228,7 +227,7 @@ export function SchedulesSection({ botId, refreshKey }: { botId: string; refresh
       hint="Reminders and drip messages the bot will send. Recurring rows re-arm at the same time (UTC). The bot's own “remind me” flow creates these automatically."
     >
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
-      {!error && rows === null && <p className="text-xs text-muted-foreground">Loading…</p>}
+      {!error && rows === null && <LoadingRow />}
       {rows !== null && rows.length === 0 && (
         <p className="text-xs text-muted-foreground">Nothing scheduled. Add a “set a reminder” step to a behavior and this fills itself.</p>
       )}
@@ -303,7 +302,7 @@ export function PaymentsSection({ botId, refreshKey }: { botId: string; refreshK
       hint="Completed Telegram Stars payments (digital goods must be sold in Stars — Telegram's store policy). Refunds are manual this release."
     >
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
-      {!error && payments === null && <p className="text-xs text-muted-foreground">Loading…</p>}
+      {!error && payments === null && <LoadingRow />}
       {payments !== null && payments.length === 0 && (
         <p className="text-xs text-muted-foreground">No payments yet. Add a payment step to a behavior and the ledger starts itself.</p>
       )}

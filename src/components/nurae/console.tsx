@@ -18,6 +18,7 @@ import { BotView } from '@/components/nurae/bot-view';
 import { OperatorAgentView } from '@/components/nurae/operator-view';
 import { Catalog, nuraeApi } from '@/lib/nurae-client/api';
 import { NURAE_VERSION } from '@/lib/nurae/version';
+import { LoadingRow } from '@/components/nurae/bits';
 import { ExternalIcon, SettingsIcon, UsersIcon } from '@/components/nurae/icons';
 import { toast } from 'sonner';
 
@@ -104,7 +105,7 @@ export function NuraeConsole() {
   return (
     <div className="flex min-h-screen flex-col bg-muted/50">
       <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
           <button
             className="flex items-center gap-3 text-left"
             onClick={() => setView({ type: 'overview' })}
@@ -120,11 +121,14 @@ export function NuraeConsole() {
               <span className="block text-[11px] uppercase tracking-widest text-muted-foreground">FRAZIYM TECH &amp; AI</span>
             </span>
           </button>
-          <nav className="flex items-center gap-1" aria-label="Main">
+          <nav
+            className="flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="Main"
+          >
             <Button
               variant="ghost"
               size="sm"
-              className={view.type === 'overview' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              className={view.type === 'overview' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
               onClick={() => setView({ type: 'overview' })}
             >
               Dashboard
@@ -132,7 +136,7 @@ export function NuraeConsole() {
             <Button
               variant="ghost"
               size="sm"
-              className={view.type === 'projects' || view.type === 'project' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              className={view.type === 'projects' || view.type === 'project' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
               onClick={() => setView({ type: 'projects' })}
             >
               Projects
@@ -140,7 +144,7 @@ export function NuraeConsole() {
             <Button
               variant="ghost"
               size="sm"
-              className={view.type === 'agent' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              className={view.type === 'agent' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
               onClick={() => setView({ type: 'agent' })}
             >
               Agent
@@ -148,7 +152,7 @@ export function NuraeConsole() {
             <Button
               variant="ghost"
               size="sm"
-              className={view.type === 'customers' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              className={view.type === 'customers' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
               onClick={() => setView({ type: 'customers' })}
             >
               <UsersIcon className="mr-1.5 h-3.5 w-3.5" /> Customers
@@ -156,20 +160,20 @@ export function NuraeConsole() {
             <Button
               variant="ghost"
               size="sm"
-              className={view.type === 'settings' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              className={view.type === 'settings' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
               onClick={() => setView({ type: 'settings' })}
             >
               <SettingsIcon className="mr-1.5 h-3.5 w-3.5" /> Site
             </Button>
             <Link
               href="/"
-              className="ml-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
+              className="ml-2 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
             >
               View site <ExternalIcon className="h-3 w-3" />
             </Link>
             <span
               className={
-                'ml-2 hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs sm:inline-flex ' +
+                'ml-2 hidden shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs sm:inline-flex ' +
                 (coreUp === null
                   ? 'border-border text-muted-foreground'
                   : coreUp
@@ -212,9 +216,9 @@ export function NuraeConsole() {
         ) : view.type === 'bot' && !catalog ? (
           // The config dialog needs the provider catalog — never render the
           // bot view (or its forms) with a null catalog.
-          <div className="text-sm text-muted-foreground">Loading console data…</div>
+          <LoadingRow label="Loading console data…" />
         ) : !catalog ? (
-          <div className="text-sm text-muted-foreground">Loading console data…</div>
+          <LoadingRow label="Loading console data…" />
         ) : view.type === 'overview' ? (
           <OverviewView
             catalog={catalog!}

@@ -57,9 +57,9 @@ export function FeaturedView() {
           ))}
         </div>
 
-        <Link href="/chats" className="mt-8 inline-flex">
-          <Button size="sm">Open the conversation {user ? '' : '(sign in first)'}</Button>
-        </Link>
+        <Button size="sm" asChild className="mt-8">
+          <Link href="/chats">Open the conversation {user ? '' : '(sign in first)'}</Link>
+        </Button>
       </main>
       {!user && <SiteFooter siteName="NURAE" />}
     </div>

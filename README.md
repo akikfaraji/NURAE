@@ -104,17 +104,47 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.08.000-beta-03** — a real agent system: the Operator runs the
-platform for the admin, the Bot Builder codes bots from the full DSL, and
-the tool registry is machine-discoverable (`/api/agents/tools`, `llms.txt`).
-The fleet already works together, promotes NURAE in your groups, invites
-over email (consent-first), and plans ride on top of pay-as-you-use.
+**NURAE V00.08.001-beta-03** — a full UI fix + polish pass over every surface
+(no new features): three real UI bugs fixed, touch support repaired, one
+consistent radius/focus/color language across all 22 components, and the
+console header usable on phones. The underlying release remains the real
+agent system: the Operator runs the platform for the admin, the Bot Builder
+codes bots from the full DSL, and the tool registry is machine-discoverable
+(`/api/agents/tools`, `llms.txt`). The fleet already works together, promotes
+NURAE in your groups, invites over email (consent-first), and plans ride on
+top of pay-as-you-use.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**The real agent system (new in 08.000)**
+**UI fix + polish pass (new in 08.001)**
+- **Three real bugs fixed**: the active log-filter chip was white-on-white
+  (`bg-foreground text-white` → unreadable), the Errors KPI's red accent was
+  dead code (the StatCard prop was accepted but never applied), and 15+
+  buttons were invalid `<a><button>` HTML (Link wrapping Button) — all now
+  proper `asChild` composites or plain links.
+- **Touch devices**: the chat/agent session ⋯ menu and the behavior
+  Edit/Remove controls were invisible (opacity-0 / text-opacity-0 until
+  hover) — now always visible on touch, hover-revealed on desktop only, with
+  a 32px hit target.
+- **One radius language**: all 8 raw `<select>`s, the chat/agent composers,
+  plan cards, order boxes, error alerts, chat bubbles, attachment chips and
+  both brand marks are rounded to match the design system.
+- **One focus language**: chat + agent composers regained the standard
+  focus-visible ring; selects now show keyboard focus too.
+- **Monochrome restored**: stray emerald/amber status colors (operator steps,
+  fleet "Needs token" pill, approval bar) now use the token palette — the
+  zero-chroma theme holds everywhere except the error red.
+- **Console on phones**: the admin header no longer wraps into 3–4 rows; the
+  nav is a single scrollable row.
+- **Consistency**: one shared `Pill`, one `LoadingRow`, one Section heading
+  style per page, the chat title is a real h1, bot deletion uses the standard
+  confirm dialog (was `window.confirm`), and dead code is gone
+  (`tailwind.config.ts` tripwire, unused `prose` classes, unused refs,
+  stale comments).
+
+**The real agent system (08.000)**
 - **The Operator — a platform agent for the admin** (dashboard → Agent):
   ask "how are we doing?", "why are bots failing?", "make the Trivia bot
   smarter", "rename the site" — it answers with numbers and DOES the work
@@ -681,4 +711,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.08.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.08.001-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

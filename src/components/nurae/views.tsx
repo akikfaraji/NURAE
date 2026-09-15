@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { EmptyState, StatCard, StatusBadge } from '@/components/nurae/bits';
+import { EmptyState, LoadingRow, Pill, StatCard, StatusBadge } from '@/components/nurae/bits';
 import {
   ArrowRightIcon,
   BotIcon,
@@ -96,7 +96,7 @@ export function OverviewView({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
         <StatCard label="Projects" value={stats?.projects ?? '—'} />
         <StatCard label="Active Bots" value={stats?.activeBots ?? '—'} />
         <StatCard label="Stopped Bots" value={stats?.stoppedBots ?? '—'} />
@@ -563,9 +563,7 @@ export function OfficialBotCard({
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 NURAE CS Bot
-                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Official
-                </span>
+                <Pill>Official</Pill>
               </CardTitle>
               <CardDescription>
                 The built-in customer-support bot for your site — fill in the keys and run it.
@@ -688,9 +686,7 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               NURAE bot fleet
-              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
-                Official
-              </span>
+              <Pill>Official</Pill>
             </CardTitle>
             <CardDescription>
               The five built-in NURAE promotion bots, seeded for this instance — add a token from @BotFather to each
@@ -718,22 +714,13 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium text-foreground">{entry.name}</span>
-                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
-                    {entry.category}
-                  </span>
+                  <Pill>{entry.category}</Pill>
                 </div>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">{entry.tagline}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span
-                  className={
-                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ' +
-                    (entry.status === 'running'
-                      ? 'border-border bg-muted text-foreground'
-                      : needsToken
-                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
-                        : 'border-border bg-muted text-foreground')
-                  }
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs text-foreground"
                   title={needsToken ? 'Paste a @BotFather token in the bot page' : undefined}
                 >
                   <span
@@ -742,7 +729,7 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
                       (entry.status === 'running'
                         ? 'animate-pulse bg-foreground'
                         : needsToken
-                          ? 'bg-amber-500'
+                          ? 'bg-muted-foreground'
                           : 'bg-muted-foreground/60')
                     }
                   />
@@ -765,7 +752,7 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
         {fleet && fleet.length === 0 && (
           <p className="text-xs text-muted-foreground">Fleet seeding pending — reload the dashboard.</p>
         )}
-        {!fleet && <p className="text-xs text-muted-foreground">Loading fleet…</p>}
+        {!fleet && <LoadingRow label="Loading fleet…" />}
       </CardContent>
     </Card>
   );

@@ -37,9 +37,9 @@ function StepChips({ steps }: { steps: OperatorStepDTO[] }) {
             className={
               'mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ' +
               (s.status === 'ok'
-                ? 'bg-emerald-500'
+                ? 'bg-foreground'
                 : s.status === 'confirm'
-                  ? 'bg-amber-500'
+                  ? 'bg-muted-foreground'
                   : 'bg-destructive')
             }
             aria-hidden
@@ -159,7 +159,7 @@ export function OperatorAgentView() {
                   }
                 >
                   {entry.role === 'assistant' ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className="max-w-none">
                       <Markdown>{entry.content || '…'}</Markdown>
                     </div>
                   ) : (
@@ -192,7 +192,7 @@ export function OperatorAgentView() {
           </div>
 
           {needsConfirm && !busy ? (
-            <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-foreground/30 bg-muted px-3 py-2 text-sm">
               <span>The agent is waiting for your approval to apply a platform change.</span>
               <Button size="sm" onClick={() => void send('', true)}>
                 Approve &amp; apply

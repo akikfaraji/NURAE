@@ -98,9 +98,9 @@ export function SiteHome() {
                     >
                       Get started free
                     </Button>
-                    <Link href="/featured">
-                      <Button size="sm" variant="ghost">See the featured chat →</Button>
-                    </Link>
+                    <Button size="sm" variant="ghost" asChild>
+                      <Link href="/featured">See the featured chat →</Link>
+                    </Button>
                   </div>
                   {siteInfo?.site.supportEmail && (
                     <p className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
@@ -182,15 +182,15 @@ function SignedInPanel({
       </h1>
       <p className="mt-4 text-sm text-muted-foreground">{email}</p>
       <div className="mt-8 grid gap-px border-t border-l border-border/60 sm:grid-cols-3">
-        <Link href="/chats" className="group block border-b border-r border-border/60 p-4 transition-colors hover:bg-muted/40">
+        <Link href="/chats" className="group block border-b border-border/60 p-4 transition-colors hover:bg-muted/40 sm:border-r">
           <span className="block text-sm text-foreground">Chats</span>
           <span className="mt-1 block text-xs text-muted-foreground">Talk with the AI</span>
         </Link>
-        <Link href="/chats/agents" className="group block border-b border-r border-border/60 p-4 transition-colors hover:bg-muted/40">
+        <Link href="/chats/agents" className="group block border-b border-border/60 p-4 transition-colors hover:bg-muted/40 sm:border-r">
           <span className="block text-sm text-foreground">Agents</span>
           <span className="mt-1 block text-xs text-muted-foreground">Hand over real work</span>
         </Link>
-        <Link href="/bots" className="group block border-b border-r border-border/60 p-4 transition-colors hover:bg-muted/40">
+        <Link href="/bots" className="group block border-b border-border/60 p-4 transition-colors hover:bg-muted/40">
           <span className="block text-sm text-foreground">Bots</span>
           <span className="mt-1 block text-xs text-muted-foreground">Run what was built</span>
         </Link>
@@ -323,7 +323,7 @@ function AuthCard({
   return (
     <div>
       {authError && (
-        <div className="mb-4 border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs capitalize text-destructive">
+        <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs capitalize text-destructive">
           Google sign-in failed: {authError}
         </div>
       )}
@@ -339,13 +339,13 @@ function AuthCard({
             sometimes files verification mail there. Use the newest email; older codes stop working.
           </p>
           {mailError && (
-            <div className="border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive" role="alert">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive" role="alert">
               <p className="font-medium">The email could not be sent — no code will arrive.</p>
               <p className="mt-1 opacity-90">{mailError}</p>
             </div>
           )}
           {devCode && (
-            <div className="border border-border px-3 py-2.5 text-center">
+            <div className="rounded-md border border-border px-3 py-2.5 text-center">
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Dev verification code</div>
               <div className="mt-1 font-mono text-2xl tracking-[0.4em] text-foreground">{devCode}</div>
             </div>
@@ -403,12 +403,12 @@ function AuthCard({
 
           {googleEnabled && (
             <>
-              <a href="/api/auth/google/start" className="block">
-                <Button type="button" variant="outline" className="w-full gap-2" size="sm">
+              <Button type="button" variant="outline" className="w-full gap-2" size="sm" asChild>
+                <a href="/api/auth/google/start">
                   <GoogleIcon className="h-4 w-4" />
                   {step === 'signin' ? 'Sign in with Google' : 'Sign up with Google'}
-                </Button>
-              </a>
+                </a>
+              </Button>
               <div className="my-4 flex items-center gap-3 text-[10px] uppercase tracking-widest text-muted-foreground">
                 <span className="h-px flex-1 bg-border" /> or with email <span className="h-px flex-1 bg-border" />
               </div>

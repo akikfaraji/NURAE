@@ -43,7 +43,7 @@ export function PricingPage() {
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Plans (optional, paid from your wallet)</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             {PLANS.map((plan) => (
-              <div key={plan.id} className="border border-border/60 p-4">
+              <div key={plan.id} className="rounded-lg border border-border/60 p-4">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium text-foreground">{plan.name}</span>
                   <span className="font-mono text-sm text-foreground">
@@ -182,7 +182,7 @@ export function PricingPage() {
         <div className="mt-12">
           <Link
             href="/bots"
-            className="inline-block border border-border px-4 py-2 text-sm text-foreground hover:bg-muted/30"
+            className="inline-block rounded-md border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted/30"
           >
             Build your first bot — free for {TRIAL_DAYS} days
           </Link>

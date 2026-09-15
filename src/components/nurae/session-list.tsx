@@ -84,7 +84,7 @@ export function SessionList({
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label={`Actions for ${s.title}`}
-              className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:!text-foreground data-[state=open]:text-foreground"
+              className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground/50 transition-colors group-hover:text-foreground hover:!text-foreground data-[state=open]:text-foreground md:text-muted-foreground/0 md:group-hover:text-muted-foreground"
             >
               ⋯
             </DropdownMenuTrigger>

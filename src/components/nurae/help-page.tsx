@@ -135,27 +135,26 @@ export function HelpPage() {
             The fastest route is the CS Bot chat — it escalates to the team with your chat history attached.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Link href="/chats" className="inline-flex">
-              <Button className="gap-2">Open the chat</Button>
-            </Link>
+            <Button className="gap-2" asChild>
+              <Link href="/chats">Open the chat</Link>
+            </Button>
             {supportEmail && (
-              <a href={`mailto:${supportEmail}`} className="inline-flex">
-                <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2" asChild>
+                <a href={`mailto:${supportEmail}`}>
                   <MailIcon className="h-4 w-4" /> {supportEmail}
-                </Button>
-              </a>
+                </a>
+              </Button>
             )}
             {telegramHandle && (
-              <a
-                href={`https://t.me/${telegramHandle.replace('@', '')}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex"
-              >
-                <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2" asChild>
+                <a
+                  href={`https://t.me/${telegramHandle.replace('@', '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   <TelegramIcon className="h-4 w-4" /> {telegramHandle}
-                </Button>
-              </a>
+                </a>
+              </Button>
             )}
           </div>
         </div>
