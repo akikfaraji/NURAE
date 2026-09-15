@@ -1,0 +1,48 @@
+# NURAE
+
+> NURAE is a self-hostable platform for creating, hosting and operating AI-powered
+> Telegram bots — describe a bot in plain language and NURAE compiles, hosts and
+> runs it. Built by FRAZIYM TECH & AI.
+
+NURAE is designed to be operated by AI agents as much as by humans. Agents build
+bots, configure behavior, and run the platform itself through audited tool layers.
+
+## What bots can do (the behavior DSL)
+
+A bot is described in behaviors — plain-language units the compiler turns into
+Telegram commands, inline keyboards, callbacks and flows:
+
+- Triggers: start, /commands, keyword ("says"), button presses, deep-link payloads,
+  group member joins, anything-else fallback (AI or static).
+- Steps: messages with buttons, media, polls/quizzes, Telegram Stars payments,
+  collect-and-remember forms, AI steps with conversation memory, reminders,
+  silent counters (remember/add), random draws, leaderboards.
+- Growth primitives: channel join-gates (verify_join), daily streaks, milestone
+  celebrations, referral deep links with automatic credit, consent-first email
+  invitations (double opt-in, permanent unsubscribe).
+
+## For AI agents and MCP clients
+
+- Tool manifest (MCP-compatible): `GET /api/agents/tools` — the full tool
+  registry as JSON-schema descriptors (kind: read/write, consequential flags).
+- Bot Builder agent: a signed-in user's agent that builds and manages THEIR bots
+  through that registry (drafts, behaviors, publishing, broadcasts, schedules).
+- Operator agent: the instance admin's platform agent — server overview, fleet
+  management, any bot's configuration, site settings, customers, logs and
+  analytics (admin-token authenticated, audit-logged).
+- Health: `GET /api/health` — `{ status, version, name, vendor }`.
+
+## Integration notes
+
+- Identity always comes from the authenticated session/admin token — never from
+  model output. Consequential actions require an explicit human approval flag.
+- Bots follow the Telegram Bot API honestly: no first-contact DMs (the API
+  refuses), no unsolicited email (consent-first only). Growth comes from
+  join-gates, streaks, referral loops and shareable deep links.
+- Self-hosting: one Node process + SQLite; point NURAE_SITE_URL at the public
+  origin, add a Telegram token per bot, an AI provider key (OpenRouter has free
+  models), and the fleet + agents wake up on their own.
+
+## Vendor
+
+FRAZIYM TECH & AI — NURAE, the Autonomous Digital Operations System.

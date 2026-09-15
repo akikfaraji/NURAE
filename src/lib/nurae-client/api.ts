@@ -321,6 +321,29 @@ export interface ActivityStepDTO {
   detail?: string;
 }
 
+export interface OperatorStepDTO {
+  seq: number;
+  tool: string;
+  label: string;
+  status: 'ok' | 'error' | 'confirm';
+  detail?: string;
+}
+
+export interface OperatorToolDTO {
+  name: string;
+  description: string;
+  kind: 'read' | 'write';
+  consequential: boolean;
+}
+
+export interface OperatorEntryDTO {
+  role: 'user' | 'assistant';
+  content: string;
+  activity?: OperatorStepDTO[];
+  at: string;
+}
+
+
 export interface EntryDTO {
   id: string;
   role: string;
@@ -680,4 +703,18 @@ export const nuraeApi = {
       body: JSON.stringify({ orderId, txHash }),
     }),
   billingOrders: () => api<{ orders: TopupOrderDTO[] }>('/api/billing/topup'),
+
+  // --- Operator agent (admin console) ---------------------------------------
+  operatorGet: () =>
+    api<{
+      sessionId: string;
+      entries: OperatorEntryDTO[];
+      needsConfirm: boolean;
+      tools: OperatorToolDTO[];
+    }>('/api/agent/operator'),
+  operatorSend: (text: string, approve = false) =>
+    api<{ reply: string; activity: OperatorStepDTO[]; needsConfirm: boolean }>('/api/agent/operator', {
+      method: 'POST',
+      body: JSON.stringify({ text, approve }),
+    }),
 };

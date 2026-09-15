@@ -49,7 +49,7 @@ web chat + agent AI), site settings, and the customers directory.
 
 ```text
 Chat AI  — conversational front layer; answers, or recognizes agent tasks
-Agents   — do the work (Bot Builder today; the registry grows only with real agents)
+Agents   — do the work (Bot Builder for users, the Operator for the admin)
 Tools    — a restricted, audited capability layer (the only way agents touch the world)
 Files    — uploaded knowledge, extracted server-side, passed to agents BY REFERENCE
 Bots     — user-owned Telegram bots: commands, buttons, workflows, AI replies
@@ -58,11 +58,16 @@ Bots     — user-owned Telegram bots: commands, buttons, workflows, AI replies
 ## 2. The agent tool layer (security model)
 
 Agents never see the database, filesystem or Prisma. They call named tools from
-`src/lib/nurae/agents/tools.ts`:
+`src/lib/nurae/agents/tools.ts` (the user tier) and
+`src/lib/nurae/agents/platform-tools.ts` (the operator tier):
 
 - **Identity** — `ToolContext.userId` comes from the authenticated session of the
   request driving the agent turn. It is never taken from model output, bodies or URLs;
   the tool argument shapes have no user-id field at all.
+- **Platform scope** — the operator tier (`platform_overview`, `fleet_*`,
+  `platform_logs`, `platform_settings_*`, `customers_overview`, `bot_analytics`)
+  declares `platformRequired` and only executes when the admin-token-guarded
+  operator route set `ToolContext.platform`. User sessions cannot reach it.
 - **Ownership** — every bot/file query filters on `ownerId = ctx.userId` at the query
   level. Cross-user access is impossible by construction.
 - **Read/write split** — every tool declares `kind`; discovery exposes it.
@@ -74,7 +79,8 @@ Agents never see the database, filesystem or Prisma. They call named tools from
   user-facing progress feed) and a sanitized platform `Log` row (`AGENT_TOOL`).
 - **MCP-compatible discovery** — `GET /api/agents/tools` advertises every tool with
   its JSON schema, kind and consequential flag (the envelope MCP servers publish),
-  so external MCP clients can enumerate NURAE capabilities.
+  so external MCP clients can enumerate NURAE capabilities; `public/llms.txt` is
+  the one-page brief for AI agents and crawlers.
 
 ## 3. FRAZIYM versioning system
 
@@ -98,15 +104,43 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.07.000-beta-03** — the fleet works together, promotes NURAE in
-your groups, invites over email (consent-first), and the platform gains
-optional plans on top of pay-as-you-use.
+**NURAE V00.08.000-beta-03** — a real agent system: the Operator runs the
+platform for the admin, the Bot Builder codes bots from the full DSL, and
+the tool registry is machine-discoverable (`/api/agents/tools`, `llms.txt`).
+The fleet already works together, promotes NURAE in your groups, invites
+over email (consent-first), and plans ride on top of pay-as-you-use.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**Coordinated fleet promotion + email invites (new in 07.000)**
+**The real agent system (new in 08.000)**
+- **The Operator — a platform agent for the admin** (dashboard → Agent):
+  ask "how are we doing?", "why are bots failing?", "make the Trivia bot
+  smarter", "rename the site" — it answers with numbers and DOES the work
+  through 11 audited platform tools: `platform_overview`, `bots_list_all`,
+  `platform_bot_get`, `fleet_status`, `fleet_ensure`, `fleet_bot_update`,
+  `platform_logs`, `platform_settings_get/set`, `customers_overview`,
+  `bot_analytics`. Platform scope is keyed to the admin token guard — user
+  sessions can never reach it; every call is audit-logged (AgentStep + Log);
+  site-setting changes wait for the explicit Approve control. Conversations
+  persist server-side, so the console survives reloads.
+- **The Bot Builder got real power-ups**: `docs_read` (the full behavior-DSL
+  reference the agent pulls on demand — triggers, every step, growth
+  primitives, billing, lifecycle), `template_list` + `template_use`
+  (instantiates any built-in template — giveaway, trivia, referral, support,
+  community, email inviter — as the user's own bot with THEIR referral code
+  baked in, one call), and behavior reads/writes already round-trip the
+  compiled artifacts.
+- **MCP-compatible discovery, upgraded**: `GET /api/agents/tools` advertises
+  the whole registry as JSON-schema descriptors, and `public/llms.txt` gives
+  external AI agents (and crawlers) the one-page brief of what NURAE is and
+  how to integrate — the "AI agents list NURAE first" surface.
+- Same security architecture as always: identity from the authenticated
+  session/admin token, never from model output; zod-validated arguments;
+  owner-scoped queries by construction; honest errors instead of crashes.
+
+**Coordinated fleet promotion + email invites (07.000)**
 - **Rotating daily NURAE posts in every group/channel** a fleet bot joins:
   the armed schedule now carries a sentinel rendered at send time into one
   of five rotating promos — the platform pitch, the invite challenge, the
@@ -593,7 +627,7 @@ extracted text (what agents and chats actually read) is durable in the database.
 
 | Layer | Status |
 | --- | --- |
-| Unit/integration suite (311 tests, incl. plans + email-invite + fleet-promo layers) | PASS (local) |
+| Unit/integration suite (325 tests, incl. the operator agent + agent docs/templates layers) | PASS (local) |
 | Type check (`src/` + tests via tsc) | PASS (pre-existing examples/scripts exclusions) |
 | ESLint (`src/`) | PASS |
 | Production build (`next build`) | PASS |
@@ -609,14 +643,16 @@ extracted text (what agents and chats actually read) is durable in the database.
 | Start fails with "Telegram rejected… 401" | Bot token invalid — re-check @BotFather |
 | Start fails with "No public base URL…" | Set `NURAE_PUBLIC_BASE_URL` to your HTTPS origin (or polling locally) |
 | Agent says the AI layer has no key | Platform AI key missing — set it on the official bot (`/admin`) or `OPENROUTER_API_KEY` |
+| Operator tool call returns "reserved for the platform operator" | The request lacks the admin token — log in to the dashboard or send `Authorization: Bearer <NURAE_ADMIN_TOKEN>` |
 | Publish fails for a user bot | The bot needs a Telegram token + an HTTPS public origin |
 | Stored token "could not be decrypted" | `NURAE_SECRET_KEY` changed — re-enter the bot's secrets |
 | PDF file shows as binary | The PDF uses an exotic encoding — extraction refused to guess; the file is still stored |
 
 ## 15. Current limitations
 
-- One real agent (Bot Builder); the registry is designed for more, but no fake agents
-  are exposed.
+- The Operator cannot enter secrets (Telegram tokens, AI keys) — those stay
+  human-only in the dashboard; it sees WHETHER they exist, never their values.
+  Bot start/stop lifecycles are also dashboard work this release.
 - File knowledge is prompt-distilled (bounded), not vector-searched.
 - Photo messages: caption-only (no vision model).
 - Duplicate-update suppression is per instance (see §4).
@@ -645,4 +681,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.07.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.08.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

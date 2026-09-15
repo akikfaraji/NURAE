@@ -24,6 +24,7 @@ import { rateLimit } from '../auth/rate-limit';
 import { chargeFeature } from '../billing/wallet';
 import { formatUsd } from '../billing/catalog';
 import { executeTool, toolDescriptors, type ExecRecord, type ToolContext } from './tools';
+import type { GrowthLinks } from '../bots/templates';
 
 const TURN_LIMIT = 20; // agent turns per minute per user — same budget as chat
 const TURN_WINDOW_MS = 60 * 1000;
@@ -236,6 +237,8 @@ export interface AgentTurnInput {
   userConfirmed?: boolean;
   /** File ids attached THIS turn (ownership-checked, same rule as chat). */
   attachmentIds?: string[];
+  /** Request-resolved growth links — templates bake them at instantiation. */
+  links?: GrowthLinks;
 }
 
 export interface AgentActivity {
@@ -262,6 +265,7 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
     userId: input.userId,
     sessionId: input.sessionId,
     userConfirmed: Boolean(input.userConfirmed),
+    links: input.links,
   };
 
   const session = await db.chatSession.findFirst({

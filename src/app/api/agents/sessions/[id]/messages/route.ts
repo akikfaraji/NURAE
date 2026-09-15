@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { apiError, internalError } from '@/lib/nurae/api/base';
 import { sessionUser } from '@/lib/nurae/auth/sessions';
 import { runBotBuilderTurn } from '@/lib/nurae/agents/bot-builder';
+import { resolveGrowthLinks } from '@/lib/nurae/bots/growth-links';
 
 const BodySchema = z.object({
   text: z.string().max(8000).default(''),
@@ -45,6 +46,7 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
       userText: parsed.data.text,
       attachmentIds: parsed.data.attachmentIds,
       userConfirmed: parsed.data.approve,
+      links: resolveGrowthLinks(req),
     });
     if (result.error && !result.reply) {
       const status = /not found/i.test(result.error) ? 404 : 400;

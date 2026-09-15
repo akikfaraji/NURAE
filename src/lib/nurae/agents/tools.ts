@@ -47,6 +47,11 @@ import { LIMITS } from '../validation';
 import { SecretManager } from '../secrets';
 import { TelegramAdapter } from '../telegram/adapter';
 import { createPrismaRuntimeStore } from '../runtime/store';
+import { buildTemplateBot, TEMPLATE_CATALOG, type GrowthLinks } from '../bots/templates';
+import { growthLinksFromEnv } from '../bots/growth-links';
+import { getOrCreateInvite } from '../referral';
+import { AGENT_DOCS, DOCS_TOPICS, type DocsTopic } from './docs';
+import { PLATFORM_REGISTRY } from './platform-tools';
 
 // ---------------------------------------------------------------------------
 // Context + result types
@@ -59,6 +64,14 @@ export interface ToolContext {
   sessionId: string;
   /** True only when the user explicitly approved consequential actions THIS turn. */
   userConfirmed?: boolean;
+  /**
+   * Platform-operator scope. Set ONLY by the admin-authenticated operator
+   * route — never from user sessions, model output, or request bodies.
+   * Unlocks the platform tool tier (fleet, settings, customers, logs).
+   */
+  platform?: boolean;
+  /** Request-resolved growth links — templates bake them at instantiation. */
+  links?: GrowthLinks;
 }
 
 export interface ToolOutcome {
@@ -78,6 +91,8 @@ export interface ToolSpec {
   kind: 'read' | 'write';
   /** Consequential action — the user must approve before it can run. */
   consequential?: boolean;
+  /** Reserved for the platform operator (ctx.platform must be true). */
+  platformRequired?: boolean;
   schema: z.ZodType<Record<string, unknown>>;
   exec(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolOutcome>;
 }
@@ -688,6 +703,95 @@ const botPaymentsList: ToolSpec = {
 // File tools
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Knowledge tools — the agent reads the real DSL instead of guessing
+// ---------------------------------------------------------------------------
+
+const docsRead: ToolSpec = {
+  name: 'docs_read',
+  description:
+    'Read NURAE\u2019s agent documentation. Topics: "behaviors" (the FULL behavior DSL \u2014 every trigger ' +
+    'and step with exact argument shapes), "growth" (join gates, streaks, milestones, draws, ' +
+    'leaderboards, referral deep links, email invites), "billing" (what running bots costs), ' +
+    '"lifecycle" (draft \u2192 token \u2192 publish \u2192 profile). Read a topic BEFORE building flows that need it ' +
+    '(a giveaway needs verify_join; an invite funnel needs email_invite; a habit bot needs streak). Read-only.',
+  kind: 'read',
+  schema: z.object({ topic: z.enum(['behaviors', 'growth', 'billing', 'lifecycle']) }).strict(),
+  async exec(_ctx, args) {
+    const { topic } = args as { topic: DocsTopic };
+    return {
+      label: `Read the "${topic}" reference`,
+      data: { topic, text: AGENT_DOCS[topic] },
+    };
+  },
+};
+
+const templateList: ToolSpec = {
+  name: 'template_list',
+  description:
+    'List the built-in NURAE bot templates ready to instantiate (giveaway, daily trivia, referral ' +
+    'ambassador, support & FAQ, community hub, email inviter) with id, tagline, category and ' +
+    'highlights. Read-only.',
+  kind: 'read',
+  schema: z.object({}).strict(),
+  async exec() {
+    return {
+      label: `Listed ${TEMPLATE_CATALOG.length} template(s)`,
+      data: TEMPLATE_CATALOG.map((t) => ({
+        id: t.id,
+        name: t.name,
+        tagline: t.tagline,
+        category: t.category,
+        highlights: t.highlights,
+      })),
+    };
+  },
+};
+
+const templateUse: ToolSpec = {
+  name: 'template_use',
+  description:
+    'Instantiate a built-in template (template_list) as the user\u2019s OWN new bot, with the user\u2019s ' +
+    'personal referral link baked in (they earn premium days when their audience signs up). Args: ' +
+    'templateId, optional name override. The bot arrives fully configured (behaviors, prompt) and ' +
+    'stays owner-editable \u2014 refine it with bot_set_behaviors afterwards. Draft, not live.',
+  kind: 'write',
+  schema: z
+    .object({
+      templateId: z.string().min(1).max(64),
+      name: z.string().min(1).max(100).optional(),
+    })
+    .strict(),
+  async exec(ctx, args) {
+    const { templateId, name } = args as { templateId: string; name?: string };
+    const links = ctx.links ?? growthLinksFromEnv();
+    if (!links) {
+      return fail(
+        'No site URL is configured on this server (NURAE_SITE_URL / NURAE_PUBLIC_URL), so the ' +
+          'template\u2019s NURAE growth links cannot be baked. Ask the site owner to set it.',
+      );
+    }
+    const built = buildTemplateBot(templateId, links, (await getOrCreateInvite(ctx.userId)).code);
+    if (!built) {
+      return fail(`Unknown template "${templateId}" \u2014 call template_list for the catalog.`);
+    }
+    const result = await createUserBot(ctx.userId, {
+      name: name?.trim() || built.name,
+      description: built.description,
+      systemPrompt: built.systemPrompt,
+      behaviors: built.behaviors,
+    });
+    if (result.error || !result.bot) {
+      return fail('Template instantiation rejected by validation', result.fields ?? result.error);
+    }
+    return {
+      label: `Created "${result.bot.name}" from the ${templateId} template`,
+      detail: 'Draft saved \u2014 refine with bot_set_behaviors, then publish',
+      data: { botId: result.bot.id, name: result.bot.name, behaviors: built.behaviors.length },
+    };
+  },
+};
+
 const filesList: ToolSpec = {
   name: 'files_list',
   description:
@@ -792,12 +896,22 @@ export const TOOLS: readonly ToolSpec[] = [
   botUnpublish,
   filesList,
   filesRead,
+  docsRead,
+  templateList,
+  templateUse,
 ];
 
 const REGISTRY = new Map(TOOLS.map((t) => [t.name, t]));
 
+export { DOCS_TOPICS };
+
+/**
+ * Tool lookup across BOTH tiers: the per-user registry and the platform
+ * operator registry (whose specs are platformRequired and stay locked until
+ * an operator-scoped context shows up).
+ */
 export function getTool(name: string): ToolSpec | undefined {
-  return REGISTRY.get(name);
+  return REGISTRY.get(name) ?? PLATFORM_REGISTRY.get(name);
 }
 
 /** JSON-schema descriptors (MCP-compatible advertisement of capabilities). */
@@ -848,9 +962,17 @@ export async function executeTool(
   rawArgs: unknown,
   seq: number,
 ): Promise<ExecRecord> {
-  const tool = REGISTRY.get(toolName);
+  const tool = REGISTRY.get(toolName) ?? PLATFORM_REGISTRY.get(toolName);
   if (!tool) {
     return { seq, tool: toolName, label: `Unknown tool "${toolName}"`, status: 'error' };
+  }
+  if (tool.platformRequired && !ctx.platform) {
+    return {
+      seq,
+      tool: toolName,
+      label: `"${toolName}" is reserved for the platform operator`,
+      status: 'error',
+    };
   }
   let outcome: ToolOutcome;
   try {

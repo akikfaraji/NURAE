@@ -138,7 +138,7 @@ npm run start      # launcher: loads .env, pins the data root, then serves; hono
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.07.000-beta-03",...}`
+`{"status":"ok","version":"V00.08.000-beta-03",...}`
 
 > **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
 > silently open a build-time SNAPSHOT of your database (bots worked in dev, died in
@@ -190,6 +190,17 @@ Telegram, take the **bot token** (`123456:ABC-...`). Then on the dashboard:
 > Pro ($19.99/mo — ×10, hosting for 15 bots) from their wallet balance on
 > the /billing page; /pricing shows the plans. Admin grants: POST
 > `/api/admin/billing/grant` with `{ userId, planId, days }`.
+
+> **Agents (built in):** the dashboard's **Agent** tab is the Operator —
+> your platform agent. Ask it "how are we doing?", "why are bots failing?
+> check the logs", "fleet status", "make the Trivia bot smarter" — it reads
+> the server through audited tools and does the work (fleet passes, bot
+> config, settings changes with your one-click approval). Users get their
+> own agent at `/chats/agents` (the Bot Builder) with the same security
+> model minus the platform powers. Both run on the platform AI key; the
+> tool registry is public at `GET /api/agents/tools` and `/llms.txt`
+> briefs external AI agents. The agent never sees or sets secrets —
+> tokens and API keys remain human-only.
 
 ### 5.1 Polling mode — zero public URL (best for local/Termux testing)
 

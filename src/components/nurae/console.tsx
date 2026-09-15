@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { OverviewView, ProjectView, ProjectsView, CustomersView, SiteSettingsView, OfficialBotCard, OfficialFleetCard } from '@/components/nurae/views';
 import { BotView } from '@/components/nurae/bot-view';
+import { OperatorAgentView } from '@/components/nurae/operator-view';
 import { Catalog, nuraeApi } from '@/lib/nurae-client/api';
 import { NURAE_VERSION } from '@/lib/nurae/version';
 import { ExternalIcon, SettingsIcon, UsersIcon } from '@/components/nurae/icons';
@@ -26,6 +27,7 @@ type View =
   | { type: 'project'; id: string }
   | { type: 'bot'; id: string; projectId: string }
   | { type: 'customers' }
+  | { type: 'agent' }
   | { type: 'settings' };
 
 export function NuraeConsole() {
@@ -138,6 +140,14 @@ export function NuraeConsole() {
             <Button
               variant="ghost"
               size="sm"
+              className={view.type === 'agent' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
+              onClick={() => setView({ type: 'agent' })}
+            >
+              Agent
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               className={view.type === 'customers' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}
               onClick={() => setView({ type: 'customers' })}
             >
@@ -195,6 +205,8 @@ export function NuraeConsole() {
         )}
         {view.type === 'customers' ? (
           <CustomersView onBack={goHome} />
+        ) : view.type === 'agent' ? (
+          <OperatorAgentView />
         ) : view.type === 'settings' ? (
           <SiteSettingsView onBack={goHome} />
         ) : view.type === 'bot' && !catalog ? (
