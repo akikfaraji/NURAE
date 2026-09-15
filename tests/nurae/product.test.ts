@@ -7,12 +7,12 @@
  * fetch (Telegram + AI), isolated per-process SQLite database.
  */
 
+import './helpers';
 import { describe, expect, test, afterAll } from 'vitest';
 import { deflateSync } from 'node:zlib';
 import { installTelegramStub, resetTelegramStub, TELEGRAM_STUB_BASE, telegramState } from './telegram-stub';
 
-await import('./helpers');
-const { pushTestSchema } = await import('./helpers');
+import { pushTestSchema } from './helpers';
 pushTestSchema();
 
 const { db } = await import('../../src/lib/db');

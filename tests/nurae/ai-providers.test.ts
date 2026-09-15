@@ -1,3 +1,4 @@
+import './helpers';
 import { describe, expect, test } from 'vitest';
 import { AIError, classifyProviderError } from '../../src/lib/nurae/ai/types';
 import { OpenAICompatibleProvider } from '../../src/lib/nurae/ai/providers/openai-compatible';

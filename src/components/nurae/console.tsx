@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { OverviewView, ProjectView, ProjectsView, CustomersView, AdminBotsView, SiteSettingsView, OfficialBotCard, OfficialFleetCard } from '@/components/nurae/views';
@@ -19,7 +18,6 @@ import { OperatorAgentView } from '@/components/nurae/operator-view';
 import { Catalog, nuraeApi } from '@/lib/nurae-client/api';
 import { NURAE_VERSION } from '@/lib/nurae/version';
 import { LoadingRow } from '@/components/nurae/bits';
-import { ExternalIcon, SettingsIcon, UsersIcon } from '@/components/nurae/icons';
 import { toast } from 'sonner';
 
 type View =
@@ -136,10 +134,6 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
     }
   };
 
-  const goHome = async () => {
-    go({ type: 'overview' });
-  };
-
   if (!checked) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -153,91 +147,53 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted/50">
-      <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-background/90 backdrop-blur">
+        <div className="mx-auto flex h-12 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <button
-            className="flex items-center gap-3 text-left"
+            className="flex shrink-0 items-baseline gap-2 text-left"
             onClick={() => go({ type: 'overview' })}
-            aria-label="Go to overview"
+            aria-label="Go to dashboard"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground font-bold text-background">
-              N
-            </span>
-            <span>
-              <span className="block text-sm font-semibold tracking-wide text-foreground">
-                NURAE Admin <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
-              </span>
-              <span className="block text-[11px] uppercase tracking-widest text-muted-foreground">FRAZIYM TECH &amp; AI</span>
-            </span>
+            <span className="text-sm font-semibold tracking-wide text-foreground">NURAE Admin</span>
+            <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline">{NURAE_VERSION}</span>
           </button>
           <nav
-            className="flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            aria-label="Main"
+            className="flex items-center gap-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="Admin"
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              className={view.type === 'overview' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => go({ type: 'overview' })}
-            >
-              Dashboard
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={view.type === 'bots' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => go({ type: 'bots' })}
-            >
-              Bots
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={view.type === 'projects' || view.type === 'project' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => go({ type: 'projects' })}
-            >
-              Projects
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={view.type === 'agent' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => go({ type: 'agent' })}
-            >
-              Agent
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={view.type === 'customers' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => go({ type: 'customers' })}
-            >
-              <UsersIcon className="mr-1.5 h-3.5 w-3.5" /> Customers
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={view.type === 'settings' ? 'shrink-0 bg-muted font-medium text-foreground' : 'shrink-0 text-muted-foreground'}
-              onClick={() => go({ type: 'settings' })}
-            >
-              <SettingsIcon className="mr-1.5 h-3.5 w-3.5" /> Site
-            </Button>
-            <Link
-              href="/"
-              className="ml-2 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
-            >
-              View site <ExternalIcon className="h-3 w-3" />
-            </Link>
+            {([
+              ['overview', 'Dashboard'],
+              ['bots', 'Bots'],
+              ['projects', 'Projects'],
+              ['agent', 'Agent'],
+              ['customers', 'Customers'],
+              ['settings', 'Site'],
+            ] as const).map(([key, label]) => {
+              const active =
+                key === 'overview'
+                  ? view.type === 'overview'
+                  : key === 'projects'
+                    ? view.type === 'projects' || view.type === 'project'
+                    : view.type === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => go(key === 'overview' ? { type: 'overview' } : ({ type: key } as View))}
+                  aria-current={active ? 'page' : undefined}
+                  className={
+                    'shrink-0 text-xs transition-colors sm:text-[13px] ' +
+                    (active ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="ml-auto flex shrink-0 items-center gap-3">
             <span
-              className={
-                'ml-2 hidden shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs sm:inline-flex ' +
-                (coreUp === null
-                  ? 'border-border text-muted-foreground'
-                  : coreUp
-                    ? 'border-border bg-muted text-foreground'
-                    : 'border-destructive/40 bg-destructive/10 text-destructive')
-              }
+              className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex"
               title={coreUp ? 'NURAE core reachable' : 'NURAE core unreachable — API calls will fail'}
             >
               <span
@@ -246,33 +202,39 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
                   (coreUp === null ? 'bg-muted-foreground/40' : coreUp ? 'bg-foreground' : 'bg-destructive')
                 }
               />
-              Core {coreUp === null ? '…' : coreUp ? 'online' : 'offline'}
+              {coreUp === null ? '…' : coreUp ? 'Core online' : 'Core offline'}
             </span>
-          </nav>
+            <Link
+              href="/"
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              View site
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         {view.type === 'overview' && (
-          <div className="mb-6 space-y-4">
-            <div>
-              <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Autonomous Digital Operations</h1>
-              <p className="text-sm text-muted-foreground">
-                Create and operate AI-powered Telegram bots. This is the {NURAE_VERSION} release.
-              </p>
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Dashboard</h1>
+            <p className="text-sm text-muted-foreground">
+              The official bot, the built-in fleet, and the state of the platform — {NURAE_VERSION}.
+            </p>
+            <div className="mt-6 space-y-4">
+              <OfficialBotCard onOpenBot={openBotById} catalog={catalog} />
+              <OfficialFleetCard onOpenBot={openBotById} />
             </div>
-            <OfficialBotCard onOpenBot={openBotById} catalog={catalog} />
-            <OfficialFleetCard onOpenBot={openBotById} />
           </div>
         )}
         {view.type === 'customers' ? (
-          <CustomersView onBack={goHome} />
+          <CustomersView />
         ) : view.type === 'bots' ? (
           <AdminBotsView />
         ) : view.type === 'agent' ? (
           <OperatorAgentView />
         ) : view.type === 'settings' ? (
-          <SiteSettingsView onBack={goHome} />
+          <SiteSettingsView />
         ) : view.type === 'bot' && !catalog ? (
           // The config dialog needs the provider catalog — never render the
           // bot view (or its forms) with a null catalog.
@@ -303,10 +265,10 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
         )}
       </main>
 
-      <footer className="mt-auto border-t border-border bg-background">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:px-6">
+      <footer className="mt-auto border-t border-border/60 bg-background">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-[11px] text-muted-foreground sm:px-6">
           <span>
-            NURAE <span className="font-mono">{NURAE_VERSION}</span> — Autonomous Digital Operations System
+            NURAE <span className="font-mono">{NURAE_VERSION}</span>
           </span>
           <span>FRAZIYM TECH &amp; AI</span>
         </div>
@@ -335,37 +297,30 @@ function LoginGate({ onAuthenticated }: { onAuthenticated: () => void | Promise<
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/50 px-4">
-      <Card className="w-full max-w-sm border-border">
-        <CardHeader className="text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-foreground text-xl font-bold text-background">
-            N
-          </span>
-          <CardTitle className="mt-2 text-lg">
-            NURAE Admin <span className="font-mono text-xs text-muted-foreground">{NURAE_VERSION}</span>
-          </CardTitle>
-          <CardDescription>Enter the admin token to access the console.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-token">Admin token</Label>
-              <Input
-                id="admin-token"
-                type="password"
-                autoComplete="current-password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="NURAE_ADMIN_TOKEN"
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </form>
-          <p className="mt-4 text-center text-xs text-muted-foreground">FRAZIYM TECH &amp; AI</p>
-        </CardContent>
-      </Card>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-xs">
+        <h1 className="text-lg font-medium text-foreground">NURAE Admin</h1>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Enter the admin token to continue.
+        </p>
+        <form onSubmit={submit} className="mt-6 space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-token" className="sr-only">Admin token</Label>
+            <Input
+              id="admin-token"
+              type="password"
+              autoComplete="current-password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Admin token"
+              autoFocus
+            />
+          </div>
+          <Button type="submit" className="w-full" size="sm" disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </Button>
+        </form>
+      </div>
     </div>
   );
 }

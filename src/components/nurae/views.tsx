@@ -19,13 +19,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { EmptyState, LoadingRow, Pill, StatCard, StatusBadge } from '@/components/nurae/bits';
+import { EmptyState, LoadingRow, Pill, StatLine, StatusBadge } from '@/components/nurae/bits';
 import {
   ArrowRightIcon,
   BotIcon,
   CheckIcon,
-  GoogleIcon,
-  MailIcon,
   RefreshIcon,
 } from '@/components/nurae/icons';
 import {
@@ -44,6 +42,16 @@ import { toast } from 'sonner';
 // ---------------------------------------------------------------------------
 // Overview (spec §15: Projects / Active Bots / Stopped Bots / Errors)
 // ---------------------------------------------------------------------------
+
+/** The personal workspace's description embeds an internal id marker for
+ *  lookups — that marker is plumbing, never copy. Strip it for display. */
+function cleanProjectDescription(description: string | null | undefined): string {
+  if (!description) return '';
+  return description
+    .replace(/\s*\([a-z0-9]{10,}\)\s*$/i, '')
+    .replace(/\s*[—\-]\s*ref\s+\S+\s*$/i, '')
+    .trim();
+}
 
 export function OverviewView({
   catalog,
@@ -84,62 +92,51 @@ export function OverviewView({
   }, [refresh]);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
-        <StatCard label="Projects" value={stats?.projects ?? '—'} />
-        <StatCard label="Active Bots" value={stats?.activeBots ?? '—'} />
-        <StatCard label="Stopped Bots" value={stats?.stoppedBots ?? '—'} />
-        <StatCard label="Errors" value={stats?.errors ?? '—'} accent={stats && stats.errors > 0 ? 'red' : 'zinc'} />
-        <StatCard label="Customers" value={stats?.users ?? '—'} />
-      </div>
+    <div className="space-y-8">
+      <StatLine
+        items={[
+          { label: 'Projects', value: stats?.projects ?? '—' },
+          { label: 'Active bots', value: stats?.activeBots ?? '—' },
+          { label: 'Stopped', value: stats?.stoppedBots ?? '—' },
+          { label: 'Errors', value: stats?.errors ?? '—', alert: Boolean(stats && stats.errors > 0) },
+          { label: 'Customers', value: stats?.users ?? '—' },
+        ]}
+      />
 
-      <Card className="border-border">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">Projects</CardTitle>
-              <CardDescription>Group bots into projects.</CardDescription>
-            </div>
-            <Button size="sm" onClick={onGoProjects} >
-              Manage projects
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {projects.length === 0 ? (
-            <EmptyState
-              title="No projects yet"
-              description="Create your first project to start building AI-powered Telegram bots."
-              action={
-                <Button onClick={onGoProjects} >
-                  Create project
-                </Button>
-              }
-            />
-          ) : (
-            <ul className="divide-y divide-border">
-              {projects.map((p) => (
-                <li key={p.id}>
-                  <button
-                    className="flex w-full items-center justify-between rounded-md px-2 py-3 text-left hover:bg-muted/50"
-                    onClick={() => onOpenProject(p.id)}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{p.description || 'No description'}</p>
-                    </div>
-                    <div className="ml-4 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {p.activeBots}/{p.botCount} active
-                      </span>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <section>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Projects</h2>
+          <Button size="sm" variant="ghost" onClick={onGoProjects}>
+            Manage
+          </Button>
+        </div>
+        {projects.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No projects yet — group related bots into one.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-border/60 border-t border-border/60">
+            {projects.map((p) => (
+              <li key={p.id}>
+                <button
+                  className="flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-muted/30"
+                  onClick={() => onOpenProject(p.id)}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
+                    {cleanProjectDescription(p.description) && (
+                      <span className="block truncate text-xs text-muted-foreground">{cleanProjectDescription(p.description)}</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {p.activeBots}/{p.botCount} active
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
@@ -213,18 +210,13 @@ export function ProjectsView({
       </div>
 
       {projects === null ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Card key={i} className="animate-pulse border-border p-6">
-              <div className="h-4 w-1/3 rounded bg-muted" />
-              <div className="mt-3 h-3 w-2/3 rounded bg-muted" />
-            </Card>
-          ))}
+        <div className="mt-4">
+          <LoadingRow label="Loading projects…" />
         </div>
       ) : projects.length === 0 ? (
         <EmptyState
           title="No projects yet"
-          description="Create your first project to start building AI-powered Telegram bots."
+          description="Projects group related bots. Create the first one."
           action={
             <Button onClick={() => setCreateOpen(true)} >
               Create project
@@ -232,32 +224,26 @@ export function ProjectsView({
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="border-t border-border/60">
           {projects.map((p) => (
-            <Card
-              key={p.id}
-              className="cursor-pointer border-border transition-shadow hover:shadow-md"
-              onClick={() => onOpenProject(p.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && onOpenProject(p.id)}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">{p.name}</CardTitle>
-                <CardDescription className="line-clamp-2">{p.description || 'No description'}</CardDescription>
-              </CardHeader>
-              <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>
-                  {p.botCount} bot{p.botCount === 1 ? '' : 's'}
+            <li key={p.id} className="border-b border-border/60">
+              <button
+                className="flex w-full items-center gap-4 py-3.5 text-left transition-colors hover:bg-muted/30"
+                onClick={() => onOpenProject(p.id)}
+                data-testid={`project-row-${p.name}`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{cleanProjectDescription(p.description) || 'No description'}</span>
                 </span>
-                <span className="inline-flex items-center gap-1">
+                <span className="inline-flex shrink-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-foreground" />
-                  {p.activeBots} active
+                  {p.activeBots}/{p.botCount} active
                 </span>
-              </CardContent>
-            </Card>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -352,7 +338,7 @@ export function ProjectView({
             ← Projects
           </Button>
           <h2 className="truncate text-lg font-semibold text-foreground">{project?.name ?? '…'}</h2>
-          <p className="truncate text-sm text-muted-foreground">{project?.description || 'No description'}</p>
+          <p className="truncate text-sm text-muted-foreground">{cleanProjectDescription(project?.description) || 'No description'}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}  data-testid="create-bot">
           Create bot
@@ -370,35 +356,38 @@ export function ProjectView({
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="border-t border-border/60">
           {bots.map((b) => (
-            <Card
-              key={b.id}
-              className="cursor-pointer border-border transition-shadow hover:shadow-md"
-              onClick={() => onOpenBot(b.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && onOpenBot(b.id)}
-              data-testid={`bot-card-${b.name}`}
-            >
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="truncate text-base">{b.name}</CardTitle>
-                  <StatusBadge status={b.status} />
-                </div>
-                <CardDescription className="line-clamp-1">{b.description || 'No description'}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-1 text-xs text-muted-foreground">
-                <p>
-                  <span className="font-medium text-foreground">{b.telegramUsername ?? 'Telegram: not verified'}</span>
-                </p>
-                <p>
-                  {b.provider} · {b.model}
-                </p>
-              </CardContent>
-            </Card>
+            <li key={b.id} className="border-b border-border/60">
+              <button
+                className="group flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-muted/30"
+                onClick={() => onOpenBot(b.id)}
+                data-testid={`bot-card-${b.name}`}
+              >
+                <span
+                  aria-hidden
+                  className={
+                    'h-1.5 w-1.5 shrink-0 rounded-full ' +
+                    (b.status === 'running'
+                      ? 'animate-pulse bg-foreground'
+                      : b.status === 'error'
+                        ? 'bg-destructive'
+                        : 'bg-muted-foreground/40')
+                  }
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-foreground">{b.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {b.telegramUsername ?? 'Telegram: not verified'} · {b.provider}/{b.model}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                  →
+                </span>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       <CreateBotDialog
@@ -687,7 +676,7 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-0">
         {(fleet ?? []).map((entry) => {
           const needsToken = !entry.hasTelegramToken;
           const stateLabel = entry.status === 'running'
@@ -698,18 +687,18 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
           return (
             <div
               key={entry.templateId}
-              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-border px-3 py-2.5"
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border/60 py-2.5"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium text-foreground">{entry.name}</span>
-                  <Pill>{entry.category}</Pill>
+                  <span className="text-[11px] uppercase tracking-widest text-muted-foreground">{entry.category}</span>
                 </div>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">{entry.tagline}</p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-3">
                 <span
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs text-foreground"
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
                   title={needsToken ? 'Paste a @BotFather token in the bot page' : undefined}
                 >
                   <span
@@ -739,7 +728,7 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
           );
         })}
         {fleet && fleet.length === 0 && (
-          <p className="text-xs text-muted-foreground">Fleet seeding pending — reload the dashboard.</p>
+          <p className="py-2 text-xs text-muted-foreground">Fleet seeding pending — reload the dashboard.</p>
         )}
         {!fleet && <LoadingRow label="Loading fleet…" />}
       </CardContent>
@@ -763,7 +752,7 @@ function KeyStep({
   pendingText: string;
 }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+    <div className="flex items-start gap-2.5">
       <span
         className={
           'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ' +
@@ -773,8 +762,8 @@ function KeyStep({
         {done || fallback ? <CheckIcon className="h-2.5 w-2.5" /> : <span className="h-1 w-1 rounded-full bg-current" />}
       </span>
       <div className="min-w-0">
-        <p className="font-medium text-foreground">{label}</p>
-        <p className="truncate text-muted-foreground">{done ? doneText : fallback ? (fallbackText ?? 'Fallback active') : pendingText}</p>
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <p className="truncate text-xs text-muted-foreground">{done ? doneText : fallback ? (fallbackText ?? 'Fallback active') : pendingText}</p>
       </div>
     </div>
   );
@@ -786,7 +775,7 @@ function KeyStep({
 // user accounts is intentionally not an admin power in NURAE)
 // ---------------------------------------------------------------------------
 
-export function CustomersView({ onBack }: { onBack: () => void }) {
+export function CustomersView() {
   const [customers, setCustomers] = useState<CustomerDTO[] | null>(null);
 
   const refresh = useCallback(async () => {
@@ -806,14 +795,9 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Customers</h1>
-          <p className="text-sm text-muted-foreground">Everyone who signed up on your site.</p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          Back to dashboard
-        </Button>
+      <div>
+        <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Customers</h1>
+        <p className="text-sm text-muted-foreground">Everyone who signed up on your site.</p>
       </div>
 
       <Card className="border-border">
@@ -848,21 +832,15 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                        {c.signupMethod === 'google' ? <GoogleIcon className="h-3.5 w-3.5" /> : <MailIcon className="h-3.5 w-3.5" />}
                         {c.signupMethod === 'google' ? 'Google' : 'Email'}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span
-                        className={
-                          'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ' +
-                          (c.emailVerified
-                            ? 'border-border bg-muted text-foreground'
-                            : 'border-destructive/40 bg-destructive/10 text-destructive')
-                        }
-                      >
+                      <span className="inline-flex items-center gap-1.5 text-xs">
                         <span className={'h-1.5 w-1.5 rounded-full ' + (c.emailVerified ? 'bg-foreground' : 'bg-destructive')} />
-                        {c.emailVerified ? 'Verified' : 'Unverified'}
+                        <span className={c.emailVerified ? 'text-muted-foreground' : 'text-destructive'}>
+                          {c.emailVerified ? 'Verified' : 'Unverified'}
+                        </span>
                       </span>
                     </TableCell>
                     <TableCell className="text-right text-sm tabular-nums text-foreground">{c.chatMessages}</TableCell>
@@ -988,14 +966,7 @@ export function AdminBotsView() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span
-                        className={
-                          'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ' +
-                          (b.owner.kind === 'platform'
-                            ? 'border-border bg-muted text-foreground'
-                            : 'border-border text-muted-foreground')
-                        }
-                      >
+                      <span className={b.owner.kind === 'platform' ? 'text-xs font-medium text-foreground' : 'text-xs text-muted-foreground'}>
                         {b.owner.kind === 'platform' ? 'Official' : b.owner.email ?? 'customer'}
                       </span>
                     </TableCell>
@@ -1060,7 +1031,7 @@ export function AdminBotsView() {
 // Site settings — feeds the public site and the official bot's knowledge
 // ---------------------------------------------------------------------------
 
-export function SiteSettingsView({ onBack }: { onBack: () => void }) {
+export function SiteSettingsView() {
   const [form, setForm] = useState<SiteInfoDTO | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1103,16 +1074,11 @@ export function SiteSettingsView({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Site settings</h1>
-          <p className="text-sm text-muted-foreground">
-            Shown on the public site and baked into the official bot&apos;s knowledge.
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          Back to dashboard
-        </Button>
+      <div>
+        <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Site settings</h1>
+        <p className="text-sm text-muted-foreground">
+          Shown on the public site and baked into the official bot&apos;s knowledge.
+        </p>
       </div>
 
       <Card className="border-border">

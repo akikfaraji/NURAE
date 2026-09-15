@@ -63,8 +63,6 @@ export function BotsListView() {
           </div>
         </div>
 
-        <BuiltInBotsSection />
-
         <div className="mt-10 flex items-baseline justify-between gap-4">
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Your bots</p>
           <span className="text-xs text-muted-foreground">{loaded ? bots.length : '…'}</span>
@@ -85,7 +83,7 @@ export function BotsListView() {
               <Button size="sm" asChild>
                 <Link href="/bots/new?ai=1">Describe a bot</Link>
               </Button>
-              <Link href="/bots" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from a built-in bot above</Link>
+              <Link href="#built-in" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from a built-in bot below</Link>
             </div>
           </div>
         ) : (
@@ -132,6 +130,8 @@ export function BotsListView() {
             ))}
           </ul>
         )}
+
+        <BuiltInBotsSection />
       </main>
     </div>
   );
@@ -162,10 +162,10 @@ function BuiltInBotsSection() {
   };
 
   return (
-    <section className="mt-10">
+    <section id="built-in" className="mt-12 scroll-mt-16">
       <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Built-in bots</p>
       <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-        Five finished bots for the classic growth jobs. Pick one — it arrives fully configured,
+        Five finished bots for the classic jobs. Pick one — it arrives fully configured,
         you connect the token, it runs. Every bot you deploy links its users to NURAE.
       </p>
       <ul className="mt-4 border-t border-border/60">

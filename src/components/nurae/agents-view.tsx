@@ -265,6 +265,87 @@ export function AgentsView() {
     }
   };
 
+  // One composer for both states: an open build appends to it; the empty
+  // state starts the build with the first message.
+  const composer = (
+    <div className="flex items-end gap-2">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_FILES}
+        className="hidden"
+        onChange={(e) => void uploadFiles(e.target.files)}
+      />
+      <button
+        type="button"
+        aria-label="Attach files"
+        title={activeId ? 'Attach files (price lists, menus, docs…)' : 'Send your first message to attach files'}
+        onClick={() => fileInputRef.current?.click()}
+        disabled={!activeId || uploading}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+      >
+        {uploading ? <span className="animate-pulse">…</span> : '+'}
+      </button>
+      <textarea
+        ref={textareaRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (activeId) void send();
+            else {
+              const text = draft.trim();
+              if (text && !busy) void createAndRun(text);
+            }
+          }
+        }}
+        rows={1}
+        maxLength={8000}
+        placeholder="Tell the agent what to build or change…"
+        className="max-h-40 min-h-9 flex-1 resize-none rounded-md border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+        onInput={(e) => {
+          const el = e.currentTarget;
+          el.style.height = 'auto';
+          el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => {
+          if (activeId) void send();
+          else {
+            const text = draft.trim();
+            if (text && !busy) void createAndRun(text);
+          }
+        }}
+        disabled={busy || (!draft.trim() && attachments.length === 0)}
+        className="flex h-9 shrink-0 items-center rounded-md border border-border px-3 text-xs text-foreground hover:bg-muted/60 disabled:opacity-40"
+      >
+        {busy ? '…' : 'Send'}
+      </button>
+    </div>
+  );
+
+  const attachmentChips = attachments.length > 0 && (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {attachments.map((a) => (
+        <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+          {a.name}
+          <button
+            type="button"
+            aria-label={`Remove ${a.name}`}
+            onClick={() => setAttachments((x) => x.filter((y) => y.id !== a.id))}
+            className="hover:text-foreground"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+
   if (!checked) return <SiteSplash />;
 
   if (!user) {
@@ -389,10 +470,19 @@ export function AgentsView() {
           </div>
 
           {!activeId ? (
-            <EmptyAgent
-              busy={busy}
-              onPick={(text) => void createAndRun(text)}
-            />
+            <>
+              <EmptyAgent
+                userName={user.name}
+                busy={busy}
+                onPick={(text) => void createAndRun(text)}
+              />
+              <div className="shrink-0 border-t border-border/60">
+                <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6">
+                  {attachmentChips}
+                  {composer}
+                </div>
+              </div>
+            </>
           ) : (
             <>
               <div className="min-h-0 flex-1 overflow-y-auto">
@@ -437,71 +527,8 @@ export function AgentsView() {
                       </div>
                     </div>
                   )}
-                  {attachments.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-1.5">
-                      {attachments.map((a) => (
-                        <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                          {a.name}
-                          <button
-                            type="button"
-                            aria-label={`Remove ${a.name}`}
-                            onClick={() => setAttachments((x) => x.filter((y) => y.id !== a.id))}
-                            className="hover:text-foreground"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex items-end gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept={ACCEPTED_FILES}
-                      className="hidden"
-                      onChange={(e) => void uploadFiles(e.target.files)}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Attach files"
-                      title="Attach files (price lists, menus, docs…)"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploading}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-                    >
-                      {uploading ? <span className="animate-pulse">…</span> : '+'}
-                    </button>
-                    <textarea
-                      ref={textareaRef}
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          void send();
-                        }
-                      }}
-                      rows={1}
-                      maxLength={8000}
-                      placeholder="Tell the agent what to build or change…"
-                      className="max-h-40 min-h-9 flex-1 resize-none rounded-md border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-                      onInput={(e) => {
-                        const el = e.currentTarget;
-                        el.style.height = 'auto';
-                        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void send()}
-                      disabled={busy || (!draft.trim() && attachments.length === 0)}
-                      className="flex h-9 shrink-0 items-center rounded-md border border-border px-3 text-xs text-foreground hover:bg-muted/60 disabled:opacity-40"
-                    >
-                      {busy ? '…' : 'Send'}
-                    </button>
-                  </div>
+                  {attachmentChips}
+                  {composer}
                   <p className="mt-1.5 hidden text-[10px] text-muted-foreground/70 sm:block">
                     Enter sends · Shift+Enter breaks the line · files you attach travel with the task
                   </p>
@@ -519,38 +546,35 @@ export function AgentsView() {
 // Empty state — same shape as the chat empty state: pick a task, it starts.
 // ---------------------------------------------------------------------------
 
-function EmptyAgent({ onPick, busy }: { onPick: (text: string) => void; busy: boolean }) {
+function EmptyAgent({ userName, onPick, busy }: { userName: string; onPick: (text: string) => void; busy: boolean }) {
   const examples = [
     'Make a customer support bot for my store.',
     'Build a restaurant bot with a welcome flow and an order flow.',
     'Add a Contact button that shows our support channels.',
   ];
+  const firstName = userName ? userName.split(' ')[0] : '';
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24">
-      <h1 className="text-lg font-medium text-foreground">Bot Builder</h1>
+    <div className="flex flex-1 flex-col items-center justify-center px-6">
+      <h1 className="text-lg font-medium text-foreground">
+        {firstName ? `Hi, ${firstName}.` : 'Bot Builder.'}
+      </h1>
       <p className="mt-2 max-w-sm text-center text-sm leading-relaxed text-muted-foreground">
         Describe the Telegram bot you want — the agent builds it, and you approve
-        anything before it goes live. Files you attach travel with the task.
+        anything before it goes live.
       </p>
-      <div className="mt-8 w-full max-w-md space-y-px">
+      <div className="mt-6 flex max-w-md flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
         {examples.map((t) => (
           <button
             key={t}
             type="button"
             disabled={busy}
             onClick={() => onPick(t)}
-            className="block w-full border border-border/60 px-3 py-2 text-left text-xs text-muted-foreground transition-colors first:border-t hover:border-border hover:text-foreground disabled:opacity-50"
+            className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
           >
             {t}
           </button>
         ))}
       </div>
-      <Button size="sm" variant="outline" asChild className="mt-4">
-        <Link href="/bots/new?ai=1">Describe a bot →</Link>
-      </Button>
-      <p className="mt-6 text-[11px] text-muted-foreground/70">
-        The agent works inside your account — every step is audited and reversible.
-      </p>
     </div>
   );
 }

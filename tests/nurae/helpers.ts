@@ -47,15 +47,20 @@ process.env.NURAE_GOOGLE_CLIENT_ID = '';
 process.env.NURAE_GOOGLE_CLIENT_SECRET = '';
 process.env.NURAE_PUBLIC_URL = '';
 
-/** Apply the Prisma schema to the test DB (idempotent). */
+/** Apply the Prisma schema to the test DB. The PrismaClient is module-cached
+ *  across the whole bun test process, so every file shares one database —
+ *  therefore every call AFTER the first force-resets it: each test file
+ *  starts from a pristine, fully-migrated DB no matter which files ran
+ *  before it. (Without the reset, files that seed fleets/users would fail
+ *  their "empty platform" assumptions in full-suite runs.) */
 let schemaPushed = false;
 export function pushTestSchema(): void {
-  if (schemaPushed) return;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { execSync } = require('node:child_process') as typeof import('node:child_process');
+  const reset = schemaPushed ? ' --force-reset' : '';
   // Direct entry path + explicit node: immune to `bunx` shebang resolution on
   // node-less boxes (same reason package.json scripts use this form).
-  execSync(`node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss`, {
+  execSync(`node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss${reset}`, {
     cwd: '/home/z/my-project',
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: 'ignore',

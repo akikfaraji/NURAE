@@ -1,3 +1,4 @@
+import './helpers';
 /**
  * NURAE — Telegram markdown conversion tests (Task 15).
  *

@@ -13,11 +13,11 @@
  *     seeding at request time) without leaking secret material
  */
 
+import './helpers';
 import { describe, expect, test, afterAll } from 'vitest';
 import { installTelegramStub, resetTelegramStub } from './telegram-stub';
 
-await import('./helpers');
-const { pushTestSchema } = await import('./helpers');
+import { pushTestSchema } from './helpers';
 pushTestSchema();
 
 const { db } = await import('../../src/lib/db');

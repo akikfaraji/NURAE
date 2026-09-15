@@ -53,4 +53,4 @@ Telegram commands, inline keyboards, callbacks and flows:
 
 ## Vendor
 
-FRAZIYM TECH & AI — NURAE, the Autonomous Digital Operations System.
+FRAZIYM TECH & AI — NURAE, build, run and improve AI Telegram bots.

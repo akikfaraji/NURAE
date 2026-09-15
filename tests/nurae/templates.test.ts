@@ -13,11 +13,11 @@
  *   - API: POST /api/my/bots/from-template (auth, 404, ownership, hooks)
  */
 
+import './helpers';
 import { describe, expect, test, afterAll } from 'vitest';
 import { installTelegramStub, resetTelegramStub, TELEGRAM_STUB_BASE, telegramState } from './telegram-stub';
 
-await import('./helpers');
-const { pushTestSchema } = await import('./helpers');
+import { pushTestSchema } from './helpers';
 pushTestSchema();
 
 const { db } = await import('../../src/lib/db');

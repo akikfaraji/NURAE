@@ -1,3 +1,4 @@
+import './helpers';
 /**
  * NURAE — BR-030 regression tests: universal tool-call markup parsing.
  *

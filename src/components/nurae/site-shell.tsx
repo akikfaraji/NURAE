@@ -35,13 +35,13 @@ const NAV = [
   { href: '/chats', label: 'Chats' },
   { href: '/chats/agents', label: 'Agents' },
   { href: '/bots', label: 'Bots' },
-  { href: '/featured', label: 'Featured' },
   { href: '/pricing', label: 'Pricing' },
   { href: '/billing', label: 'Billing' },
 ] as const;
 
 const PUBLIC_NAV = [
   { href: '/', label: 'Home' },
+  { href: '/featured', label: 'Featured' },
   { href: '/pricing', label: 'Pricing' },
   { href: '/help', label: 'Help' },
   { href: '/about', label: 'About' },
@@ -320,7 +320,7 @@ export function SiteFooter({ siteName }: { siteName: string }) {
     <footer className="mt-auto border-t border-border/60 bg-background">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-[11px] text-muted-foreground sm:px-6">
         <span>
-          {siteName} <span className="font-mono">{NURAE_VERSION}</span> — Autonomous Digital Operations System
+          {siteName} <span className="font-mono">{NURAE_VERSION}</span>
         </span>
         <span className="flex items-center gap-4">
           <Link href="/help" className="hover:text-foreground">Help</Link>

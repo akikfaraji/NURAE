@@ -37,16 +37,14 @@ import { GoogleIcon, MailIcon } from '@/components/nurae/icons';
 export function SiteHome() {
   const params = useSearchParams();
   const router = useRouter();
-  const { user, checked, setUser, signOut } = useSiteUser();
+  const { user, checked, setUser } = useSiteUser();
   const [siteInfo, setSiteInfo] = useState<SiteInfoResponse | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [welcome, setWelcome] = useState(false);
 
   useEffect(() => {
     (async () => {
       const err = params.get('auth_error');
       if (err) setAuthError(err.replace(/-/g, ' '));
-      if (params.get('welcome')) setWelcome(true);
 
       // Referral capture: keep the code until sign-up. Nothing is shown.
       const ref = params.get('ref');
@@ -66,61 +64,62 @@ export function SiteHome() {
     })();
   }, [params]);
 
-  if (!checked) return <SiteSplash />;
+  // Signed in: the marketing page is not for you — the dashboard is.
+  useEffect(() => {
+    if (checked && user) router.replace('/dashboard');
+  }, [checked, user, router]);
+
+  if (!checked || user) return <SiteSplash />;
 
   const siteName = siteInfo?.site.siteName ?? 'NURAE';
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
+      <SiteHeader variant="public" user={null} />
       <main className="flex-1">
         {/* Hero — typography and space, nothing else */}
         <section>
           <div className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24">
-            {user ? (
-              <SignedInPanel email={user.email} welcome={welcome} siteName={siteName} />
-            ) : (
-              <div className="grid gap-12 lg:grid-cols-[1.2fr_1fr] lg:gap-20">
-                <div>
-                  <h1 className="max-w-xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl">
-                    Chat is the interface.
-                    <br />
-                    <span className="text-muted-foreground">Agents are the workers.</span>
-                  </h1>
-                  <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground">
-                    {siteInfo?.site.tagline ??
-                      'Build, run and improve AI-powered Telegram bots — talk to NURAE, hand real work to its agents, publish with one approval.'}
+            <div className="grid gap-12 lg:grid-cols-[1.2fr_1fr] lg:gap-20">
+              <div>
+                <h1 className="max-w-xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl">
+                  Chat is the interface.
+                  <br />
+                  <span className="text-muted-foreground">Agents are the workers.</span>
+                </h1>
+                <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground">
+                  {siteInfo?.site.tagline ??
+                    'Build, run and improve AI-powered Telegram bots — talk to NURAE, hand real work to its agents, publish with one approval.'}
+                </p>
+                <div className="mt-8 flex flex-wrap items-center gap-3">
+                  <Button
+                    size="sm"
+                    onClick={() => document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })}
+                  >
+                    Get started free
+                  </Button>
+                  <Button size="sm" variant="ghost" asChild>
+                    <Link href="/featured">See the featured chat →</Link>
+                  </Button>
+                </div>
+                {siteInfo?.site.supportEmail && (
+                  <p className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
+                    <MailIcon className="h-3.5 w-3.5" /> {siteInfo.site.supportEmail}
                   </p>
-                  <div className="mt-8 flex flex-wrap items-center gap-3">
-                    <Button
-                      size="sm"
-                      onClick={() => document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })}
-                    >
-                      Get started free
-                    </Button>
-                    <Button size="sm" variant="ghost" asChild>
-                      <Link href="/featured">See the featured chat →</Link>
-                    </Button>
-                  </div>
-                  {siteInfo?.site.supportEmail && (
-                    <p className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
-                      <MailIcon className="h-3.5 w-3.5" /> {siteInfo.site.supportEmail}
-                    </p>
-                  )}
-                </div>
-                <div id="auth" className="scroll-mt-24">
-                  <AuthCard
-                    googleEnabled={siteInfo?.auth.googleEnabled ?? false}
-                    authError={authError}
-                    clearAuthError={() => setAuthError(null)}
-                    onAuthenticated={(u) => {
-                      setUser(u);
-                      router.push('/chats');
-                    }}
-                  />
-                </div>
+                )}
               </div>
-            )}
+              <div id="auth" className="scroll-mt-24">
+                <AuthCard
+                  googleEnabled={siteInfo?.auth.googleEnabled ?? false}
+                  authError={authError}
+                  clearAuthError={() => setAuthError(null)}
+                  onAuthenticated={(u) => {
+                    setUser(u);
+                    router.push('/dashboard');
+                  }}
+                />
+              </div>
+            </div>
           </div>
         </section>
 
@@ -156,45 +155,6 @@ export function SiteHome() {
         </section>
       </main>
       <SiteFooter siteName={siteName} />
-    </div>
-  );
-}
-
-/** Signed-in hero: the product, three links. */
-function SignedInPanel({
-  email,
-  welcome,
-  siteName,
-}: {
-  email: string;
-  welcome: boolean;
-  siteName: string;
-}) {
-  return (
-    <div className="max-w-xl">
-      {welcome && (
-        <p className="mb-4 text-xs text-muted-foreground">
-          Signed in with Google — welcome to {siteName}.
-        </p>
-      )}
-      <h1 className="text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl">
-        Welcome back.
-      </h1>
-      <p className="mt-4 text-sm text-muted-foreground">{email}</p>
-      <div className="mt-8 grid gap-px border-t border-l border-border/60 sm:grid-cols-3">
-        <Link href="/chats" className="group block border-b border-border/60 p-4 transition-colors hover:bg-muted/40 sm:border-r">
-          <span className="block text-sm text-foreground">Chats</span>
-          <span className="mt-1 block text-xs text-muted-foreground">Talk with the AI</span>
-        </Link>
-        <Link href="/chats/agents" className="group block border-b border-border/60 p-4 transition-colors hover:bg-muted/40 sm:border-r">
-          <span className="block text-sm text-foreground">Agents</span>
-          <span className="mt-1 block text-xs text-muted-foreground">Hand over real work</span>
-        </Link>
-        <Link href="/bots" className="group block border-b border-border/60 p-4 transition-colors hover:bg-muted/40">
-          <span className="block text-sm text-foreground">Bots</span>
-          <span className="mt-1 block text-xs text-muted-foreground">Run what was built</span>
-        </Link>
-      </div>
     </div>
   );
 }

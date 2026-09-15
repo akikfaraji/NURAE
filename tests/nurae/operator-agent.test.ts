@@ -14,10 +14,10 @@
  *   - /api/agent/operator guarded by the admin token
  */
 
+import './helpers';
 import { describe, expect, test, afterAll } from 'vitest';
 
-await import('./helpers');
-const { pushTestSchema } = await import('./helpers');
+import { pushTestSchema } from './helpers';
 pushTestSchema();
 
 const { db } = await import('../../src/lib/db');

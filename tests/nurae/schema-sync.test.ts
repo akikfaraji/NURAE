@@ -1,3 +1,4 @@
+import './helpers';
 /**
  * NURAE — BR-031: zero-touch SQLite schema sync on boot.
  *

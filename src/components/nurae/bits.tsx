@@ -36,6 +36,35 @@ export function StatusBadge({ status, className }: { status: string; className?:
   );
 }
 
+/** Typographic stat line — real numbers, no boxes. The dashboard pattern:
+ *  `label value · label value` reads in one glance and never pretends that
+ *  an empty account has "cards" of content. */
+export function StatLine({
+  items,
+  className,
+}: {
+  items: Array<{ label: string; value: React.ReactNode; alert?: boolean }>;
+  className?: string;
+}) {
+  return (
+    <p className={cn('flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm', className)}>
+      {items.map((item) => (
+        <span key={item.label} className="flex items-baseline gap-2">
+          <span className="text-xs text-muted-foreground">{item.label}</span>
+          <span
+            className={cn(
+              'text-sm font-medium tabular-nums',
+              item.alert ? 'text-destructive' : 'text-foreground',
+            )}
+          >
+            {item.value}
+          </span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
 export function StatCard({
   label,
   value,

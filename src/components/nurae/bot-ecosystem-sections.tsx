@@ -14,12 +14,52 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { nuraeApi, ApiError, type BroadcastDTO, type BotScheduleDTO, type BotPaymentDTO, type BotUserStateDTO } from '@/lib/nurae-client/api';
 import { LoadingRow } from '@/components/nurae/bits';
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Section({
+  title,
+  hint,
+  summary,
+  collapsible = false,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  /** One honest state line shown next to the title (esp. while collapsed). */
+  summary?: string;
+  collapsible?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(!collapsible);
+  if (!collapsible) {
+    return (
+      <section className="mt-10 border-t border-border/60 pt-6">
+        <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{title}</h2>
+        {hint && <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
+        <div className="mt-4">{children}</div>
+      </section>
+    );
+  }
   return (
     <section className="mt-10 border-t border-border/60 pt-6">
-      <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{title}</h2>
-      {hint && <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
-      <div className="mt-4">{children}</div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-baseline gap-3 text-left"
+      >
+        <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground">
+          {title}
+        </h2>
+        {summary && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{summary}</span>}
+        <span aria-hidden className="w-4 shrink-0 text-center text-xs text-muted-foreground">
+          {open ? '−' : '+'}
+        </span>
+      </button>
+      {open && (
+        <>
+          {hint && <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
+          <div className="mt-4">{children}</div>
+        </>
+      )}
     </section>
   );
 }
@@ -54,7 +94,9 @@ export function AudienceSection({ botId, refreshKey }: { botId: string; refreshK
   return (
     <Section
       title="Audience"
+      summary={users === null ? undefined : total === 0 ? 'No one yet' : `${total} chat${total === 1 ? '' : 's'}`}
       hint="Everyone who has talked to this bot, with what it remembered — collected answers, carts, the link they arrived from."
+      collapsible
     >
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
       {!error && users === null && <LoadingRow />}
@@ -146,7 +188,9 @@ export function BroadcastSection({ botId, refreshKey, onSent }: { botId: string;
   return (
     <Section
       title="Broadcast"
-      hint="One message to every chat that ever wrote to the bot — newsletters, announcements. Queued and paced under Telegram's limits; blocked chats are counted, never retried forever."
+      summary={history === null ? undefined : history.length === 0 ? 'No broadcasts yet' : `${history.length} queued or sent`}
+      hint="One message to every chat that ever wrote to the bot — announcements, newsletters. Queued and paced under Telegram's limits."
+      collapsible
     >
       <div className="flex items-end gap-2">
         <Input
@@ -224,7 +268,9 @@ export function SchedulesSection({ botId, refreshKey }: { botId: string; refresh
   return (
     <Section
       title="Schedule"
-      hint="Reminders and drip messages the bot will send. Recurring rows re-arm at the same time (UTC). The bot's own “remind me” flow creates these automatically."
+      summary={rows === null ? undefined : rows.length === 0 ? 'Nothing scheduled' : `${rows.length} scheduled`}
+      hint="Reminders and drip messages the bot will send. The bot's own “remind me” flow creates these automatically."
+      collapsible
     >
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
       {!error && rows === null && <LoadingRow />}
@@ -299,7 +345,9 @@ export function PaymentsSection({ botId, refreshKey }: { botId: string; refreshK
   return (
     <Section
       title="Payments"
-      hint="Completed Telegram Stars payments (digital goods must be sold in Stars — Telegram's store policy). Refunds are manual this release."
+      summary={payments === null ? undefined : payments.length === 0 ? 'No payments yet' : `${totalStars} ★ total`}
+      hint="Completed Telegram Stars payments. Digital goods must be sold in Stars — Telegram's store policy."
+      collapsible
     >
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
       {!error && payments === null && <LoadingRow />}

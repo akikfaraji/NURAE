@@ -416,9 +416,8 @@ function ConfigSection({
       <div className="mt-4 rounded-md border border-border/70 p-3">
         <p className="text-xs font-medium text-foreground">Instant updates in your Telegram</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          Get every completed order, intake form and Stars payment pushed to your own Telegram the moment it
-          happens — no site-checking. Message <span className="font-mono">@userinfobot</span> to get your numeric
-          chat id, paste it here, save, then send a test. Your account must have sent /start to this bot once.
+          Every completed order, form and Stars payment is pushed to your own Telegram the moment it happens.
+          Message <span className="font-mono">@userinfobot</span> to get your numeric chat id, paste it below, save, then send a test.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1 space-y-1.5">
@@ -755,7 +754,7 @@ function PreviewSection({ bot }: { bot: UserBotDTO }) {
   return (
     <Section
       title="Preview"
-      hint="Talk to the bot before it goes live. This runs the real pipeline — behaviors, commands, buttons, media, polls, Stars invoices, questions it remembers — and shows exactly what Telegram will deliver. Nothing is sent anywhere."
+      hint="Talk to the bot before it goes live — this runs the real pipeline (behaviors, buttons, media, Stars) and shows exactly what Telegram will deliver. Nothing is sent anywhere."
     >
       <div ref={scrollRef} className="max-h-96 space-y-4 overflow-y-auto border border-border/60 p-4">
         {sends.length === 0 && (

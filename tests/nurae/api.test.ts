@@ -9,11 +9,11 @@
  * registry), so the real webhook-mode lifecycle runs end-to-end in-process.
  */
 
+import './helpers';
 import { describe, expect, test, afterAll } from 'vitest';
 import { installTelegramStub, resetTelegramStub, telegramState, STUB_TELEGRAM_TOKEN } from './telegram-stub';
 
-await import('./helpers');
-const { pushTestSchema } = await import('./helpers');
+import { pushTestSchema } from './helpers';
 pushTestSchema();
 // With the env set, import the modules under test.
 const { db } = await import('../../src/lib/db');
@@ -65,7 +65,7 @@ describe('health & metadata', () => {
     const body = (await res.json()) as Record<string, unknown>;
     expect(res.status).toBe(200);
     expect(body.status).toBe('ok');
-    expect(body.version).toBe('V00.09.001-beta-03');
+    expect(body.version).toBe('V00.09.002-beta-03');
     expect(body.vendor).toBe('FRAZIYM TECH & AI');
   });
 

@@ -3,17 +3,17 @@
 /**
  * NURAE — Operator console (admin dashboard → Agent): the PLATFORM agent.
  *
- * One persistent workspace per server ("Operator console"). The admin types
- * a goal in plain language; the agent reads the platform through its tool
- * tier (overview, fleet, any bot's config, logs, settings, customers,
- * analytics), acts, and reports with numbers. Consequential platform tools
- * (site settings) wait for the explicit Approve control — the model can
- * never approve for itself. History is durable server-side (ChatEntry), so
- * the console survives reloads.
+ * One persistent workspace per server. The admin types a goal in plain
+ * language; the agent reads the platform through its audited tools, acts,
+ * and reports with numbers. Consequential platform tools (site settings)
+ * wait for an explicit Approve — the model can never approve for itself.
+ * History is durable server-side (ChatEntry), so the console survives reloads.
+ *
+ * Visual language: the same typographic conversation surface as the user
+ * agent view — no cards, no emoji, quick goals as quiet text links.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Markdown } from '@/components/nurae/markdown';
@@ -27,11 +27,6 @@ const QUICK_GOALS = [
   'Busiest bots this week',
   'Who are my newest customers?',
 ];
-
-function StepChips({ steps }: { steps: OperatorStepDTO[] }) {
-  if (!steps.length) return null;
-  return <AgentActivity steps={steps} />;
-}
 
 export function OperatorAgentView() {
   const [entries, setEntries] = useState<OperatorEntryDTO[]>([]);
@@ -96,109 +91,107 @@ export function OperatorAgentView() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
       <div>
         <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Operator agent</h1>
-        <p className="text-sm text-muted-foreground">
-          Ask, diagnose, configure — the agent reads the platform through audited tools and reports with numbers.
-          Site-setting changes wait for your approval.
+        <p className="mt-1 text-sm text-muted-foreground">
+          Ask, diagnose, configure — the agent reads the platform through audited tools and reports with
+          numbers. Site-setting changes wait for your approval.
         </p>
       </div>
 
-      <Card className="border-border">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Operator console</CardTitle>
-          <CardDescription>
-            {tools.length
-              ? `${tools.length} platform tools available — every call is audit-logged.`
-              : 'The agent works through audited platform tools.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="h-[52vh] min-h-[320px] space-y-3 overflow-y-auto rounded-md border border-border bg-muted/30 p-3">
-            {loaded && entries.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                <span className="text-2xl" aria-hidden>
-                  ⚡
-                </span>
-                <p className="max-w-md">
-                  Try: <span className="text-foreground">“How is the platform doing?”</span> — or pick a goal below.
-                  The agent reads real state: bots, fleet, logs, customers, analytics.
-                </p>
+      {/* Conversation — typography, not bubbles-in-a-box */}
+      <div className="mt-6 min-h-0 flex-1">
+        <div className="space-y-5">
+          {loaded && entries.length === 0 ? (
+            <div className="max-w-md text-sm leading-relaxed text-muted-foreground">
+              <p>
+                Ask about the platform — <span className="text-foreground">“How is the platform doing?”</span> — the
+                agent reads real state: bots, fleet, logs, customers, analytics.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
+                {QUICK_GOALS.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void send(g)}
+                    className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                  >
+                    {g}
+                  </button>
+                ))}
               </div>
-            ) : null}
-            {entries.map((entry, i) => (
-              <div key={`${entry.at}-${i}`} className={entry.role === 'user' ? 'flex justify-end' : ''}>
-                <div
-                  className={
-                    'max-w-[88%] rounded-lg px-3 py-2 text-sm ' +
-                    (entry.role === 'user'
-                      ? 'bg-foreground text-background'
-                      : 'border border-border bg-background text-foreground')
-                  }
-                >
-                  {entry.role === 'assistant' ? (
-                    <div className="max-w-none">
-                      <Markdown>{entry.content || '…'}</Markdown>
-                    </div>
-                  ) : (
-                    <span className="whitespace-pre-wrap">{entry.content}</span>
-                  )}
-                  {entry.activity ? <StepChips steps={entry.activity} /> : null}
-                </div>
-              </div>
-            ))}
-            {busy ? (
-              <div className="text-xs text-muted-foreground" aria-live="polite">
-                Operator is working…
-              </div>
-            ) : null}
-            <div ref={bottomRef} />
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {QUICK_GOALS.map((g) => (
-              <button
-                key={g}
-                type="button"
-                disabled={busy}
-                onClick={() => void send(g)}
-                className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-              >
-                {g}
-              </button>
-            ))}
-          </div>
-
-          {needsConfirm && !busy ? (
-            <div className="flex items-center justify-between gap-3 rounded-md border border-foreground/30 bg-muted px-3 py-2 text-sm">
-              <span>The agent is waiting for your approval to apply a platform change.</span>
-              <Button size="sm" onClick={() => void send('', true)}>
-                Approve &amp; apply
-              </Button>
             </div>
           ) : null}
-
+          {entries.map((entry, i) => (
+            <div key={`${entry.at}-${i}`}>
+              {entry.role === 'user' ? (
+                <div className="flex flex-col items-end gap-1">
+                  <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted/70 px-3.5 py-2 text-sm leading-relaxed text-foreground">
+                    {entry.content}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {entry.activity && entry.activity.length > 0 && <Steps steps={entry.activity} />}
+                  <div className="max-w-none text-sm">
+                    <Markdown>{entry.content || '…'}</Markdown>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {busy ? (
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              <span className="animate-pulse">●</span> working…
+            </p>
+          ) : null}
           {error ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
               {error}
             </div>
           ) : null}
+          <div ref={bottomRef} />
+        </div>
+      </div>
 
-          <form onSubmit={submit} className="flex gap-2">
-            <Input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Ask the operator: “why did the Trivia bot stop posting?” …"
-              disabled={busy}
-              aria-label="Message the operator agent"
-            />
-            <Button type="submit" disabled={busy || !draft.trim()}>
-              {busy ? 'Working…' : 'Send'}
+      {/* Approval + composer */}
+      <div className="mt-6 shrink-0 border-t border-border/60 pt-3">
+        {needsConfirm && !busy ? (
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-border bg-muted/40 px-3 py-2">
+            <span className="text-xs text-muted-foreground">
+              The agent is waiting for your approval to apply a platform change.
+            </span>
+            <Button size="sm" className="ml-auto" onClick={() => void send('', true)}>
+              Approve &amp; apply
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+        ) : null}
+        <form onSubmit={submit} className="flex items-end gap-2">
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Ask the operator: “why did the Trivia bot stop posting?” …"
+            disabled={busy}
+            aria-label="Message the operator agent"
+            className="bg-transparent"
+          />
+          <Button type="submit" size="sm" disabled={busy || !draft.trim()} className="h-9 shrink-0">
+            {busy ? 'Working…' : 'Send'}
+          </Button>
+        </form>
+        <p className="mt-1.5 hidden text-[10px] text-muted-foreground/70 sm:block">
+          {tools.length > 0
+            ? `Every call is audit-logged — ${tools.length} platform tools.`
+            : 'Every call is audit-logged.'}
+        </p>
+      </div>
     </div>
   );
+}
+
+function Steps({ steps }: { steps: OperatorStepDTO[] }) {
+  if (!steps.length) return null;
+  return <AgentActivity steps={steps} />;
 }

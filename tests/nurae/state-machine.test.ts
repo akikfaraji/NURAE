@@ -1,3 +1,4 @@
+import './helpers';
 /**
  * NURAE — bot status state machine tests (Step 8).
  */

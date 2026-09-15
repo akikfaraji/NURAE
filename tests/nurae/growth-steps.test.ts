@@ -12,11 +12,11 @@
  *     engagement post (idempotent); user-owned bots never do
  */
 
+import './helpers';
 import { describe, expect, test, afterAll } from 'vitest';
 import { installTelegramStub, resetTelegramStub, STUB_TELEGRAM_TOKEN, telegramState } from './telegram-stub';
 
-await import('./helpers');
-const { pushTestSchema } = await import('./helpers');
+import { pushTestSchema } from './helpers';
 pushTestSchema();
 
 const { db } = await import('../../src/lib/db');

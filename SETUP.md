@@ -1,6 +1,6 @@
 # NURAE — Setup Manual
 
-Self-hosting guide for NURAE, the Autonomous Digital Operations System by
+Self-hosting guide for NURAE, build, run and improve AI Telegram bots — by
 **FRAZIYM TECH & AI**. This manual covers two paths:
 
 - **Part A — Run it locally** (tested path: Debian inside Termux on Android;
@@ -138,7 +138,7 @@ npm run start      # launcher: loads .env, pins the data root, then serves; hono
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.09.001-beta-03",...}`
+`{"status":"ok","version":"V00.09.002-beta-03",...}`
 
 > **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
 > silently open a build-time SNAPSHOT of your database (bots worked in dev, died in
@@ -311,7 +311,7 @@ starting, so Telegram webhooks and TLS both work.
 
 ```ini
 [Unit]
-Description=NURAE — Autonomous Digital Operations System
+Description=NURAE — build, run and improve AI Telegram bots
 After=network-online.target
 Wants=network-online.target
 

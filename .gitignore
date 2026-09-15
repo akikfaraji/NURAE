@@ -72,3 +72,4 @@ upload/
 bun.lock
 tool-results/
 scripts/research/
+.design-audit/

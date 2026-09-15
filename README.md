@@ -1,6 +1,6 @@
 # NURAE
 
-**NURAE — Autonomous Digital Operations System**
+**NURAE — build, run and improve AI Telegram bots**
 **FRAZIYM TECH & AI**
 
 > Chat is the interface. Agents are the workers. Tools/MCP are the hands.
@@ -104,7 +104,30 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.09.001-beta-03** — the live-leak bug round: what the model meant
+**NURAE V00.09.002-beta-03** — the design round: every surface re-questioned
+from first principles ("does the user need this?"), then removed, simplified
+or rebuilt around its actual job.
+
+- **Chats you can actually start**: the chat and agent empty states have a
+  real composer now — typing (not example-picking) creates the conversation
+  and sends. Greetings are first-name, examples are quiet text links.
+- **A dashboard that answers "what's happening"**: the user dashboard drops
+  the four-box stat grid (zeros are not content), the Shortcuts duplicate of
+  the nav, and the vanity-URL-as-subtitle. One primary action, a typographic
+  stat line when there is something to count, bots as hairline rows.
+- **A bot page with hierarchy**: Audience / Broadcast / Schedule / Payments
+  collapse into one-line state summaries ("Nothing scheduled", "3 chats",
+  "12 ★ total") instead of ten always-open shouting sections.
+- **An admin console, not a template**: projects and bots are typographic
+  rows (no card grids), the header is a single 48px line of text links, the
+  internal id in the personal-workspace description never shows, "Autonomous
+  Digital Operations System" is gone from the product's vocabulary, and the
+  operator console matches the agent surface (no emoji, no pills, no
+  cards-in-cards).
+- **Honest copy everywhere**: no env-var names in user-facing billing, no
+  "Needs token" chip six times in a row, no jargon in headings.
+
+**V00.09.001-beta-03** — the live-leak bug round: what the model meant
 as a tool call can no longer reach the chat as raw markup, and a database
 that missed its migration heals itself on boot.
 
@@ -788,4 +811,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.09.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.09.000-beta-03 · FRAZIYM TECH & AI · build, run and improve AI Telegram bots

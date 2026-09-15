@@ -268,6 +268,89 @@ export function ChatsView() {
 
   const activeTitle = sessions.find((s) => s.id === activeId)?.title ?? 'New chat';
 
+  // One composer, two destinations: an open conversation appends to it; the
+  // empty state creates the conversation first. Typing — not example-picking —
+  // is the primary action on a chat screen.
+  const composer = (
+    <div className="flex items-end gap-2">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_FILES}
+        className="hidden"
+        onChange={(e) => void uploadFiles(e.target.files)}
+      />
+      <button
+        type="button"
+        aria-label="Attach files"
+        title={activeId ? 'Attach files' : 'Send your first message to attach files'}
+        onClick={() => fileInputRef.current?.click()}
+        disabled={!activeId || uploading}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+      >
+        {uploading ? <span className="animate-pulse">…</span> : '+'}
+      </button>
+      <textarea
+        ref={textareaRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (activeId) void send();
+            else {
+              const text = draft.trim();
+              if (text && !sending) void startNewChatAndSend(text);
+            }
+          }
+        }}
+        rows={1}
+        maxLength={8000}
+        placeholder="Write a message…"
+        className="max-h-40 min-h-9 flex-1 resize-none rounded-md border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+        style={{ height: 'auto' }}
+        onInput={(e) => {
+          const el = e.currentTarget;
+          el.style.height = 'auto';
+          el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => {
+          if (activeId) void send();
+          else {
+            const text = draft.trim();
+            if (text && !sending) void startNewChatAndSend(text);
+          }
+        }}
+        disabled={sending || (!draft.trim() && attachments.length === 0)}
+        className="flex h-9 shrink-0 items-center rounded-md border border-border px-3 text-xs text-foreground transition-colors hover:bg-muted/60 disabled:opacity-40"
+      >
+        {sending ? '…' : 'Send'}
+      </button>
+    </div>
+  );
+
+  const attachmentChips = attachments.length > 0 && (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {attachments.map((a) => (
+        <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+          {a.name}
+          <button
+            type="button"
+            aria-label={`Remove ${a.name}`}
+            onClick={() => setAttachments((x) => x.filter((y) => y.id !== a.id))}
+            className="hover:text-foreground"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+
   // One slim conversation top bar, shared by the empty state and open chats —
   // the drawer trigger inside it is the ONLY menu button on phones.
   const topBar = (
@@ -371,11 +454,19 @@ export function ChatsView() {
         <main className="flex min-w-0 flex-1 flex-col">
           {topBar}
           {!activeId ? (
-            <EmptyChat
-              userName={user.name}
-              onPick={(text) => void startNewChatAndSend(text)}
-              busy={sending}
-            />
+            <>
+              <EmptyChat
+                userName={user.name}
+                onPick={(text) => void startNewChatAndSend(text)}
+                busy={sending}
+              />
+              <div className="shrink-0 border-t border-border/60 bg-background">
+                <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6">
+                  {attachmentChips}
+                  {composer}
+                </div>
+              </div>
+            </>
           ) : (
             <>
               <div className="min-h-0 flex-1 overflow-y-auto" onClick={() => setError(null)}>
@@ -401,72 +492,8 @@ export function ChatsView() {
               {/* Composer */}
               <div className="shrink-0 border-t border-border/60 bg-background">
                 <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6">
-                  {attachments.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-1.5">
-                      {attachments.map((a) => (
-                        <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                          {a.name}
-                          <button
-                            type="button"
-                            aria-label={`Remove ${a.name}`}
-                            onClick={() => setAttachments((x) => x.filter((y) => y.id !== a.id))}
-                            className="hover:text-foreground"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex items-end gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept={ACCEPTED_FILES}
-                      className="hidden"
-                      onChange={(e) => void uploadFiles(e.target.files)}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Attach files"
-                      title={activeId ? 'Attach files' : 'Open a chat first'}
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={!activeId || uploading}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-                    >
-                      {uploading ? <span className="animate-pulse">…</span> : '+'}
-                    </button>
-                    <textarea
-                      ref={textareaRef}
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          void send();
-                        }
-                      }}
-                      rows={1}
-                      maxLength={8000}
-                      placeholder="Write a message…"
-                      className="max-h-40 min-h-9 flex-1 resize-none rounded-md border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-                      style={{ height: 'auto' }}
-                      onInput={(e) => {
-                        const el = e.currentTarget;
-                        el.style.height = 'auto';
-                        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void send()}
-                      disabled={sending || (!draft.trim() && attachments.length === 0)}
-                      className="flex h-9 shrink-0 items-center rounded-md border border-border px-3 text-xs text-foreground transition-colors hover:bg-muted/60 disabled:opacity-40"
-                    >
-                      {sending ? '…' : 'Send'}
-                    </button>
-                  </div>
+                  {attachmentChips}
+                  {composer}
                   <p className="mt-1.5 hidden text-[10px] text-muted-foreground/70 sm:block">
                     Enter sends · Shift+Enter breaks the line
                   </p>
@@ -550,22 +577,23 @@ function EmptyChat({ userName, onPick, busy }: { userName: string; onPick: (text
       }
     })();
   }, []);
+  const firstName = userName ? userName.split(' ')[0] : '';
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24">
+    <div className="flex flex-1 flex-col items-center justify-center px-6">
       <h1 className="text-lg font-medium text-foreground">
-        {userName ? `Hi, ${userName}.` : 'Hello.'}
+        {firstName ? `Hi, ${firstName}.` : 'Hello.'}
       </h1>
       <p className="mt-2 max-w-sm text-center text-sm leading-relaxed text-muted-foreground">
         Ask anything, or hand work to an agent. Files you attach travel with the conversation.
       </p>
-      <div className="mt-8 w-full max-w-md space-y-px">
+      <div className="mt-6 flex max-w-md flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
         {examples.map((t) => (
           <button
             key={t}
             type="button"
             disabled={busy}
             onClick={() => onPick(t)}
-            className="block w-full border border-border/60 px-3 py-2 text-left text-xs text-muted-foreground transition-colors first:border-t hover:border-border hover:text-foreground disabled:opacity-50"
+            className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
           >
             {t}
           </button>
@@ -581,9 +609,6 @@ function EmptyChat({ userName, onPick, busy }: { userName: string; onPick: (text
           Continue: “{prefill}”
         </button>
       )}
-      <p className="mt-6 text-[11px] text-muted-foreground/70">
-        Build requests are routed to the Bot Builder agent — you approve anything before it goes live.
-      </p>
     </div>
   );
 }

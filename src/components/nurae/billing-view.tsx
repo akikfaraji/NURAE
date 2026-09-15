@@ -303,7 +303,7 @@ export function BillingView() {
               ))}
               {summary && summary.topup.assets.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  No crypto assets configured yet — set NURAE_CRYPTO_ADDRESS_* on the server. Stars still work.
+                  Crypto top-ups aren&apos;t configured on this server yet. Stars still work.
                 </p>
               )}
             </div>

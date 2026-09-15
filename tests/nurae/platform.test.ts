@@ -8,11 +8,11 @@
  * level by telegram-stub.ts, so the support chat runs fully offline.
  */
 
+import './helpers';
 import { describe, expect, test, afterAll, vi } from 'vitest';
 import { installTelegramStub, resetTelegramStub, TELEGRAM_STUB_BASE } from './telegram-stub';
 
-await import('./helpers');
-const { pushTestSchema } = await import('./helpers');
+import { pushTestSchema } from './helpers';
 pushTestSchema();
 
 const { db } = await import('../../src/lib/db');

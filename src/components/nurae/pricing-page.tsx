@@ -138,7 +138,7 @@ export function PricingPage() {
 
         {/* Comparison */}
         <section className="mt-10">
-          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Why still cheaper than the other guys</p>
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Why pay-as-you-use</p>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
             Bot platforms typically rent you features: $10–$50 every month, per bot, whether you use
             them or not — and double-dip with per-message credits on top. Idle months still cost full

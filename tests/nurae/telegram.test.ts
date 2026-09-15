@@ -1,3 +1,4 @@
+import './helpers';
 import { describe, expect, test } from 'vitest';
 import { TelegramAdapter, TelegramApiError } from '../../src/lib/nurae/telegram/adapter';
 import { BotRuntime } from '../../src/lib/nurae/runtime/bot-runtime';

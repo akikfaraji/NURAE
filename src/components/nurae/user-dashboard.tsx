@@ -4,16 +4,18 @@
  * NURAE — the USER dashboard (lives at /dashboard and at the user's vanity
  * route /<username>_<uid>/dashboard).
  *
- * The single morning view for a bot owner: are my bots running, what's in my
- * wallet, which bots lack instant-alert wiring, where are my customers — and
- * one-click lifecycle control per bot (Run / Stop / Restart).
+ * One job: the owner's morning view. What's running, what needs attention,
+ * and the one primary action (describe a new bot). Numbers render as a quiet
+ * typographic line — never as boxes — and only when there is something to
+ * count. Secondary destinations live in the site nav, not in a shortcuts
+ * grid that duplicates it.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SiteHeader, useSiteUser } from '@/components/nurae/site-shell';
-import { StatusBadge } from '@/components/nurae/bits';
+import { StatusBadge, StatLine } from '@/components/nurae/bits';
 import { MyDashboardDTO, nuraeApi, ApiError } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -84,97 +86,60 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
   const running = data.bots.filter((b) => b.status === 'running').length;
   const unwired = data.bots.filter((b) => b.hasTelegramToken && !b.ownerChatId);
   const trialActive = data.wallet.trialEndsAt ? new Date(data.wallet.trialEndsAt) > new Date() : false;
+  const plan = data.wallet.planId ? <span className="capitalize">{data.wallet.planId}</span> : trialActive ? 'Trial' : 'Free';
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader user={user} onSignOut={() => void signOut()} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground sm:text-2xl">
-              Welcome back, {data.user.name.split(' ')[0]}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your dashboard lives at{' '}
-              <Link href={`/${vanity}/dashboard`} className="font-mono text-xs text-foreground underline-offset-4 hover:underline">
-                /{vanity}/dashboard
-              </Link>
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" asChild>
-              <Link href="/chats/agents">Build a bot</Link>
-            </Button>
-            <Button size="sm" variant="outline" asChild>
-              <Link href="/bots/new">New bot</Link>
-            </Button>
-          </div>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h1 className="text-xl font-medium tracking-tight text-foreground sm:text-2xl">
+            Welcome back, {data.user.name.split(' ')[0]}
+          </h1>
+          <Button size="sm" asChild>
+            <Link href="/bots/new?ai=1">New bot</Link>
+          </Button>
         </div>
 
-        {/* Stats */}
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-md border border-border bg-background px-3 py-2.5">
-            <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Bots</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{data.bots.length}</p>
-          </div>
-          <div className="rounded-md border border-border bg-background px-3 py-2.5">
-            <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Running</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{running}</p>
-          </div>
-          <div className="rounded-md border border-border bg-background px-3 py-2.5">
-            <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Balance</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{usd(data.wallet.balanceMicros)}</p>
-          </div>
-          <div className="rounded-md border border-border bg-background px-3 py-2.5">
-            <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Plan</p>
-            <p className="mt-1 text-xl font-semibold text-foreground">
-              {data.wallet.planId ? <span className="capitalize">{data.wallet.planId}</span> : trialActive ? 'Trial' : 'Free'}
-            </p>
-          </div>
-        </div>
+        {data.bots.length > 0 ? (
+          <>
+            <StatLine
+              className="mt-3"
+              items={[
+                { label: 'Bots', value: data.bots.length },
+                { label: 'Running', value: running },
+                { label: 'Balance', value: usd(data.wallet.balanceMicros) },
+                { label: 'Plan', value: plan },
+              ]}
+            />
 
-        {/* Alerts nudge */}
-        {unwired.length > 0 && (
-          <div className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm">
-            <p className="text-foreground">
-              {unwired.length === 1 ? (
-                <>
-                  <span className="font-medium">{unwired[0].name}</span> doesn&apos;t push you updates yet.
-                </>
-              ) : (
-                <span className="font-medium">{unwired.length} bots don&apos;t push you updates yet.</span>
-              )}{' '}
-              Wire your Telegram and every order or payment lands in your chat the second it happens.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {unwired.map((b) => (
-                <Button key={b.id} size="sm" variant="outline" asChild>
-                  <Link href={`/bots/${b.id}`}>Wire {b.name}</Link>
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Bots */}
-        <div className="mt-8">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Your bots</h2>
-          {data.bots.length === 0 ? (
-            <div className="mt-3 rounded-md border border-dashed border-border px-4 py-10 text-center">
-              <p className="text-sm text-muted-foreground">
-                No bots yet. Describe what you want in the Agent and it builds one — menus, orders, payments, reminders.
+            {unwired.length > 0 && (
+              <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
+                {unwired.length === 1 ? (
+                  <>
+                    <Link href={`/bots/${unwired[0].id}`} className="text-foreground underline-offset-4 hover:underline">
+                      {unwired[0].name}
+                    </Link>{' '}
+                    doesn&apos;t push you updates yet.
+                  </>
+                ) : (
+                  <span>
+                    {unwired.length} bots don&apos;t push you updates yet —{' '}
+                    <Link href="/bots" className="text-foreground underline-offset-4 hover:underline">
+                      wire your Telegram
+                    </Link>{' '}
+                    and every order or payment lands in your chat the second it happens.
+                  </span>
+                )}
               </p>
-              <Button size="sm" asChild className="mt-3">
-                <Link href="/chats/agents">Build your first bot</Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="mt-3 space-y-2">
+            )}
+
+            <ul className="mt-8 border-t border-border/60">
               {data.bots.map((b) => (
-                <div key={b.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-background px-3 py-2.5">
+                <li key={b.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border/60 py-3">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Link href={`/bots/${b.id}`} className="truncate text-sm font-medium text-foreground hover:underline underline-offset-4">
+                    <div className="flex items-center gap-2.5">
+                      <Link href={`/bots/${b.id}`} className="truncate text-sm font-medium text-foreground underline-offset-4 hover:underline">
                         {b.name}
                       </Link>
                       <StatusBadge status={b.status} />
@@ -206,52 +171,51 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
                         Run
                       </Button>
                     )}
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/bots/${b.id}`}>Open</Link>
-                    </Button>
                   </div>
-                </div>
+                </li>
               ))}
+            </ul>
+          </>
+        ) : (
+          /* First run — one honest path, no empty stat boxes. */
+          <div className="mt-8 max-w-xl">
+            <p className="text-base leading-relaxed text-muted-foreground">
+              Describe what you want — <span className="text-foreground">“a bot for my restaurant that takes orders”</span> —
+              and the agent builds it: menus, buttons, payments, reminders. You approve before anything goes live.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Button size="sm" asChild>
+                <Link href="/bots/new?ai=1">Build your first bot</Link>
+              </Button>
+              <Link href="/bots/new" className="text-xs text-muted-foreground hover:text-foreground">
+                or configure one manually
+              </Link>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Recent agent sessions + quick links */}
-        <div className="mt-8 grid gap-6 sm:grid-cols-2">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Recent agent work</h2>
-            {data.agentSessions.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">Nothing yet — the Agent is where you describe bots.</p>
-            ) : (
-              <ul className="mt-3 space-y-1.5">
-                {data.agentSessions.map((s) => (
-                  <li key={s.id}>
-                    <Link href={`/chats/agents`} className="block truncate rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:border-foreground/40">
-                      {s.title}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Shortcuts</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/chats">Chats</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/billing">Billing</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/pricing">Pricing</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/featured">Featured</Link>
-              </Button>
-            </div>
-          </div>
-        </div>
+        {data.agentSessions.length > 0 && (
+          <section className="mt-10">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Recent agent work</h2>
+            <ul className="mt-3 border-t border-border/60">
+              {data.agentSessions.map((s) => (
+                <li key={s.id} className="border-b border-border/60">
+                  <Link href="/chats/agents" className="block truncate py-2.5 text-sm text-foreground underline-offset-4 hover:underline">
+                    {s.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* The vanity route is an address, not news — quiet, last, mono. */}
+        <p className="mt-12 text-[11px] text-muted-foreground">
+          Your dashboard also lives at{' '}
+          <Link href={`/${vanity}/dashboard`} className="font-mono text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            /{vanity}/dashboard
+          </Link>
+        </p>
       </main>
     </div>
   );
