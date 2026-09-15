@@ -46,7 +46,15 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
   }, []);
 
   useEffect(() => {
-    if (user) void load();
+    if (!user) return;
+    let alive = true;
+    const kick = setTimeout(() => {
+      if (alive) void load();
+    }, 0);
+    return () => {
+      alive = false;
+      clearTimeout(kick);
+    };
   }, [user, load]);
 
   const lifecycle = async (id: string, action: 'start' | 'stop' | 'restart') => {

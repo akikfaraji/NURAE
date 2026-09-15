@@ -104,21 +104,46 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.09.000-beta-03** — the live-testing bug round (no new features):
-the chat and agent pages now open your history directly instead of a blank
-default, phones see exactly ONE menu button per screen, every bot has honest
-**Run / Stop / Restart** controls (restart re-registers the Telegram webhook),
-and a bot can no longer be muted wholesale by one malformed saved rule — a
-long-standing silent killer of buttons and replies. The underlying release
-remains the real agent system: the Operator runs the platform for the admin,
-the Bot Builder codes bots from the full DSL, and the tool registry is
-machine-discoverable (`/api/agents/tools`, `llms.txt`).
+**NURAE V00.09.000-beta-03** — the satisfaction round: agents that act like
+agents, an admin that can actually see and control user bots, and owners who
+hear about orders the second they happen.
+
+- **Agent skills + real playbooks**: a named SKILL LIBRARY (build-from-brief,
+  order-form-alerts, shop-with-stars, reminders-drip, grow-audience,
+  diagnose-bot, audience-outreach, polish-copy · operator: morning-brief,
+  fleet-health, diagnose-down-bot, customer-review, settings-change) — the
+  Builder and Operator pull a playbook with `skill_read` and follow it; both
+  prompts gained show-your-work discipline (announce, read results, react,
+  never invent numbers). Skills ship in `/api/agents/tools` + `llms.txt`.
+- **Tool calls parsed and visible**: a malformed model envelope can no longer
+  dump raw JSON into a chat (salvage → prose-only → clean notice), and every
+  tool step in the agent/operator feeds is now EXPANDABLE — click to see the
+  tool's actual output (persisted, so it survives reloads).
+- **Admin monitor**: `/admin/bots` lists EVERY bot with its owner, status,
+  audience and message volume, with Start/Stop/Restart override; customers
+  table gained bot counts. Real routes: `/admin/dashboard`, `/admin/bots`,
+  `/admin/customers`, `/admin/agent`, `/admin/settings` (old `/admin` redirects).
+- **Instant owner alerts**: the owner wires their own Telegram chat id on the
+  bot page (or asks the agent — `bot_set_owner_chat`), presses Send test, and
+  every completed order/intake form and Stars payment is pushed to their
+  Telegram the moment it happens. No more discovering orders by opening the site.
+- **User dashboard + vanity route**: `/dashboard` (and
+  `/<username>_<uid>/dashboard`) — bots with Run/Stop/Restart, wallet, plan,
+  alert-wiring nudges, recent agent work; `/chat` now redirects there; the
+  signed-in nav carries **Dashboard** and **Pricing** again.
+- **Account deletion is NOT an admin power** (owner decision, enforced by a
+  regression test): the admin sees and monitors accounts but can never delete
+  one. A shipped syntax error in `site-shell.tsx` (BR-024) is also fixed.
+
+The previous round (08.002) remains the live-testing bug round: chat/agent
+history opens directly, one menu button per screen, Run/Stop/Restart controls,
+and no single malformed rule can mute a bot.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**Live-testing bug round (new in 08.002)**
+**Live-testing bug round (08.002)**
 - **Chat history opens itself**: landing on `/chats` (or `/chats/agents`)
   with previous conversations now opens the most recent one immediately —
   the empty "new chat" state is only for first-time users or an explicit

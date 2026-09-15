@@ -238,31 +238,15 @@ describe('admin monitor (BR-027)', () => {
     expect(body.bots.some((b) => b.owner.kind === 'platform')).toBe(true);
   });
 
-  test('DELETE /api/admin/customers/:id stops and deletes their bots and account rows', async () => {
-    const user = await makeUser('Doomed Customer');
-    const botId = await makeBot(user.id, ORDER_BEHAVIORS, 'Doomed Bot');
-    await db.chatSession.create({ data: { userId: user.id, kind: 'chat', title: 't' } });
-    await db.ledgerEntry.create({
-      data: { userId: user.id, kind: 'topup', amountMicros: 5000000, balanceAfter: 5000000 },
-    });
-    await db.entitlement.create({ data: { userId: user.id, feature: 'premium', source: 'referral', expiresAt: new Date() } });
-    await db.topupOrder.create({ data: { orderNo: `o-${user.id}`, userId: user.id, provider: 'crypto' } });
-
-    const { DELETE } = await import('../../src/app/api/admin/customers/[id]/route');
-    const res = await DELETE(new Request('http://localhost/api/admin/customers/x'), {
-      params: Promise.resolve({ id: user.id }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; botsDeleted: number };
-    expect(body.ok).toBe(true);
-    expect(body.botsDeleted).toBe(1);
-
-    expect(await db.user.findUnique({ where: { id: user.id } })).toBeNull();
-    expect(await db.bot.findUnique({ where: { id: botId } })).toBeNull();
-    expect(await db.chatSession.findFirst({ where: { userId: user.id } })).toBeNull();
-    expect(await db.ledgerEntry.findFirst({ where: { userId: user.id } })).toBeNull();
-    expect(await db.entitlement.findFirst({ where: { userId: user.id } })).toBeNull();
-    expect(await db.topupOrder.findFirst({ where: { userId: user.id } })).toBeNull();
+  test('account deletion is NOT an admin power — the endpoint is gone (owner decision)', async () => {
+    // V00.09.000: the owner ordered the deletion power removed entirely.
+    // The route module must not exist; if anyone reintroduces it, this fails.
+    const { existsSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const routePath = join(process.cwd(), 'src', 'app', 'api', 'admin', 'customers', '[id]', 'route.ts');
+    expect(existsSync(routePath)).toBe(false);
+    const client = await import('../../src/lib/nurae-client/api');
+    expect((client.nuraeApi as Record<string, unknown>).deleteCustomer).toBeUndefined();
   });
 });
 

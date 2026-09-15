@@ -45,7 +45,7 @@ export async function sendOwnerAlert(botId: string, alert: OwnerAlert): Promise<
   if (!token) return { sent: false, error: 'bot has no Telegram token' };
 
   const body = [`🔔 ${alert.title}`, '', ...alert.lines].join('\n');
-  const adapter = new TelegramAdapter(token);
+  const adapter = new TelegramAdapter({ token });
   try {
     await adapter.sendMessage(bot.ownerChatId, body, { keyboard: 'none' });
     await db.log

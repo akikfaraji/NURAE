@@ -205,6 +205,7 @@ export function runtimeRecord(overrides?: Partial<RuntimeBotRecord>): RuntimeBot
     maxTokens: 256,
     memorySize: 4,
     enabled: true,
+    ownerChatId: null,
     status: 'stopped',
     capabilities: { commands: [], replies: [] },
     telegramToken: '1234567890:TestTokenNotRealButWellFormedAAAAAA',

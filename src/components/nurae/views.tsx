@@ -15,17 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -38,7 +27,6 @@ import {
   GoogleIcon,
   MailIcon,
   RefreshIcon,
-  TrashIcon,
 } from '@/components/nurae/icons';
 import {
   AdminBotDTO,
@@ -793,12 +781,13 @@ function KeyStep({
 }
 
 // ---------------------------------------------------------------------------
-// Customers — every account on the platform
+// Customers — every account on the platform (read-only directory by design:
+// the admin can SEE and MONITOR accounts but never delete one — deletion of
+// user accounts is intentionally not an admin power in NURAE)
 // ---------------------------------------------------------------------------
 
 export function CustomersView({ onBack }: { onBack: () => void }) {
   const [customers, setCustomers] = useState<CustomerDTO[] | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -814,17 +803,6 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
     const kick = setTimeout(() => void refresh(), 0);
     return () => clearTimeout(kick);
   }, [refresh]);
-
-  const remove = async (id: string) => {
-    setConfirmId(null);
-    try {
-      await nuraeApi.deleteCustomer(id);
-      toast.success('Customer deleted');
-      await refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Delete failed');
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -857,7 +835,6 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
                   <TableHead className="text-right">Bots</TableHead>
                   <TableHead className="text-right">Sessions</TableHead>
                   <TableHead>Joined</TableHead>
-                  <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -893,28 +870,6 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
                     <TableCell className="text-right text-sm tabular-nums text-foreground">{c.activeSessions}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {new Date(c.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <AlertDialog open={confirmId === c.id} onOpenChange={(open) => setConfirmId(open ? c.id : null)}>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" aria-label={`Delete ${c.email}`}>
-                            <TrashIcon className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete customer?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This permanently removes {c.email} with their {c.botCount} bot(s) (stopped and deleted),
-                              sessions, verification state, wallet history and support chat history. This cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => void remove(c.id)}>Delete</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}

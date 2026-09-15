@@ -34,7 +34,6 @@ const siteInfoRoute = await import('../../src/app/api/public/site-info/route');
 const settingsRoute = await import('../../src/app/api/settings/route');
 const officialBotRoute = await import('../../src/app/api/official-bot/route');
 const customersRoute = await import('../../src/app/api/admin/customers/route');
-const customerDeleteRoute = await import('../../src/app/api/admin/customers/[id]/route');
 
 const jsonReq = (url: string, body?: unknown, extra?: RequestInit): Request =>
   new Request(`http://localhost:3000${url}`, {
@@ -459,7 +458,7 @@ describe('site settings', () => {
 // ---------------------------------------------------------------------------
 
 describe('customers directory', () => {
-  test('lists customers with details and deletes with cascade', async () => {
+  test('lists customers with details; deletion is NOT an admin power (BR-029)', async () => {
     const list = await customersRoute.GET(jsonReq('/api/admin/customers'));
     const body = (await list.json()) as {
       total: number;
@@ -480,14 +479,11 @@ describe('customers directory', () => {
     // Password hashes / session tokens never leave the server.
     expect(JSON.stringify(body)).not.toContain('scrypt$');
 
-    const del = await customerDeleteRoute.DELETE(jsonReq(`/api/admin/customers/${dan!.id}`, undefined, { method: 'DELETE' }), {
-      params: Promise.resolve({ id: dan!.id }),
-    });
-    expect(del.status).toBe(200);
-    const after = await db.user.findUnique({ where: { id: dan!.id } });
-    expect(after).toBeNull();
-    const sessions = await db.session.findMany({ where: { userId: dan!.id } });
-    expect(sessions).toHaveLength(0);
+    // The owner removed account deletion from the admin's powers (V00.09.000):
+    // the endpoint module must not exist, and dan's account must still be here.
+    const { existsSync } = await import('node:fs');
+    expect(existsSync('src/app/api/admin/customers/[id]/route.ts')).toBe(false);
+    expect(await db.user.findUnique({ where: { id: dan!.id } })).not.toBeNull();
   });
 });
 

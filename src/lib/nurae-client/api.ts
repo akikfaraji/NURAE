@@ -60,6 +60,8 @@ export interface BotDTO {
   maxTokens: number;
   memorySize: number;
   enabled: boolean;
+  /** Owner's own Telegram chat id for instant alerts (null = off). */
+  ownerChatId: string | null;
   status: string;
   statusDetail: string | null;
   /** Transport used at last start: "webhook" | "polling" (null: never started). */
@@ -646,7 +648,6 @@ export const nuraeApi = {
   saveSettings: (patch: Partial<SiteInfoDTO>) =>
     api<{ settings: SiteInfoDTO }>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   listCustomers: () => api<{ customers: CustomerDTO[]; total: number }>('/api/admin/customers'),
-  deleteCustomer: (id: string) => api<{ ok: true; botsDeleted: number; botsStopped: number }>(`/api/admin/customers/${id}`, { method: 'DELETE' }),
   listAdminBots: () => api<{ bots: AdminBotDTO[]; total: number }>('/api/admin/bots'),
   testOwnerAlert: (id: string) =>
     api<{ ok: true }>(`/api/my/bots/${id}/notify-test`, { method: 'POST' }),
