@@ -89,6 +89,8 @@ function stepsSummary(steps: BehaviorStepDTO[], all: BotBehaviorDTO[]): string {
       if (s.type === 'verify_join') return `join gate on ${s.verifyJoin.chat}`;
       if (s.type === 'streak') return `daily streak on ${s.streak.attribute}`;
       if (s.type === 'milestone') return `milestone ${s.milestone.attribute}=${s.milestone.value}`;
+      if (s.type === 'email_invite') return `emails an invite to {{${s.emailInvite.attribute}}}`;
+      if (s.type === 'email_unsubscribe') return 'unsubscribes this chat';
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 48 ? `${s.text.slice(0, 48).trimEnd()}…` : s.text;
       return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';
@@ -546,7 +548,11 @@ function BehaviorEditor({
                                         ? 'Daily streak (silent)'
                                         : step.type === 'milestone'
                                           ? 'Milestone (celebrate once)'
-                                          : 'Set a reminder'}
+                                          : step.type === 'email_invite'
+                                            ? 'Email invite (SMTP)'
+                                            : step.type === 'email_unsubscribe'
+                                              ? 'Email unsubscribe'
+                                              : 'Set a reminder'}
                 </span>
                 <button
                   type="button"
@@ -927,13 +933,21 @@ function BehaviorEditor({
                   </div>
                   <p className="text-[11px] text-muted-foreground">Posts the top users ranked by that attribute (numbers only).</p>
                 </div>
-              ) : step.type === 'verify_join' || step.type === 'streak' || step.type === 'milestone' ? (
+              ) : step.type === 'verify_join' ||
+                step.type === 'streak' ||
+                step.type === 'milestone' ||
+                step.type === 'email_invite' ||
+                step.type === 'email_unsubscribe' ? (
                 <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                   {step.type === 'verify_join'
                     ? `Join gate — the flow continues only after the user joins ${step.verifyJoin.chat}. Non-members get a join link and can retry.`
                     : step.type === 'streak'
                       ? `Daily streak — maintains the "${step.streak.attribute}" counter (+ its best record) once per UTC day. Show it with {{${step.streak.attribute}}}.`
-                      : `Milestone — when "${step.milestone.attribute}" first reaches ${step.milestone.value}, sends once: “${step.milestone.message.slice(0, 80)}${step.milestone.message.length > 80 ? '…' : ''}”`}
+                      : step.type === 'milestone'
+                        ? `Milestone — when "${step.milestone.attribute}" first reaches ${step.milestone.value}, sends once: “${step.milestone.message.slice(0, 80)}${step.milestone.message.length > 80 ? '…' : ''}”`
+                        : step.type === 'email_invite'
+                          ? `Email invite — validates "${step.emailInvite.attribute}", records the consent and sends the invitation over the site's SMTP (queued when SMTP is not configured). Unsubscribes are honored forever.`
+                          : 'Email unsubscribe — permanently removes every address this chat opted in with. An unsubscribe can never be undone by a re-opt-in.'}
                   {' '}Managed by NURAE — shown read-only here so it cannot be broken by edits.
                 </p>
               ) : (

@@ -270,7 +270,12 @@ export type BehaviorStepDTO =
   | { type: 'top'; top: { attribute: string; title?: string; limit?: number } }
   | { type: 'verify_join'; verifyJoin: { chat: string; prompt?: string; buttonText?: string; url?: string } }
   | { type: 'streak'; streak: { attribute: string } }
-  | { type: 'milestone'; milestone: { attribute: string; value: number; message: string; buttons?: BehaviorButtonDTO[][] } };
+  | { type: 'milestone'; milestone: { attribute: string; value: number; message: string; buttons?: BehaviorButtonDTO[][] } }
+  | {
+      type: 'email_invite';
+      emailInvite: { attribute: string; successText?: string; failText?: string; alreadyText?: string; queuedText?: string };
+    }
+  | { type: 'email_unsubscribe'; emailUnsubscribe: { confirmText?: string; nothingText?: string } };
 
 export type BehaviorWhenDTO =
   | { type: 'start' }
@@ -417,6 +422,7 @@ export interface UsageTodayDTO {
 export interface BillingSummary {
   balanceMicros: number;
   freeRide: { mode: 'trial' | 'premium' | null; trialEndsAt: string | null; premiumEndsAt: string | null };
+  plan: PlanViewDTO;
   usageToday: UsageTodayDTO[];
   prices: PriceRowDTO[];
   topup: {
@@ -426,6 +432,15 @@ export interface BillingSummary {
     cryptoAuto: boolean;
     assets: Array<{ asset: string; name: string; network: string }>;
   };
+}
+
+export interface PlanViewDTO {
+  id: string;
+  name: string;
+  active: boolean;
+  expiresAt: string | null;
+  dailyMultiplier: number;
+  includedHostingBots: number;
 }
 
 export interface LedgerEntryDTO {
@@ -643,6 +658,11 @@ export const nuraeApi = {
 
   // --- Billing (pay-as-you-use) --------------------------------------------
   billingSummary: () => api<BillingSummary>('/api/billing'),
+  billingSubscribe: (planId: 'plus' | 'pro') =>
+    api<{ plan: { id: string; name: string }; expiresAt: string; balanceMicros: number }>('/api/billing/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ planId }),
+    }),
   billingLedger: (limit = 50) => api<{ entries: LedgerEntryDTO[] }>(`/api/billing/ledger?limit=${limit}`),
   billingTopupStars: (stars: number) =>
     api<{ order: TopupOrderDTO }>('/api/billing/topup', {

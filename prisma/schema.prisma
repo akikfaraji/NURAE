@@ -154,6 +154,12 @@ model User {
   // Signup gift: 7 days of free usage (the "free server" week). All usage is
   // free while now() < trial_ends_at. Null = trial already consumed/legacy.
   trialEndsAt   DateTime? @map("trial_ends_at")
+  // Optional subscription plan ("plus" | "pro" — see billing/plans.ts). While
+  // now() < plan_expires_at the plan boosts every free daily allowance and
+  // includes hosting for a quota of running bots. Plans are additive perks —
+  // the free tier never shrinks.
+  planId        String?   @map("plan_id")
+  planExpiresAt DateTime? @map("plan_expires_at")
   lastLoginAt   DateTime? @map("last_login_at")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -357,6 +363,34 @@ model Entitlement {
 
   @@index([userId, feature])
   @@map("entitlements")
+}
+
+// ---------------------------------------------------------------------------
+// Email invitations — the official NURAE Invite Bot's consent-first funnel.
+// Rows are ONLY created from (a) an in-chat double opt-in (the person typed
+// their own address and confirmed) or (b) an owner import of contacts they
+// have consent from. Random/generated addresses are refused by design —
+// unsolicited bulk email burns domains, breaks anti-spam law, and does not
+// convert anyway.
+// ---------------------------------------------------------------------------
+model EmailInvite {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  // optin | import
+  source     String
+  // pending → invited → reminded → joined; unsubscribed is terminal
+  // (re-opt-ins are refused — an unsubscribe is honored forever).
+  status     String    @default("pending")
+  // DM chat that opted in (attribution + in-chat STOP handling).
+  chatId     String?
+  botId      String?
+  sentAt     DateTime?
+  remindedAt DateTime?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, sentAt])
+  @@map("email_invites")
 }
 
 // ---------------------------------------------------------------------------

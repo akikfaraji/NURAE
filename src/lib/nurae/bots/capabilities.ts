@@ -206,6 +206,24 @@ export const replyMilestoneSchema = z.object({
   buttons: z.array(z.array(replyButtonSchema).max(8)).max(8).optional(),
 });
 
+// "Email invite" — records the consent row and mails the invitation.
+export const replyEmailInviteSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  successText: z.string().trim().max(2000),
+  failText: z.string().trim().max(2000),
+  alreadyText: z.string().trim().max(2000),
+  queuedText: z.string().trim().max(2000),
+});
+
+// "Email stop" — permanent unsubscribe for this chat's address.
+export const replyEmailUnsubscribeSchema = z.object({
+  confirmText: z.string().trim().max(2000),
+  nothingText: z.string().trim().max(2000),
+});
+
 export const replyMessageSchema = z.object({
   text: z.string().trim().max(4000).default(''),
   buttons: z.array(z.array(replyButtonSchema).max(8)).max(8).optional(),
@@ -225,6 +243,8 @@ export const replyMessageSchema = z.object({
   verifyJoin: replyVerifyJoinSchema.optional(),
   streak: replyStreakSchema.optional(),
   milestone: replyMilestoneSchema.optional(),
+  emailInvite: replyEmailInviteSchema.optional(),
+  emailUnsubscribe: replyEmailUnsubscribeSchema.optional(),
   // Edit the pressed button's message in place instead of sending a new one
   // (the idiomatic UX for pagination/settings/carts). Callback turns only.
   edit: z.boolean().optional(),
@@ -277,7 +297,9 @@ export const botReplySchema = z
           m.top !== undefined ||
           m.verifyJoin !== undefined ||
           m.streak !== undefined ||
-          m.milestone !== undefined,
+          m.milestone !== undefined ||
+          m.emailInvite !== undefined ||
+          m.emailUnsubscribe !== undefined,
       ),
     { message: 'Every message step needs text, media, a poll, a payment, or something to ask' },
   );

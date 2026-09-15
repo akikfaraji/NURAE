@@ -98,14 +98,48 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.06.000-beta-03** — billing: the pay-as-you-use release, now with
-the official bot fleet as a self-running growth engine.
+**NURAE V00.07.000-beta-03** — the fleet works together, promotes NURAE in
+your groups, invites over email (consent-first), and the platform gains
+optional plans on top of pay-as-you-use.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**The fleet growth engine (new in 06.000) — bots that recruit while you sleep**
+**Coordinated fleet promotion + email invites (new in 07.000)**
+- **Rotating daily NURAE posts in every group/channel** a fleet bot joins:
+  the armed schedule now carries a sentinel rendered at send time into one
+  of five rotating promos — the platform pitch, the invite challenge, the
+  community funnel, an engagement question, and the free-tier pitch —
+  always with the instance's real links and referral code. Posting hours
+  are staggered per bot, so two fleet bots in one room never talk over
+  each other, and admin-edited schedules are never overwritten.
+- **Zero-touch backfill** (`syncFleetAutomation`, ticker): arms missing
+  daily posts for chats the fleet already knows and migrates v2 static
+  posts to the rotation — updating the server is the whole upgrade path.
+- **The NURAE Invite Bot (6th fleet bot)** — the consent-first email
+  funnel: people drop their address in the chat (double opt-in), the bot
+  mails a personal invitation over the site's own Gmail SMTP, the ticker
+  queue drips under a daily cap (`NURAE_INVITE_DAILY_CAP`, default 150),
+  a weekly reminder goes out at most once, and STOP unsubscribes
+  permanently (honored forever, even against re-opt-ins and imports).
+  Owners can import contacts they already have consent from via
+  `POST /api/admin/invites` — random/generated addresses are refused by
+  design: unsolicited bulk email is illegal, burns sender reputation, and
+  converts at zero.
+- **Optional plans on top of pay-as-you-use** — Free / Plus $4.99 (×3
+  daily allowances + hosting for 3 bots) / Pro $19.99 (×10 + hosting for
+  15 bots), bought from the wallet balance in one click (Stars/crypto
+  feed it), same-plan renewals stack, admin grants supported, plans are
+  purely additive — the free tier never shrinks. /pricing shows the plans;
+  /billing activates them.
+- **Two new behavior primitives**: `email_invite` (validate → record
+  consent → send/queue via SMTP) and `email_unsubscribe` (terminal STOP),
+  both compiled like any step and shown read-only in the behavior editor.
+- Fleet template version is now **v3** — existing fleet rows upgrade in
+  place (tokens and AI keys preserved), the fleet card lists all six bots.
+
+**The fleet growth engine (06.000) — bots that recruit while you sleep**
 - **Three new behavior primitives** any bot (official or yours) can use:
   *Join gate* (`verify_join`) — a flow checks channel/group membership via
   `getChatMember` and stops non-members at a join prompt (fail-open on API
@@ -114,7 +148,7 @@ the official bot fleet as a self-running growth engine.
   after a missed day; *Milestone* (`milestone`) — celebrate exactly once
   when a counter first reaches a value (3/5/10/25 invite tiers, quiz
   master, …).
-- **All five fleet bots rebuilt as growth machines**: the Referral
+- **All fleet bots rebuilt as growth machines**: the Referral
   Ambassador got a 4-tier reward ladder; the Giveaway's entry is now
   **join-gated** (every entrant must join your public announcements channel
   — configure `NURAE_CHANNEL_URL` as a `t.me/<name>` link); Trivia and the
@@ -124,8 +158,7 @@ the official bot fleet as a self-running growth engine.
   channel it arms ONE daily engagement post for that chat (idempotent,
   posting hour staggered per chat). User-owned bots are never auto-armed.
 - **Fleet template versioning**: fleet rows upgrade in place when the
-  built-in configurations improve — tokens and AI keys always preserved
-  (currently v2).
+  built-in configurations improve — tokens and AI keys always preserved.
 
 **Official bot fleet (05.001) — the built-in bots, seeded to run**
 - The five built-in promotion bots now ship as **platform-owned bot rows**
@@ -560,12 +593,13 @@ extracted text (what agents and chats actually read) is durable in the database.
 
 | Layer | Status |
 | --- | --- |
-| Unit/integration suite (188 tests, incl. product layer) | PASS (local) |
+| Unit/integration suite (311 tests, incl. plans + email-invite + fleet-promo layers) | PASS (local) |
 | Type check (`src/` + tests via tsc) | PASS (pre-existing examples/scripts exclusions) |
 | ESLint (`src/`) | PASS |
 | Production build (`next build`) | PASS |
 | Browser verification (desktop + mobile, all pages, auth + ownership) | PASS (see worklog) |
 | Real Telegram round trip with a user token | MANUAL — run the test console or a real bot |
+| Live SMTP invitation round trip | MANUAL — configure `NURAE_GMAIL_*`, opt in via the Invite Bot |
 
 ## 14. Troubleshooting
 
@@ -611,4 +645,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.06.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.07.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

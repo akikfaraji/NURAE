@@ -24,6 +24,7 @@ import {
   featureSpec,
   trialEndsForNewUser,
 } from './catalog';
+import { activePlan, planMultiplier } from './plans';
 
 export type ChargeOutcome = 'trial' | 'premium' | 'free_quota' | 'charged' | 'skipped';
 
@@ -237,6 +238,9 @@ export async function chargeFeature(
   }
 
   const freeRide = await resolveFreeRide(userId);
+  // Paid plans boost the free daily allowance (×3 Plus / ×10 Pro). The boost
+  // is only resolved when it can matter — trial/premium free-rides skip it.
+  const planBoost = freeRide.mode ? 1 : await planMultiplier(userId);
   const base = {
     userId,
     kind: 'usage' as const,
@@ -259,12 +263,14 @@ export async function chargeFeature(
   }
 
   // Daily free quota: today's ledger rows for this feature (any outcome) count.
+  // Plans multiply the allowance, never the price.
+  const effectiveFreeDaily = freeDaily * planBoost;
   let freeUnits = 0;
-  if (freeDaily > 0) {
+  if (effectiveFreeDaily > 0) {
     const used = await db.ledgerEntry.count({
       where: { userId, feature, bucket },
     });
-    freeUnits = Math.max(0, Math.min(freeDaily - used, units));
+    freeUnits = Math.max(0, Math.min(effectiveFreeDaily - used, units));
   }
   const billable = units - freeUnits;
   const cost = billable * unitPrice;
@@ -303,18 +309,29 @@ export interface FeatureUsageToday {
   chargedTodayMicros: number;
 }
 
+export interface WalletPlanView {
+  id: string;
+  name: string;
+  active: boolean;
+  expiresAt: string | null;
+  dailyMultiplier: number;
+  includedHostingBots: number;
+}
+
 export interface WalletSummary {
   balanceMicros: number;
   freeRide: FreeRide;
+  plan: WalletPlanView;
   usageToday: FeatureUsageToday[];
   prices: PriceRow[];
 }
 
 export async function walletSummary(userId: string): Promise<WalletSummary> {
-  const [balanceMicros, freeRide, prices] = await Promise.all([
+  const [balanceMicros, freeRide, prices, plan] = await Promise.all([
     getBalance(userId),
     resolveFreeRide(userId),
     getPriceBook(),
+    activePlan(userId),
   ]);
   const bucket = dayBucket();
   const grouped = await db.ledgerEntry.groupBy({
@@ -324,17 +341,31 @@ export async function walletSummary(userId: string): Promise<WalletSummary> {
     _sum: { amountMicros: true },
   });
   const byFeature = new Map(grouped.map((g) => [g.feature ?? '', g]));
+  const boost = plan.active ? plan.spec.dailyMultiplier : 1;
   const usageToday: FeatureUsageToday[] = prices.map((p) => {
     const g = byFeature.get(p.feature);
     return {
       feature: p.feature,
       used: g?._count._all ?? 0,
-      freeDailyUnits: p.freeDailyUnits,
+      freeDailyUnits: p.freeDailyUnits * boost,
       unitPriceMicros: p.unitPriceMicros,
       chargedTodayMicros: Math.abs(g?._sum.amountMicros ?? 0),
     };
   });
-  return { balanceMicros, freeRide, usageToday, prices };
+  return {
+    balanceMicros,
+    freeRide,
+    plan: {
+      id: plan.spec.id,
+      name: plan.spec.name,
+      active: plan.active,
+      expiresAt: plan.expiresAt?.toISOString() ?? null,
+      dailyMultiplier: plan.spec.dailyMultiplier,
+      includedHostingBots: plan.spec.includedHostingBots,
+    },
+    usageToday,
+    prices,
+  };
 }
 
 export interface LedgerRowView {

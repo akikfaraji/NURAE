@@ -30,6 +30,8 @@ import type { RuntimeBotRecord, RuntimeStore, BotUserStateData } from './store';
 import type { BotReplySpec, BotCommandSpec, BotCapabilities } from '../bots/capabilities';
 import { chargeFeature } from '../billing/wallet';
 import { formatUsd, parseTopupPayload } from '../billing/catalog';
+import { optInAndInvite, unsubscribeByChat } from '../email/invites';
+import { FLEET_DAILY_SENTINEL, fleetPostHour } from './fleet-posts';
 
 // ---------------------------------------------------------------------------
 // Sender surface
@@ -1013,29 +1015,25 @@ async function handleMyChatMember(
 
 /**
  * Arm the daily engagement post for one chat (idempotent: skipped when any
- * pending daily schedule already exists for this bot+chat). The posting hour
- * is derived from the chat id so a fleet spread over many groups posts
- * around the clock instead of all at 09:00:00 sharp.
+ * pending daily schedule already exists for this bot+chat). The schedule
+ * text is the FLEET_DAILY_SENTINEL placeholder — the ticker renders each
+ * day's rotating NURAE promo at send time, so posts stay fresh without
+ * anyone touching the bots. The posting hour is (chat id + per-bot offset)
+ * % 24: a fleet spread over many groups posts around the clock, and two
+ * fleet bots in one room never stack on the same hour.
  */
 async function ensureChatAutomation(bot: RuntimeBotRecord, chatId: string, store: RuntimeStore): Promise<void> {
   const existing = await store.listSchedules(bot.id).catch(() => []);
   if (existing.some((s) => s.chatId === chatId && s.recurrence === 'daily' && s.status === 'pending')) return;
-  const chatKey = Number.isFinite(Number(chatId)) ? BigInt(chatId) : BigInt(0);
-  const hour = Number(chatKey % BigInt(24));
+  const hour = fleetPostHour(bot.id, chatId);
   const runAt = new Date();
   runAt.setUTCHours(hour, 0, 0, 0);
   if (runAt.getTime() <= Date.now()) runAt.setUTCDate(runAt.getUTCDate() + 1);
-  const text = [
-    `🔥 *Daily round with ${bot.name}*`,
-    '',
-    'New here? Press *Start* on the bot to join the game and the leaderboard.',
-    "Regulars: bring one friend today — share your personal invite link. That's how this community grows (and how you win it).",
-  ].join('\n');
-  await store.createSchedule({ botId: bot.id, chatId, text, runAt, recurrence: 'daily', createdBy: null });
+  await store.createSchedule({ botId: bot.id, chatId, text: FLEET_DAILY_SENTINEL, runAt, recurrence: 'daily', createdBy: null });
   await store.createLog(
     bot.id,
     'info',
-    `Fleet automation armed for chat ${chatId}: daily engagement post at ${String(hour).padStart(2, '0')}:00 UTC.`,
+    `Fleet automation armed for chat ${chatId}: daily rotating NURAE post at ${String(hour).padStart(2, '0')}:00 UTC.`,
     'AUTOMATION_ARMED',
   );
 }
@@ -1319,6 +1317,8 @@ interface ReplyMessage {
   verifyJoin?: { chat: string; prompt: string; buttonText: string; url: string };
   streak?: { attribute: string };
   milestone?: { attribute: string; value: number; message: string; buttons?: OutboundButtons };
+  emailInvite?: { attribute: string; successText: string; failText: string; alreadyText: string; queuedText: string };
+  emailUnsubscribe?: { confirmText: string; nothingText: string };
   edit?: boolean;
   keyboard?: 'reply' | 'inline' | 'none';
   forceReply?: boolean;
@@ -1630,6 +1630,70 @@ async function executeReplyMessages(
         const buttons = templateButtons(message.milestone.buttons, st, ctx);
         await sendMarkdownReply(bot, sender, ctx, [{ text: celebrate, ...(buttons ? { buttons } : {}) }], store, signal);
         await store.createLog(bot.id, 'info', `Milestone ${attribute}>=${value} reached by chat ${ctx.chatId} — announced.`, 'MILESTONE_HIT');
+      }
+      continue;
+    }
+
+    // Email invite: validate the collected address, record consent, send the
+    // invitation (SMTP) — or queue it when the transport is not configured.
+    // Invalid → honest fail text + flow stops; unsubscribed is terminal.
+    if (message.emailInvite) {
+      const step = message.emailInvite;
+      const raw = st.attributes[step.attribute] ?? '';
+      const render = (t: string) =>
+        applyTemplate(t, { ...st, attributes: { ...st.attributes, email: raw } }, ctx);
+      const outcome = await optInAndInvite(raw, { chatId: ctx.chatId, botId: bot.id }).catch(() => null);
+      if (!outcome) continue; // consent store outage — never break the chat
+      if (outcome.outcome === 'invalid') {
+        await store.createLog(bot.id, 'info', `Email invite: chat ${ctx.chatId} gave an invalid address.`, 'EMAIL_INVITE_INVALID');
+        await sendMarkdownReply(bot, sender, ctx, [{ text: render(step.failText) }], store, signal);
+        return; // user re-presses the button and retypes
+      }
+      if (outcome.outcome === 'unsubscribed') {
+        await sendMarkdownReply(
+          bot,
+          sender,
+          ctx,
+          [{ text: 'This address was unsubscribed earlier — that choice is permanent, and we respect it. No mail will be sent.' }],
+          store,
+          signal,
+        );
+        return;
+      }
+      if (outcome.outcome === 'already') {
+        await sendMarkdownReply(bot, sender, ctx, [{ text: render(step.alreadyText) }], store, signal);
+        continue;
+      }
+      await store.createLog(
+        bot.id,
+        'info',
+        `Email invite for chat ${ctx.chatId}: ${outcome.outcome} (address masked).`,
+        outcome.outcome === 'sent' ? 'EMAIL_INVITE_SENT' : 'EMAIL_INVITE_QUEUED',
+      );
+      await sendMarkdownReply(
+        bot,
+        sender,
+        ctx,
+        [{ text: render(outcome.outcome === 'sent' ? step.successText : step.queuedText) }],
+        store,
+        signal,
+      );
+      continue;
+    }
+
+    // Email stop: permanently unsubscribe every address this chat opted in.
+    if (message.emailUnsubscribe) {
+      const removed = await unsubscribeByChat(ctx.chatId).catch(() => 0);
+      await sendMarkdownReply(
+        bot,
+        sender,
+        ctx,
+        [{ text: removed > 0 ? message.emailUnsubscribe.confirmText : message.emailUnsubscribe.nothingText }],
+        store,
+        signal,
+      );
+      if (removed > 0) {
+        await store.createLog(bot.id, 'info', `Chat ${ctx.chatId} unsubscribed from email invites (${removed} row(s)).`, 'EMAIL_UNSUBSCRIBED');
       }
       continue;
     }

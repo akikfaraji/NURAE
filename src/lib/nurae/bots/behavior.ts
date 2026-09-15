@@ -186,6 +186,28 @@ export const behaviorMilestoneSchema = z.object({
   buttons: z.array(behaviorButtonSchema).max(8).optional(),
 });
 
+// "Email invite" — the official Invite Bot's engine. Takes the address the
+// flow collected (attribute), records a consent row and mails the invitation
+// through the site's SMTP. Invalid address → failText + flow stops; already
+// invited → alreadyText, never a second mail; unsubscribed → refused.
+export const behaviorEmailInviteSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  successText: z.string().trim().max(2000).default('✅ Done — the invitation is on its way to {{email}}. Watch your inbox (and spam folder, just in case).'),
+  failText: z.string().trim().max(2000).default('Hmm — "{{email}}" does not look like an email address. Tap the button again and type it carefully.'),
+  alreadyText: z.string().trim().max(2000).default('You are already on the list — the invitation went out to {{email}}. One per address, no spam, promise.'),
+  queuedText: z.string().trim().max(2000).default('📧 Saved — email delivery is not configured on this server yet, so your invitation is queued and will go out automatically the moment it is.'),
+});
+
+// "Email stop" — permanently unsubscribe this chat's address(es). Honored
+// forever: a later re-opt-in is refused by the pipeline.
+export const behaviorEmailUnsubscribeSchema = z.object({
+  confirmText: z.string().trim().max(2000).default('Done — your address is off the list, permanently. Sorry to see you go 👋'),
+  nothingText: z.string().trim().max(2000).default('No email address is registered from this chat — nothing to unsubscribe.'),
+});
+
 export const behaviorStepSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('message'),
@@ -228,6 +250,10 @@ export const behaviorStepSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('streak'), streak: behaviorStreakSchema }),
   // Announce once when a counter first reaches a value.
   z.object({ type: z.literal('milestone'), milestone: behaviorMilestoneSchema }),
+  // Record a consented email address and send the invitation via SMTP.
+  z.object({ type: z.literal('email_invite'), emailInvite: behaviorEmailInviteSchema }),
+  // Permanently unsubscribe this chat's address(es).
+  z.object({ type: z.literal('email_unsubscribe'), emailUnsubscribe: behaviorEmailUnsubscribeSchema }),
 ]);
 
 export const behaviorWhenSchema = z.discriminatedUnion('type', [
@@ -437,6 +463,27 @@ function stepsToReplyMessages(
           value: step.milestone.value,
           message: step.milestone.message,
           ...(buttons ? { buttons } : {}),
+        },
+      };
+    }
+    if (step.type === 'email_invite') {
+      return {
+        text: '',
+        emailInvite: {
+          attribute: step.emailInvite.attribute,
+          successText: step.emailInvite.successText,
+          failText: step.emailInvite.failText,
+          alreadyText: step.emailInvite.alreadyText,
+          queuedText: step.emailInvite.queuedText,
+        },
+      };
+    }
+    if (step.type === 'email_unsubscribe') {
+      return {
+        text: '',
+        emailUnsubscribe: {
+          confirmText: step.emailUnsubscribe.confirmText,
+          nothingText: step.emailUnsubscribe.nothingText,
         },
       };
     }
@@ -889,6 +936,8 @@ export function describeSteps(steps: BehaviorStep[]): string {
       if (s.type === 'verify_join') return `join gate: ${s.verifyJoin.chat}`;
       if (s.type === 'streak') return `daily streak on ${s.streak.attribute}`;
       if (s.type === 'milestone') return `milestone: ${s.milestone.attribute}=${s.milestone.value}`;
+      if (s.type === 'email_invite') return `emails an invite to {{${s.emailInvite.attribute}}}`;
+      if (s.type === 'email_unsubscribe') return 'unsubscribes this chat';
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 42 ? `${s.text.slice(0, 42).trimEnd()}…` : s.text;
       return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';

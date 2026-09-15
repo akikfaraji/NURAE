@@ -120,6 +120,20 @@ export const TEMPLATE_CATALOG: TemplateMeta[] = [
       'One-tap share with tracked invite links',
     ],
   },
+  {
+    id: 'email-inviter',
+    name: 'Email Inviter',
+    tagline: 'Turns chats into email signups — and invitations into users.',
+    description:
+      'The consent-first email funnel: people drop their address in the chat, confirm, and NURAE mails them a personal invitation over the site\'s own SMTP. One invite per address, one optional reminder a week later, permanent unsubscribe — and the owner can import contacts they already have consent from.',
+    category: 'Growth',
+    highlights: [
+      'Double opt-in collected in the chat (they type, they confirm)',
+      'Invitation sent over your own Gmail SMTP — no third-party list service',
+      'Rate-limited queue (daily cap) + one gentle weekly reminder, then silence',
+      'Permanent unsubscribe — reply STOP and it is honored forever',
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -153,7 +167,7 @@ function nuraeAboutBehavior(links: GrowthLinks, refCode: string): BotBehaviorSpe
       {
         type: 'message',
         text:
-          'This bot is built and run on **NURAE** — describe what a bot should do, and NURAE builds it: media, Stars payments, quizzes, referral programs, broadcasts, all of it.\n\nBuild your own in minutes:',
+          'This bot is built and run on **NURAE** — describe what a bot should do, and NURAE builds it: media, Stars payments, quizzes, referral programs, broadcasts, all of it.\n\nIt is part of the official NURAE fleet: the Trivia, Giveaway, Referral, Support and Invite bots you may have met all run on the same engine. Build your own in minutes:',
         buttons,
       },
     ],
@@ -169,9 +183,20 @@ function attributionLine(links: GrowthLinks, refCode: string): string {
  * Group greet — when the bot is added to a GROUP and a new member arrives,
  * greet them publicly and funnel them into the private bot flow (where the
  * growth mechanics live: streaks, invites, entries). Included by every
- * template; the public bot username deep-link starts the private chat.
+ * template; the public bot username deep-link starts the private chat. When
+ * the instance configures a community/channel, the greet plugs those too —
+ * every new member is one tap from joining the wider NURAE community.
  */
-function groupGreetBehavior(): BotBehaviorSpec {
+function groupGreetBehavior(links?: GrowthLinks): BotBehaviorSpec {
+  const buttons: BehaviorButton[] = [
+    { label: 'Join — press Start', action: { kind: 'link', url: 'https://t.me/{{bot_username}}' } },
+  ];
+  if (links?.channelUrl) {
+    buttons.push({ label: 'Join the channel', action: { kind: 'link', url: links.channelUrl } });
+  }
+  if (links?.communityUrl) {
+    buttons.push({ label: 'Join the community', action: { kind: 'link', url: links.communityUrl } });
+  }
   return {
     id: 'group_greet',
     title: 'Greet new group members',
@@ -181,7 +206,7 @@ function groupGreetBehavior(): BotBehaviorSpec {
         type: 'message',
         text:
           '👋 Welcome, {{name}}! This group runs on this bot — tap below and press *Start* in the private chat to join the game, the leaderboard and the rewards.',
-        buttons: [{ label: 'Join — press Start', action: { kind: 'link', url: 'https://t.me/{{bot_username}}' } }],
+        buttons,
       },
     ],
   };
@@ -337,7 +362,7 @@ function buildReferralAmbassador(links: GrowthLinks, refCode: string): BuiltTemp
           },
         ],
       },
-      groupGreetBehavior(),
+      groupGreetBehavior(links),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -466,7 +491,7 @@ function buildGiveaway(links: GrowthLinks, refCode: string): BuiltTemplate {
           },
         ],
       },
-      groupGreetBehavior(),
+      groupGreetBehavior(links),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -656,7 +681,7 @@ function buildDailyTrivia(links: GrowthLinks, refCode: string): BuiltTemplate {
           },
         ],
       },
-      groupGreetBehavior(),
+      groupGreetBehavior(links),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -786,7 +811,7 @@ function buildSupportFaq(links: GrowthLinks, refCode: string): BuiltTemplate {
         when: { type: 'anything_else' },
         steps: [{ type: 'ai', instruction: 'Answer the user’s question helpfully and briefly.' }],
       },
-      groupGreetBehavior(),
+      groupGreetBehavior(links),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -902,7 +927,7 @@ function buildCommunityHub(links: GrowthLinks, refCode: string): BuiltTemplate {
           },
         ],
       },
-      groupGreetBehavior(),
+      groupGreetBehavior(links),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -912,12 +937,96 @@ function buildCommunityHub(links: GrowthLinks, refCode: string): BuiltTemplate {
 // Instantiation
 // ---------------------------------------------------------------------------
 
+const INVITER_SYSTEM_PROMPT =
+  'You are the polite concierge of an invitation list. You collect an email ' +
+  'address, confirm it, and reassure people about privacy: one invitation, at ' +
+  'most one reminder a week later, and STOP ends everything permanently. You ' +
+  'never pressure and never invent offers.';
+
+function buildEmailInviter(links: GrowthLinks, refCode: string): BuiltTemplate {
+  const welcomeButtons: BehaviorButton[] = [
+    { label: 'Get my invite', action: { kind: 'flow', behaviorId: 'get_invite' } },
+    { label: 'Stop emails', action: { kind: 'flow', behaviorId: 'stop_emails' } },
+  ];
+  if (links.communityUrl) {
+    welcomeButtons.push({ label: 'NURAE community', action: { kind: 'link', url: links.communityUrl } });
+  }
+  welcomeButtons.push({ label: 'About NURAE', action: { kind: 'flow', behaviorId: 'nurae_about' } });
+  return {
+    name: 'Email Inviter',
+    description:
+      'Email invitation bot — in-chat double opt-in, SMTP invitations, one weekly reminder, permanent unsubscribe.',
+    systemPrompt: INVITER_SYSTEM_PROMPT,
+    behaviors: [
+      {
+        id: 'welcome',
+        title: 'Welcome + invite menu',
+        when: { type: 'start' },
+        steps: [
+          {
+            type: 'message',
+            text:
+              'Welcome, {{name}}! 📬\n\nI send personal invitations to NURAE — the platform that builds and runs Telegram bots from a plain-English description.\n\nHow it works: you drop your email here, I mail your invitation right away. That is it. One invitation, at most one friendly reminder a week later, and one word — STOP — ends everything permanently. No lists, no spam, no third parties.',
+            buttons: welcomeButtons,
+          },
+        ],
+      },
+      {
+        id: 'get_invite',
+        title: 'Get my invite',
+        when: { type: 'button' },
+        steps: [
+          {
+            type: 'collect',
+            collect: {
+              attribute: 'email',
+              prompt: 'Type the email address your invitation should go to — a single address, exactly as you want it to arrive.',
+            },
+          },
+          { type: 'email_invite', emailInvite: { attribute: 'email', successText: '✅ Done — the invitation is on its way to {{email}}. Watch your inbox (and the spam folder, just in case). If it is not there in ten minutes, press the button again and I will check.', failText: 'Hmm — "{{email}}" does not look like an email address. Tap the button again and type it carefully.', alreadyText: 'You are already on the list — the invitation went out to {{email}}. One per address, no spam, promise.', queuedText: '📧 Saved — email delivery is not configured on this server yet, so your invitation is queued and will go out automatically the moment it is.' } },
+        ],
+      },
+      {
+        id: 'stop_emails',
+        title: 'Stop emails',
+        when: { type: 'button' },
+        steps: [
+          {
+            type: 'email_unsubscribe',
+            emailUnsubscribe: {
+              confirmText: 'Done — your address is off the list, permanently. Sorry to see you go 👋',
+              nothingText: 'No email address is registered from this chat — nothing to unsubscribe.',
+            },
+          },
+        ],
+      },
+      {
+        id: 'cmd_stop',
+        title: 'Stop emails (/stop)',
+        when: { type: 'command', command: '/stop' },
+        steps: [
+          {
+            type: 'email_unsubscribe',
+            emailUnsubscribe: {
+              confirmText: 'Done — your address is off the list, permanently. Sorry to see you go 👋',
+              nothingText: 'No email address is registered from this chat — nothing to unsubscribe.',
+            },
+          },
+        ],
+      },
+      groupGreetBehavior(links),
+      nuraeAboutBehavior(links, refCode),
+    ],
+  };
+}
+
 const BUILDERS: Record<string, (links: GrowthLinks, refCode: string) => BuiltTemplate> = {
   'referral-ambassador': buildReferralAmbassador,
   giveaway: buildGiveaway,
   'daily-trivia': buildDailyTrivia,
   'support-faq': buildSupportFaq,
   'community-hub': buildCommunityHub,
+  'email-inviter': buildEmailInviter,
 };
 
 export function isTemplateId(id: string): boolean {

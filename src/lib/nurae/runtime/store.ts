@@ -147,6 +147,8 @@ export interface RuntimeStore {
   createSchedule(row: { botId: string; chatId: string; text: string; runAt: Date; recurrence?: string; createdBy?: string | null }): Promise<BotScheduleRow>;
   listSchedules(botId: string): Promise<BotScheduleRow[]>;
   cancelSchedule(botId: string, scheduleId: string): Promise<boolean>;
+  /** Rewrite a pending schedule's text (fleet sentinel migration). */
+  updateScheduleText(scheduleId: string, text: string): Promise<void>;
   /** Due pending schedules (oldest first) — claimed by the task ticker. */
   dueSchedules(now: Date, botId?: string, limit?: number): Promise<BotScheduleRow[]>;
   markScheduleSent(id: string, nextRunAt: Date | null): Promise<void>;
@@ -504,6 +506,15 @@ export function createPrismaRuntimeStore(prisma: PrismaClient): RuntimeStore {
         where: { id },
         data: { status: 'failed', lastError: error.slice(0, 500) },
       }).catch(() => undefined);
+    },
+
+    async updateScheduleText(scheduleId, text) {
+      await prisma.botSchedule
+        .updateMany({
+          where: { id: scheduleId, status: 'pending' },
+          data: { text: text.slice(0, 4000) },
+        })
+        .catch(() => undefined);
     },
 
     // --- broadcasts ---------------------------------------------------------

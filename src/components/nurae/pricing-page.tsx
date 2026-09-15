@@ -1,14 +1,16 @@
 'use client';
 
 /**
- * NURAE — /pricing: the pay-as-you-use pitch. No subscriptions, no tiers to
- * compare — one free week, free daily allowances, and honest per-unit prices.
- * The table reads the compiled catalog so code and copy cannot drift.
+ * NURAE — /pricing: pay-as-you-use by default, optional plans on top.
+ * Plans are additive perks bought from the wallet — the free tier never
+ * shrinks. The table reads the compiled catalog so code and copy cannot
+ * drift; the plan cards mirror billing/plans.ts.
  */
 
 import Link from 'next/link';
 import { SiteFooter, SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { DEFAULT_CATALOG, MICRO, STARS_PRESETS, TRIAL_DAYS } from '@/lib/nurae/billing/catalog';
+import { PLANS } from '@/lib/nurae/billing/plan-catalog';
 
 const usd = (micros: number): string => {
   const out = (Math.abs(micros) / MICRO).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
@@ -27,13 +29,41 @@ export function PricingPage() {
       <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-12 sm:px-6">
         <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Pricing</p>
-        <h1 className="mt-2 text-2xl font-medium tracking-tight text-foreground">Pay as you use</h1>
+        <h1 className="mt-2 text-2xl font-medium tracking-tight text-foreground">Pay as you use — or boost it with a plan</h1>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-          NURAE has no monthly plans. Every feature has a per-unit price in the fractions of a cent,
-          every account gets {TRIAL_DAYS} free days (the free server week), and every feature keeps a
-          free daily allowance even after that. You top up when — and only when — your bots actually
-          earn or need it.
+          Every feature has a per-unit price in the fractions of a cent, every account gets{' '}
+          {TRIAL_DAYS} free days (the free server week), and every feature keeps a free daily
+          allowance even after that. You top up when — and only when — your bots actually earn or
+          need it. Want bigger allowances and hosting included? A plan does that; nothing else
+          changes.
         </p>
+
+        {/* Plans */}
+        <section className="mt-10">
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Plans (optional, paid from your wallet)</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {PLANS.map((plan) => (
+              <div key={plan.id} className="border border-border/60 p-4">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-foreground">{plan.name}</span>
+                  <span className="font-mono text-sm text-foreground">
+                    {plan.monthlyMicros === 0 ? '$0' : usd(plan.monthlyMicros)}
+                    <span className="text-xs text-muted-foreground">/mo</span>
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{plan.tagline}</p>
+                <ul className="mt-3 space-y-1.5">
+                  {plan.perks.map((perk) => (
+                    <li key={perk} className="text-xs text-muted-foreground">— {perk}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Plans never gate features — they make the numbers bigger. <Link href="/billing" className="underline">Billing → Your plan</Link> activates in one click from your wallet balance; same-plan renewals stack, so renewing early never costs you days.
+          </p>
+        </section>
 
         {/* Free week + free tier */}
         <section className="mt-10">
@@ -108,13 +138,14 @@ export function PricingPage() {
 
         {/* Comparison */}
         <section className="mt-10">
-          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Why cheaper than subscriptions</p>
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Why still cheaper than the other guys</p>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
             Bot platforms typically rent you features: $10–$50 every month, per bot, whether you use
             them or not — and double-dip with per-message credits on top. Idle months still cost full
             price. NURAE inverts that: hosting is <span className="font-mono text-foreground">$0.01</span> per bot
             per day, usage is priced at provider cost plus a sliver, and the free week plus daily
-            allowances absorb most hobby bots entirely. You only ever pay for work that actually
+            allowances absorb most hobby bots entirely — a Plus plan exists for when your usage is real
+            and you would rather prepay than watch meters. You only ever pay for work that actually
             happened — which is why we can undercut every flat-rate platform while running the same
             infrastructure.
           </p>

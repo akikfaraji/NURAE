@@ -27,6 +27,15 @@ const GrantSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+// Admin-granted plan: sets/extends a subscription without a wallet charge
+// (sponsorships, make-goods, internal accounts).
+const PlanGrantSchema = z.object({
+  userId: z.string().min(1).max(64),
+  planId: z.enum(['plus', 'pro']),
+  days: z.number().int().min(1).max(3650).default(30),
+  note: z.string().trim().max(500).optional(),
+});
+
 const PriceSchema = z.object({
   feature: z.string().min(1).max(64),
   unitPriceMicros: z.number().int().min(0).max(1_000_000_000).optional(),
@@ -60,6 +69,41 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ applied: result.applied, balance: result.balance });
     }
 
+    const planGrant = PlanGrantSchema.safeParse(body);
+    if (planGrant.success) {
+      const exists = await db.user.findUnique({
+        where: { id: planGrant.data.userId },
+        select: { id: true, planId: true, planExpiresAt: true },
+      });
+      if (!exists) return apiError('User not found.', 404);
+      const now = new Date();
+      // Same plan still active → extend from the existing expiry; otherwise
+      // the grant starts fresh. (Mirrors subscribeToPlan's stacking rule.)
+      const active = Boolean(exists.planExpiresAt && exists.planExpiresAt.getTime() > now.getTime());
+      const start = active && exists.planId === planGrant.data.planId ? (exists.planExpiresAt as Date) : now;
+      const expiresAt = new Date(start.getTime() + planGrant.data.days * 24 * 60 * 60 * 1000);
+      await db.user.update({
+        where: { id: exists.id },
+        data: { planId: planGrant.data.planId, planExpiresAt: expiresAt },
+      });
+      const balanceAfter = await db.user
+        .findUnique({ where: { id: exists.id }, select: { balanceMicros: true } })
+        .then((u) => u?.balanceMicros ?? 0);
+      await db.ledgerEntry.create({
+        data: {
+          userId: exists.id,
+          kind: 'subscription',
+          feature: `plan_${planGrant.data.planId}`,
+          amountMicros: 0,
+          balanceAfter,
+          bucket: now.toISOString().slice(0, 10),
+          refId: planGrant.data.planId,
+          note: `Admin-granted ${planGrant.data.planId} plan — ${planGrant.data.days} day(s)${planGrant.data.note ? `: ${planGrant.data.note}` : ''}`,
+        },
+      });
+      return NextResponse.json({ applied: true, planId: planGrant.data.planId, expiresAt: expiresAt.toISOString() });
+    }
+
     const price = PriceSchema.safeParse(body);
     if (price.success) {
       if (!FEATURE_KEYS.includes(price.data.feature)) {
@@ -75,7 +119,7 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ rule: row });
     }
 
-    return validationError(grant.error ?? price.error ?? new z.ZodError([]));
+    return validationError(grant.error ?? planGrant.error ?? price.error ?? new z.ZodError([]));
   } catch (err) {
     return internalError(err, 'admin.billing');
   }

@@ -79,6 +79,19 @@ export function BillingView() {
     })();
   }, [user, refresh]);
 
+  async function subscribe(planId: 'plus' | 'pro') {
+    setBusy(true);
+    setError(null);
+    try {
+      await nuraeApi.billingSubscribe(planId);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not activate the plan.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function topupStars(stars: number) {
     setBusy(true);
     setError(null);
@@ -173,11 +186,56 @@ export function BillingView() {
           )}
         </div>
         <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-          No subscription. You pay per use — a message costs $0.00005, an AI reply $0.0015. Invite
-          friends for premium days, or top up when the free allowances run out.
+          Pay per use by default — a message costs $0.00005, an AI reply $0.0015. Optional plans boost
+          the free allowances and include hosting. Invite friends for premium days, or top up when the
+          free allowances run out.
         </p>
 
         {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+
+        {/* --- Your plan ------------------------------------------------ */}
+        {summary && (
+          <section className="mt-8">
+            <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Your plan</p>
+            <div className="mt-3 border border-border/60 p-4">
+              <div className="flex flex-wrap items-baseline gap-x-3">
+                <span className="text-sm font-medium">{summary.plan.active ? `${summary.plan.name} — active` : 'Free'}</span>
+                {summary.plan.active && summary.plan.expiresAt && (
+                  <span className="text-xs text-muted-foreground">
+                    renews monthly · until {new Date(summary.plan.expiresAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {summary.plan.active
+                  ? `Every free daily allowance ×${summary.plan.dailyMultiplier} · hosting included for ${summary.plan.includedHostingBots} running bots`
+                  : 'Every feature has a free daily allowance. Plans multiply it (Plus ×3, Pro ×10) and include hosting.'}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(['plus', 'pro'] as const).map((id) => {
+                  const price = id === 'plus' ? 4_990_000 : 19_990_000;
+                  const current = summary.plan.active && summary.plan.id === id;
+                  return (
+                    <Button
+                      key={id}
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || current}
+                      onClick={() => void subscribe(id)}
+                      className="h-8 border-border/60 text-xs"
+                    >
+                      {current ? `Current: ${id === 'plus' ? 'Plus' : 'Pro'}` : `${id === 'plus' ? 'Plus' : 'Pro'} — ${usd(price)}/mo from wallet`}
+                    </Button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Paid from your wallet balance (Stars / crypto topups feed it). Same-plan renewals stack —
+                you never lose days by renewing early.
+              </p>
+            </div>
+          </section>
+        )}
 
         {/* --- Top up --------------------------------------------------- */}
         <section className="mt-10">

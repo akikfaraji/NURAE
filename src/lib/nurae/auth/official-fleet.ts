@@ -40,6 +40,7 @@ export const OFFICIAL_FLEET: FleetBotSpec[] = [
   { templateId: 'daily-trivia', botName: 'NURAE Trivia Bot' },
   { templateId: 'support-faq', botName: 'NURAE Support Bot' },
   { templateId: 'community-hub', botName: 'NURAE Community Bot' },
+  { templateId: 'email-inviter', botName: 'NURAE Invite Bot' },
 ];
 
 /**
@@ -47,7 +48,7 @@ export const OFFICIAL_FLEET: FleetBotSpec[] = [
  * are upgraded in place (behaviors + prompt + description) while their
  * name, Telegram token and AI key are preserved.
  */
-export const FLEET_TEMPLATE_VERSION = 2;
+export const FLEET_TEMPLATE_VERSION = 3;
 
 const pointerKey = (templateId: string) => `official_fleet_${templateId}`;
 
@@ -122,7 +123,7 @@ export async function ensureOfficialFleet(links?: GrowthLinks): Promise<number> 
               botId: existing.id,
               level: 'info',
               event: 'OFFICIAL_FLEET_UPGRADED',
-              message: `Fleet bot "${existing.name}" upgraded to fleet template v${FLEET_TEMPLATE_VERSION} (growth engine: join gates, streaks, milestones, group automation). Token and keys preserved.`,
+              message: `Fleet bot "${existing.name}" upgraded to fleet template v${FLEET_TEMPLATE_VERSION} (v3: coordinated daily promos, NURAE group promotion, channel greets; v2 growth engine preserved). Token and keys preserved.`,
             },
           });
           seeded += 1;

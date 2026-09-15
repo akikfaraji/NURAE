@@ -36,6 +36,7 @@ export async function GET(req: Request): Promise<Response> {
         trialEndsAt: summary.freeRide.trialEndsAt?.toISOString() ?? null,
         premiumEndsAt: summary.freeRide.premiumEndsAt?.toISOString() ?? null,
       },
+      plan: summary.plan,
       usageToday: summary.usageToday,
       prices: summary.prices,
       topup: {

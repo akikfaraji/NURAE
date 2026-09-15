@@ -86,15 +86,15 @@ async function wipeFleet(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 describe('official fleet seeding', () => {
-  test('seeds the five fleet bots as platform-owned rows with growth hooks', async () => {
+  test('seeds the six fleet bots as platform-owned rows with growth hooks', async () => {
     await ensureOfficialBot(); // owns project creation
     const seeded = await ensureOfficialFleet(LINKS);
-    expect(seeded).toBe(5);
+    expect(seeded).toBe(6);
 
     const { project, rows } = await fleetBotRows();
-    expect(rows).toHaveLength(6); // 5 fleet + NURAE CS Bot
+    expect(rows).toHaveLength(7); // 6 fleet + NURAE CS Bot
     const fleetRows = rows.filter((r) => OFFICIAL_FLEET.some((f) => f.botName === r.name));
-    expect(fleetRows).toHaveLength(5);
+    expect(fleetRows).toHaveLength(6);
 
     for (const row of fleetRows) {
       expect(row.projectId).toBe(project.id);
@@ -113,10 +113,23 @@ describe('official fleet seeding', () => {
     expect(names).toEqual([
       'NURAE Community Bot',
       'NURAE Giveaway Bot',
+      'NURAE Invite Bot',
       'NURAE Referral Bot',
       'NURAE Support Bot',
       'NURAE Trivia Bot',
     ]);
+  });
+
+  test('the Invite Bot compiles the consent-first email funnel', async () => {
+    const { rows } = await fleetBotRows();
+    const inviter = rows.find((r) => r.name === 'NURAE Invite Bot');
+    expect(inviter).toBeTruthy();
+    const behaviors = loadBehaviors(inviter!);
+    const getInvite = behaviors.find((b) => b.id === 'get_invite');
+    expect(getInvite?.steps.some((s) => s.type === 'collect' && s.collect.attribute === 'email')).toBe(true);
+    expect(getInvite?.steps.some((s) => s.type === 'email_invite' && s.emailInvite.attribute === 'email')).toBe(true);
+    expect(behaviors.filter((b) => b.steps.some((s) => s.type === 'email_unsubscribe')).length).toBe(2); // button + /stop
+    expect(behaviors.some((b) => b.id === 'group_greet')).toBe(true);
   });
 
   test('is idempotent and never overwrites admin edits', async () => {
@@ -151,7 +164,7 @@ describe('official fleet seeding', () => {
     expect(loadBehaviors(recreated!).some((b) => b.id === 'nurae_about')).toBe(true);
 
     const { rows: after } = await fleetBotRows();
-    expect(after.filter((r) => OFFICIAL_FLEET.some((f) => f.botName === r.name))).toHaveLength(5);
+    expect(after.filter((r) => OFFICIAL_FLEET.some((f) => f.botName === r.name))).toHaveLength(6);
   });
 
   test('boot seeding is env-only: skips without a site URL, seeds with NURAE_SITE_URL', async () => {
@@ -163,7 +176,7 @@ describe('official fleet seeding', () => {
       expect(rows.filter((r) => r.name !== 'NURAE CS Bot')).toHaveLength(0);
 
       process.env.NURAE_SITE_URL = 'https://boot.example';
-      expect(await ensureOfficialFleet()).toBe(5);
+      expect(await ensureOfficialFleet()).toBe(6);
       const { rows: after } = await fleetBotRows();
       const hub = after.find((r) => r.name === 'NURAE Community Bot')!;
       expect(JSON.stringify(loadBehaviors(hub))).toContain('https://boot.example/?ref=');
@@ -183,45 +196,48 @@ describe('official fleet seeding', () => {
     }
   });
 
-  test('v1 fleet rows auto-upgrade to the current template (secrets preserved)', async () => {
-    // Simulate a v1-era fleet row: current pointer format is JSON {botId,v},
-    // v1 pointers were a bare botId. Set a token to prove it survives.
+  test('v2 fleet rows auto-upgrade to the current template (secrets preserved)', async () => {
+    // Simulate a v2-era fleet row: set a token to prove it survives.
     const { rows } = await fleetBotRows();
     const trivia = rows.find((r) => r.name === 'NURAE Trivia Bot')!;
     await db.bot.update({
       where: { id: trivia.id },
-      data: { telegramTokenRef: 'v1:test:encrypted', systemPrompt: 'v1 prompt' },
+      data: { telegramTokenRef: 'v2:test:encrypted', systemPrompt: 'v2 prompt' },
     });
+    const pointer0 = await db.siteSetting.findUnique({ where: { key: 'official_fleet_daily-trivia' } });
+    const prev = JSON.parse(pointer0!.value) as { botId: string; v: number };
     await db.siteSetting.update({
       where: { key: 'official_fleet_daily-trivia' },
-      data: { value: trivia.id }, // legacy bare-id pointer → parsed as v1
+      data: { value: JSON.stringify({ botId: trivia.id, v: 2 }) }, // stale v2 pointer
     });
 
     const changed = await ensureOfficialFleet(LINKS);
-    expect(changed).toBe(1); // one row upgraded (the other four are current)
+    expect(changed).toBe(1); // one row upgraded (the other five are current)
 
     const upgraded = await db.bot.findUnique({ where: { id: trivia.id } });
-    expect(upgraded?.telegramTokenRef).toBe('v1:test:encrypted'); // secret kept
-    expect(upgraded?.systemPrompt).not.toBe('v1 prompt'); // config refreshed
+    expect(upgraded?.telegramTokenRef).toBe('v2:test:encrypted'); // secret kept
+    expect(upgraded?.systemPrompt).not.toBe('v2 prompt'); // config refreshed
     const behaviors = loadBehaviors(upgraded!);
     expect(behaviors.some((b) => b.when.type === 'start' && b.steps.some((s) => s.type === 'streak'))).toBe(true);
     expect(behaviors.some((b) => b.id === 'group_greet')).toBe(true);
     const pointer = await db.siteSetting.findUnique({ where: { key: 'official_fleet_daily-trivia' } });
-    expect(JSON.parse(pointer!.value)).toMatchObject({ botId: trivia.id, v: 2 });
+    expect(JSON.parse(pointer!.value)).toMatchObject({ botId: trivia.id, v: 3 });
+    void prev;
   });
 
-  test('officialFleetStatus lists five entries with no secrets', async () => {
+  test('officialFleetStatus lists six entries with no secrets', async () => {
     const status = await officialFleetStatus();
-    expect(status).toHaveLength(5);
+    expect(status).toHaveLength(6);
     for (const entry of status) {
       expect(entry.botId).toBeTruthy();
       expect(entry.tagline.length).toBeGreaterThan(0);
-      expect(JSON.stringify(entry)).not.toContain('v1:'); // encrypted material never leaves
+      expect(JSON.stringify(entry)).not.toContain('v2:'); // encrypted material never leaves
       expect(Object.keys(entry)).not.toContain('telegramTokenRef');
     }
     expect(status.map((s) => s.templateId).sort()).toEqual([
       'community-hub',
       'daily-trivia',
+      'email-inviter',
       'giveaway',
       'referral-ambassador',
       'support-faq',
@@ -245,13 +261,13 @@ describe('official fleet API', () => {
         official: { botId: string | null };
         fleet: Array<{ templateId: string; botId: string | null; name: string; category: string }>;
       };
-      expect(body.fleet).toHaveLength(5);
+      expect(body.fleet).toHaveLength(6);
       for (const entry of body.fleet) {
         expect(entry.botId).toBeTruthy();
         expect(entry.name).toMatch(/^NURAE /);
       }
       // No secret material anywhere in the response.
-      expect(JSON.stringify(body)).not.toContain('v1:');
+      expect(JSON.stringify(body)).not.toContain('v2:');
       // The CS bot is still present, untouched, with its own card payload.
       expect(body.official.botId).toBeTruthy();
     } finally {

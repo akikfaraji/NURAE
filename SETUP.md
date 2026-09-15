@@ -138,7 +138,7 @@ npm run start      # launcher: loads .env, pins the data root, then serves; hono
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.06.000-beta-03",...}`
+`{"status":"ok","version":"V00.07.000-beta-03",...}`
 
 > **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
 > silently open a build-time SNAPSHOT of your database (bots worked in dev, died in
@@ -159,17 +159,37 @@ Prerequisite: create a bot with [@BotFather](https://t.me/BotFather) in
 Telegram, take the **bot token** (`123456:ABC-...`). Then on the dashboard:
 **New project → New bot → paste token → (choose transport) → Start**.
 
-> **Official fleet:** the dashboard also ships five ready-made official bots
-> (Referral, Giveaway, Trivia, Support, Community) plus the NURAE CS bot —
-> see the "NURAE bot fleet" card on the dashboard. Same recipe: open the bot
-> from the card, paste a token from @BotFather, start. Fleet bots are
-> platform-owned and run unmetered.
+> **Official fleet:** the dashboard also ships six ready-made official bots
+> (Referral, Giveaway, Trivia, Support, Community, Invite) plus the NURAE CS
+> bot — see the "NURAE bot fleet" card on the dashboard. Same recipe: open
+> the bot from the card, paste a token from @BotFather, start. Fleet bots
+> are platform-owned and run unmetered.
 >
-> **They grow on their own:** add a fleet bot to a group/channel and it arms
-> a daily engagement post automatically; giveaway entries can require
-> joining your public channel (set `NURAE_CHANNEL_URL` to a `t.me/<name>`
-> link); streaks, invite milestones and share loops are built in. Fleet
-> configurations upgrade in place with each release — your tokens stay.
+> **They grow on their own:** add a fleet bot to a group/channel and it
+> arms a rotating daily NURAE post automatically (a different pitch each
+> day, hours staggered so fleet bots never stack in one room); giveaway
+> entries can require joining your public channel (set `NURAE_CHANNEL_URL`
+> to a `t.me/<name>` link); streaks, invite milestones and share loops are
+> built in. Fleet configurations upgrade in place with each release — your
+> tokens stay.
+>
+> **Email invitations (NURAE Invite Bot):** the sixth fleet bot turns chats
+> into email signups. Configure the Gmail SMTP pair in `.env`
+> (`NURAE_GMAIL_USER` / `NURAE_GMAIL_APP_PASSWORD`), set `NURAE_SITE_URL`,
+> and the bot mails a personal invitation to every in-chat opt-in, drips
+> the queue under `NURAE_INVITE_DAILY_CAP` (default 150/day), sends at
+> most one weekly reminder, and treats STOP as permanent. To invite people
+> you already have consent from, POST the list to
+> `POST /api/admin/invites` with `{"emails": "...", "confirm": true}` —
+> the queue does the rest. Random/generated addresses are refused by
+> design: unsolicited bulk email breaks anti-spam law and burns your
+> Gmail sender reputation.
+>
+> **Plans (optional):** pay-as-you-use stays the default. Users can
+> activate Plus ($4.99/mo — ×3 daily allowances, hosting for 3 bots) or
+> Pro ($19.99/mo — ×10, hosting for 15 bots) from their wallet balance on
+> the /billing page; /pricing shows the plans. Admin grants: POST
+> `/api/admin/billing/grant` with `{ userId, planId, days }`.
 
 ### 5.1 Polling mode — zero public URL (best for local/Termux testing)
 

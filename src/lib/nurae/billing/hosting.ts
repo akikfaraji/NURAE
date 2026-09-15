@@ -15,7 +15,8 @@
 import { db } from '@/lib/db';
 import { TelegramAdapter } from '../telegram/adapter';
 import { dayBucket } from './catalog';
-import { chargeFeature } from './wallet';
+import { planHostingCover } from './plans';
+import { chargeFeature, getBalance } from './wallet';
 
 export interface HostingResult {
   bots: number;
@@ -40,11 +41,36 @@ export async function runDailyHostingBilling(now: Date = new Date()): Promise<Ho
     const bucket = dayBucket(now);
     let outcome: string;
     try {
-      const charge = await chargeFeature(bot.ownerId, 'hosting_day', {
-        refId: bot.id,
-        idempotencyKey: `host:${bot.id}:${bucket}`,
-      });
-      outcome = charge.outcome;
+      // Plan perk first: a paid plan covers the first N running bots. The
+      // covered day is journaled as a free row with the SAME idempotency key
+      // the charge would have used, so a plan can never double-bill a day.
+      const cover = await planHostingCover(bot.ownerId, bot.id, now);
+      if (cover) {
+        const key = `host:${bot.id}:${bucket}`;
+        const taken = await db.ledgerEntry.findUnique({ where: { idempotencyKey: key }, select: { id: true } });
+        if (!taken) {
+          await db.ledgerEntry.create({
+            data: {
+              userId: bot.ownerId,
+              kind: 'usage',
+              feature: 'hosting_day',
+              amountMicros: 0,
+              balanceAfter: await getBalance(bot.ownerId),
+              bucket,
+              refId: bot.id,
+              idempotencyKey: key,
+              note: `plan_hosting (${cover.name})`,
+            },
+          });
+        }
+        outcome = 'free_quota';
+      } else {
+        const charge = await chargeFeature(bot.ownerId, 'hosting_day', {
+          refId: bot.id,
+          idempotencyKey: `host:${bot.id}:${bucket}`,
+        });
+        outcome = charge.outcome;
+      }
     } catch {
       continue; // billing outage — retry next tick
     }

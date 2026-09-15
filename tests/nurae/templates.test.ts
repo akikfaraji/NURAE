@@ -1,5 +1,5 @@
 /**
- * NURAE — built-in bots tests (Task 23): the five promotion templates and
+ * NURAE — built-in bots tests (Task 23): the promotion templates and
  * the runtime primitives they stand on.
  *
  *   - template integrity: catalog shape, unique ids, every template COMPILES
@@ -123,10 +123,10 @@ function flowCallback(record: { capabilities: { replies: Array<{ trigger: { type
 // ---------------------------------------------------------------------------
 
 describe('built-in bots — catalog and compilation', () => {
-  test('the catalog ships five unique, recognizable templates', () => {
-    expect(TEMPLATE_CATALOG).toHaveLength(5);
+  test('the catalog ships six unique, recognizable templates', () => {
+    expect(TEMPLATE_CATALOG).toHaveLength(6);
     const ids = TEMPLATE_CATALOG.map((t) => t.id);
-    expect(new Set(ids).size).toBe(5);
+    expect(new Set(ids).size).toBe(6);
     for (const id of ids) {
       expect(isTemplateId(id)).toBe(true);
       const meta = TEMPLATE_CATALOG.find((t) => t.id === id)!;

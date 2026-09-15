@@ -63,6 +63,37 @@ export interface SendResult {
   detail: string;
 }
 
+/**
+ * Generic site mail (invitations, future notifications) over the same Gmail
+ * app-password transport. Never rejects — failures come back as results so
+ * queue loops can keep running. `from` is always the configured mailbox;
+ * the display name is the site name the caller passes.
+ */
+export async function sendSiteMail(
+  to: string,
+  subject: string,
+  text: string,
+  html: string,
+  siteName = 'NURAE',
+): Promise<SendResult> {
+  const cfg = gmailConfig();
+  if (!cfg) return { ok: false, detail: 'Gmail SMTP is not configured.' };
+  try {
+    await transporter(cfg).sendMail({
+      from: `"${siteName}" <${cfg.user}>`,
+      to,
+      subject,
+      text,
+      html,
+    });
+    return { ok: true, detail: 'sent' };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[NURAE] site mail to ${maskEmail(to)} failed: ${detail}`);
+    return { ok: false, detail };
+  }
+}
+
 /** Send the 6-digit verification code. Never rejects; failures are returned. */
 export async function sendVerificationMail(to: string, code: string, siteName: string): Promise<SendResult> {
   const cfg = gmailConfig();

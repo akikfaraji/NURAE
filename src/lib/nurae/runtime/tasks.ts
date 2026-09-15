@@ -26,6 +26,9 @@ import type { RuntimeStore } from './store';
 import { chargeFeature } from '../billing/wallet';
 import { runDailyHostingBilling } from '../billing/hosting';
 import { pollCryptoTopups } from '../billing/topups';
+import { FLEET_DAILY_SENTINEL, renderFleetDailyPost, syncFleetAutomation } from './fleet-posts';
+import { runInviteQueue, runInviteReminders } from '../email/invites';
+import { dayBucket } from '../billing/catalog';
 
 const TICK_MS = 60_000;
 /** Broadcast pacing: 50 ms between sends ≈ 20 msg/s (< Telegram's ~30/s). */
@@ -90,7 +93,13 @@ export async function runDueBotWork(store: RuntimeStore, opts?: { botId?: string
     }
     const adapter = new TelegramAdapter({ token: bot.telegramToken });
     try {
-      const html = telegramHtmlFromMarkdown(schedule.text);
+      // Fleet sentinel: the platform bots' daily group post is a placeholder
+      // that renders into the day's rotating NURAE promo at send time. Never
+      // charged (platform rows are unmetered) and always fresh.
+      const effectiveText = schedule.text === FLEET_DAILY_SENTINEL
+        ? renderFleetDailyPost(bot.name, dayBucket(now))
+        : schedule.text;
+      const html = telegramHtmlFromMarkdown(effectiveText);
       await adapter.sendMessage(schedule.chatId, html, { parseMode: 'HTML' });
       await store.createLog(schedule.botId, 'info', `Scheduled message delivered to chat ${schedule.chatId}.`, 'SCHEDULE_SENT');
       await store.markScheduleSent(schedule.id, nextRecurrence(schedule.runAt, schedule.recurrence));
@@ -204,6 +213,24 @@ async function runPeriodicBilling(): Promise<void> {
 }
 
 /**
+ * Zero-touch fleet work on the ticker: the invite queue (opt-in invitations,
+ * daily cap), the weekly reminder pass, and the fleet-automation sync that
+ * arms/migrates the daily NURAE promo schedules. Every job is failure-
+ * isolated — one broken job never blocks the others or the scheduler.
+ */
+async function runFleetJobs(store: RuntimeStore): Promise<void> {
+  await runInviteQueue().catch((err) =>
+    console.warn('[invites] queue failed:', err instanceof Error ? err.message : err),
+  );
+  await runInviteReminders().catch((err) =>
+    console.warn('[invites] reminders failed:', err instanceof Error ? err.message : err),
+  );
+  await syncFleetAutomation(store).catch((err) =>
+    console.warn('[fleet] automation sync failed:', err instanceof Error ? err.message : err),
+  );
+}
+
+/**
  * Start the in-process 60 s ticker (Node runtimes only; serverless relies on
  * the webhook-adjacent sweep). Idempotent per process.
  */
@@ -213,6 +240,7 @@ export function startTaskTicker(store: RuntimeStore): void {
   const timer = setInterval(() => {
     void runDueBotWork(store).catch(() => undefined);
     void runPeriodicBilling().catch(() => undefined);
+    void runFleetJobs(store).catch(() => undefined);
   }, TICK_MS);
   // Never hold the process open just for the ticker.
   if (typeof timer.unref === 'function') timer.unref();
