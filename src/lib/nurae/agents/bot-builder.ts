@@ -24,6 +24,7 @@ import { rateLimit } from '../auth/rate-limit';
 import { chargeFeature } from '../billing/wallet';
 import { formatUsd } from '../billing/catalog';
 import { executeTool, toolDescriptors, type ExecRecord, type ToolContext } from './tools';
+import { extractMarkupCalls } from './tool-markup';
 import { skillIndexLines } from './skills';
 import type { GrowthLinks } from '../bots/templates';
 
@@ -177,6 +178,8 @@ function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
     ' "actions": [{"tool": "tool_name", "args": {…}}],',
     ' "done": true|false}',
     'Rules:',
+    '- Tool calls happen ONLY through "actions". NEVER emit markup such as <tool_call>, <invoke>,',
+    '  mcp:tool, function-call brackets or name=value call syntax — that is not this protocol.',
     '- "actions" may contain 0 to ' + MAX_ACTIONS_PER_ROUND + ' items. Use tools to DO things, not to narrate.',
     '- Set "done": false if you expect tool results back and want another round; otherwise true.',
     '- Read tools first when you need information (files_list, files_read, bots_list, bot_get, bot_list_users).',
@@ -221,6 +224,24 @@ const MALFORMED_NOTICE =
   'My reply came back malformed, so I discarded it instead of showing you raw data. Please send that again.';
 
 export function parseAgentReply(text: string): {
+  message: string;
+  actions: Array<{ tool: string; args: Record<string, unknown> }>;
+  done: boolean;
+  jsonOk: boolean;
+} {
+  // 0. Tool-call markup dialects first (BR-030): tool_call tags,
+  //  heredoc markers, invoke/mcp wrappers. They become real actions and are
+  //  stripped from the text so no dialect residue can ever reach the bubble.
+  const markup = extractMarkupCalls(text);
+  const base = parseEnvelopeReply(markup.cleaned);
+  const actions = [...base.actions, ...markup.calls].slice(0, MAX_ACTIONS_PER_ROUND);
+  // Markup-only turns expect tool results back — keep the loop alive so the
+  // model can react to them (bounded by MAX_ROUNDS).
+  const done = !base.jsonOk && actions.length > 0 ? false : base.done;
+  return { message: base.message, actions, done, jsonOk: base.jsonOk };
+}
+
+function parseEnvelopeReply(text: string): {
   message: string;
   actions: Array<{ tool: string; args: Record<string, unknown> }>;
   done: boolean;

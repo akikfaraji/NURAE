@@ -104,7 +104,28 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.09.000-beta-03** — the satisfaction round: agents that act like
+**NURAE V00.09.001-beta-03** — the live-leak bug round: what the model meant
+as a tool call can no longer reach the chat as raw markup, and a database
+that missed its migration heals itself on boot.
+
+- **Universal tool-call parsing (BR-030)**: live traffic showed models
+  emitting tool calls as text in several dialects — Qwen 'tool_call' tags,
+  CommandR/Hermes heredoc brackets with python-style args, GLM/MCP
+  'invoke' wrappers (sometimes as bare words), and JSON bodies. They used
+  to land in the chat verbatim or die as "Invalid arguments". Every dialect
+  is now parsed into REAL registry calls (with a full python-literal
+  argument parser for nested lists/dicts), executed, shown in the activity
+  feed, and stripped from the visible message — markup never reaches a
+  chat bubble again. Both agent prompts now forbid markup emission.
+- **Self-healing schema + graceful admin reads (BR-031)**: a deployment
+  that upgrades code without 'npx prisma db push' used to answer 500 on
+  any route touching a new column (the admin customers page died). On boot
+  NURAE now syncs the SQLite schema itself (opt out with
+  NURAE_AUTO_MIGRATE=0; managed databases are never touched), and the
+  customers directory degrades its OPTIONAL enrichments (bot counts, chat
+  volume) to zeros instead of failing while the core list stays live.
+
+**V00.09.000-beta-03** — the satisfaction round: agents that act like
 agents, an admin that can actually see and control user bots, and owners who
 hear about orders the second they happen.
 

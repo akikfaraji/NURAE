@@ -140,6 +140,8 @@ function operatorSystemPrompt(state: OperatorState, userConfirmed: boolean): str
     ' "actions": [{"tool": "tool_name", "args": {…}}],',
     ' "done": true|false}',
     'Rules:',
+    '- Tool calls happen ONLY through "actions". NEVER emit markup such as <tool_call>, <invoke>,',
+    '  mcp:tool, function-call brackets or name=value call syntax — that is not this protocol.',
     `- "actions" may contain 0 to ${MAX_ACTIONS_PER_ROUND} items. Set "done": false if you expect tool`,
     '  results back and want another round; otherwise true.',
     '- platform_settings_set: set args.confirm=true ONLY when the operator clearly asked for the',

@@ -33,23 +33,37 @@ export async function GET(req: Request): Promise<Response> {
     });
 
     // Bots per customer (ownerId is not a schema FK — group it explicitly).
+    // BR-031: a lagging database (missed prisma db push) must degrade these
+    // OPTIONAL enrichments to zeros instead of killing the whole directory.
     const botCounts = new Map<string, number>();
-    const botGroups = await db.bot.groupBy({ by: ['ownerId'], _count: { _all: true } });
-    for (const g of botGroups) {
-      if (g.ownerId) botCounts.set(g.ownerId, g._count._all);
+    try {
+      const botGroups = await db.bot.groupBy({ by: ['ownerId'], _count: { _all: true } });
+      for (const g of botGroups) {
+        if (g.ownerId) botCounts.set(g.ownerId, g._count._all);
+      }
+    } catch (err) {
+      console.error(
+        `[NURAE] admin/customers: bot counts unavailable (${err instanceof Error ? err.message : String(err)})`,
+      );
     }
 
     // Chat volume per user: conversations of the official bot keyed web:<userId>.
-    const officialPointer = await db.siteSetting.findUnique({ where: { key: 'official_bot_id' } });
     const chatCounts = new Map<string, number>();
-    if (officialPointer) {
-      const conversations = await db.conversation.findMany({
-        where: { botId: officialPointer.value, chatId: { startsWith: 'web:' } },
-        select: { chatId: true, _count: { select: { messages: true } } },
-      });
-      for (const c of conversations) {
-        chatCounts.set(c.chatId.slice(4), c._count.messages);
+    try {
+      const officialPointer = await db.siteSetting.findUnique({ where: { key: 'official_bot_id' } });
+      if (officialPointer) {
+        const conversations = await db.conversation.findMany({
+          where: { botId: officialPointer.value, chatId: { startsWith: 'web:' } },
+          select: { chatId: true, _count: { select: { messages: true } } },
+        });
+        for (const c of conversations) {
+          chatCounts.set(c.chatId.slice(4), c._count.messages);
+        }
       }
+    } catch (err) {
+      console.error(
+        `[NURAE] admin/customers: chat volume unavailable (${err instanceof Error ? err.message : String(err)})`,
+      );
     }
 
     const customers = users.map((u) => ({

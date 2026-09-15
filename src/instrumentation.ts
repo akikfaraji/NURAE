@@ -18,6 +18,8 @@ export async function register(): Promise<void> {
   // warning on every request. The IPv4-first DNS preference (Android/Termux
   // ENETUNREACH fix) lives in src/lib/nurae/auth/mailer.ts, whose module-scope
   // side effect runs on the Node-only auth routes before any SMTP call.
+  const { syncSqliteSchema } = await import('./lib/nurae/startup/schema-sync');
+  await syncSqliteSchema();
   const { ensureOfficialBot, migrateLegacyZaiBots } = await import('./lib/nurae/auth/official-bot');
   await ensureOfficialBot();
   const migrated = await migrateLegacyZaiBots();

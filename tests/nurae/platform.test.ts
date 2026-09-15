@@ -8,7 +8,7 @@
  * level by telegram-stub.ts, so the support chat runs fully offline.
  */
 
-import { describe, expect, test, afterAll } from 'vitest';
+import { describe, expect, test, afterAll, vi } from 'vitest';
 import { installTelegramStub, resetTelegramStub, TELEGRAM_STUB_BASE } from './telegram-stub';
 
 await import('./helpers');
@@ -484,6 +484,31 @@ describe('customers directory', () => {
     const { existsSync } = await import('node:fs');
     expect(existsSync('src/app/api/admin/customers/[id]/route.ts')).toBe(false);
     expect(await db.user.findUnique({ where: { id: dan!.id } })).not.toBeNull();
+  });
+
+  test('optional enrichments degrade to zeros when the DB lags schema (BR-031)', async () => {
+    const errSpy = console.error;
+    const errors: string[] = [];
+    console.error = (msg: unknown) => errors.push(String(msg));
+    try {
+      const botSpy = vi.spyOn(db.bot, 'groupBy').mockRejectedValue(new Error('no such column: owner_id'));
+      const settingSpy = vi
+        .spyOn(db.siteSetting, 'findUnique')
+        .mockRejectedValue(new Error('no such table: site_settings'));
+
+      const res = await customersRoute.GET(jsonReq('/api/admin/customers'));
+      expect(res.status).toBe(200); // the directory survives — zero-enriched, not 500
+      const body = (await res.json()) as { total: number; customers: Array<{ botCount: number }> };
+      expect(body.total).toBeGreaterThanOrEqual(4);
+      expect(body.customers.every((c) => c.botCount === 0)).toBe(true);
+      expect(errors.join(' ')).toContain('bot counts unavailable');
+      expect(errors.join(' ')).toContain('chat volume unavailable');
+
+      botSpy.mockRestore();
+      settingSpy.mockRestore();
+    } finally {
+      console.error = errSpy;
+    }
   });
 });
 
