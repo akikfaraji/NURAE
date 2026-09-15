@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { OverviewView, ProjectView, ProjectsView, CustomersView, SiteSettingsView, OfficialBotCard } from '@/components/nurae/views';
+import { OverviewView, ProjectView, ProjectsView, CustomersView, SiteSettingsView, OfficialBotCard, OfficialFleetCard } from '@/components/nurae/views';
 import { BotView } from '@/components/nurae/bot-view';
 import { Catalog, nuraeApi } from '@/lib/nurae-client/api';
 import { NURAE_VERSION } from '@/lib/nurae/version';
@@ -190,6 +190,7 @@ export function NuraeConsole() {
               </p>
             </div>
             <OfficialBotCard onOpenBot={openBotById} catalog={catalog} />
+            <OfficialFleetCard onOpenBot={openBotById} />
           </div>
         )}
         {view.type === 'customers' ? (

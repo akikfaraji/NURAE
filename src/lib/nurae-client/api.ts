@@ -179,6 +179,20 @@ export interface CustomerDTO {
   createdAt: string;
 }
 
+export interface FleetEntry {
+  templateId: string;
+  name: string;
+  tagline: string;
+  category: string;
+  botId: string | null;
+  hasTelegramToken: boolean;
+  hasApiKey: boolean;
+  ready: boolean;
+  status: string | null;
+  transport: string | null;
+  telegramUsername: string | null;
+}
+
 export interface OfficialBotResponse {
   official: {
     botId: string | null;
@@ -192,6 +206,8 @@ export interface OfficialBotResponse {
   bot: BotDTO | null;
   /** The official CS prompt rebuilt from current site settings. */
   officialPrompt: string;
+  /** The official fleet — five built-in promotion bots as platform-owned rows. */
+  fleet: FleetEntry[];
 }
 
 // --- Chats / Agents / Files / My bots / Referral ----------------------------

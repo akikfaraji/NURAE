@@ -37,12 +37,14 @@ import {
   CheckIcon,
   GoogleIcon,
   MailIcon,
+  RefreshIcon,
   TrashIcon,
 } from '@/components/nurae/icons';
 import {
   BotDTO,
   Catalog,
   CustomerDTO,
+  FleetEntry,
   nuraeApi,
   OfficialBotResponse,
   ProjectSummary,
@@ -650,6 +652,121 @@ export function OfficialBotCard({
           </DialogContent>
         </Dialog>
       )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Official NURAE fleet (overview) — the built-in promotion bots, ready to run
+// ---------------------------------------------------------------------------
+
+export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
+  const [fleet, setFleet] = useState<FleetEntry[] | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await nuraeApi.officialBot();
+      setFleet(data.fleet ?? []);
+    } catch {
+      /* non-fatal — retried on the interval */
+    }
+  }, []);
+
+  useEffect(() => {
+    const kick = setTimeout(() => void refresh(), 300);
+    const t = setInterval(refresh, 15000);
+    return () => {
+      clearTimeout(kick);
+      clearInterval(t);
+    };
+  }, [refresh]);
+
+  return (
+    <Card className="border-border">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              NURAE bot fleet
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+                Official
+              </span>
+            </CardTitle>
+            <CardDescription>
+              The five built-in NURAE promotion bots, seeded for this instance — add a token from @BotFather to each
+              and start them as your own official bots.
+            </CardDescription>
+          </div>
+          <Button size="sm" variant="outline" onClick={refresh} className="gap-1.5">
+            <RefreshIcon className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {(fleet ?? []).map((entry) => {
+          const needsToken = !entry.hasTelegramToken;
+          const stateLabel = entry.status === 'running'
+            ? `Running${entry.transport ? ` (${entry.transport})` : ''}`
+            : needsToken
+              ? 'Needs token'
+              : 'Ready to start';
+          return (
+            <div
+              key={entry.templateId}
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-border px-3 py-2.5"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{entry.name}</span>
+                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {entry.category}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{entry.tagline}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={
+                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ' +
+                    (entry.status === 'running'
+                      ? 'border-border bg-muted text-foreground'
+                      : needsToken
+                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                        : 'border-border bg-muted text-foreground')
+                  }
+                  title={needsToken ? 'Paste a @BotFather token in the bot page' : undefined}
+                >
+                  <span
+                    className={
+                      'inline-block h-1.5 w-1.5 rounded-full ' +
+                      (entry.status === 'running'
+                        ? 'animate-pulse bg-foreground'
+                        : needsToken
+                          ? 'bg-amber-500'
+                          : 'bg-muted-foreground/60')
+                    }
+                  />
+                  {stateLabel}
+                </span>
+                {entry.telegramUsername && (
+                  <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
+                    @{entry.telegramUsername}
+                  </span>
+                )}
+                {entry.botId && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onOpenBot(entry.botId!)}>
+                    {needsToken ? 'Add token' : 'Manage'} <ArrowRightIcon className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {fleet && fleet.length === 0 && (
+          <p className="text-xs text-muted-foreground">Fleet seeding pending — reload the dashboard.</p>
+        )}
+        {!fleet && <p className="text-xs text-muted-foreground">Loading fleet…</p>}
+      </CardContent>
     </Card>
   );
 }

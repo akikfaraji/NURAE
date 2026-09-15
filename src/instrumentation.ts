@@ -22,6 +22,12 @@ export async function register(): Promise<void> {
   await ensureOfficialBot();
   const migrated = await migrateLegacyZaiBots();
   if (migrated > 0) console.log(`[NURAE] migrated ${migrated} legacy zai bot(s) to openrouter`);
+  // Official fleet (the five built-in promotion bots as platform-owned rows):
+  // env-only links at boot — when no site URL env is set the dashboard's
+  // first GET /api/official-bot call seeds lazily with the request origin.
+  const { ensureOfficialFleet } = await import('./lib/nurae/auth/official-fleet');
+  const fleetSeeded = await ensureOfficialFleet();
+  if (fleetSeeded > 0) console.log(`[NURAE] official fleet: seeded ${fleetSeeded} bot(s)`);
   const { gatewayLinkConfigured, startGatewayHeartbeat } = await import('./lib/nurae/runtime/gateway-link');
   if (gatewayLinkConfigured()) {
     startGatewayHeartbeat();

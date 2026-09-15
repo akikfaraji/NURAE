@@ -138,7 +138,7 @@ npm run start      # launcher: loads .env, pins the data root, then serves; hono
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.05.000-beta-03",...}`
+`{"status":"ok","version":"V00.05.001-beta-03",...}`
 
 > **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
 > silently open a build-time SNAPSHOT of your database (bots worked in dev, died in
@@ -158,6 +158,12 @@ Health check: `curl http://localhost:3000/api/health` →
 Prerequisite: create a bot with [@BotFather](https://t.me/BotFather) in
 Telegram, take the **bot token** (`123456:ABC-...`). Then on the dashboard:
 **New project → New bot → paste token → (choose transport) → Start**.
+
+> **Official fleet:** the dashboard also ships five ready-made official bots
+> (Referral, Giveaway, Trivia, Support, Community) plus the NURAE CS bot —
+> see the "NURAE bot fleet" card on the dashboard. Same recipe: open the bot
+> from the card, paste a token from @BotFather, start. Fleet bots are
+> platform-owned and run unmetered.
 
 ### 5.1 Polling mode — zero public URL (best for local/Termux testing)
 

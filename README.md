@@ -98,13 +98,29 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.05.000-beta-03** — billing: the pay-as-you-use release.
+**NURAE V00.05.001-beta-03** — billing: the pay-as-you-use release, now with
+the official bot fleet.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**Pay-as-you-use billing (new in 05.000) — usage, not subscriptions**
+**Official bot fleet (new in 05.001) — the built-in bots, seeded to run**
+- The five built-in promotion bots now ship as **platform-owned bot rows**
+  inside the "NURAE Official" project — NURAE Referral, Giveaway, Trivia,
+  Support and Community Bot, seeded next to NURAE CS Bot (idempotent,
+  self-healing, never overwrites admin edits). The admin dashboard's
+  "NURAE bot fleet" card lists them all with token/runtime state.
+- To run one on Telegram: open it from the fleet card (or Projects →
+  NURAE Official), paste a token from @BotFather, start. Fleet bots are
+  platform-owned (ownerId null) and therefore **unmetered** — the platform
+  does not bill itself.
+- Their growth hooks point at `NURAE_SITE_URL` with the platform's own
+  referral code (`NURAE_REFERRAL_CODE`, default `nurae`). Seeding needs a
+  site URL: set at boot from env, or completed lazily on the first
+  dashboard load (request origin fallback).
+
+**Pay-as-you-use billing (05.000) — usage, not subscriptions**
 - **Per-feature metering over an integer micro-dollar ledger** (`1,000,000 µ$ = $1`).
   Every metered event — free, trial, premium or charged — writes a `LedgerEntry`
   row (the same journal powers analytics, daily quotas and the /billing ledger
@@ -573,4 +589,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.05.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.05.001-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
