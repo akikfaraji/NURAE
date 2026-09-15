@@ -267,7 +267,10 @@ export type BehaviorStepDTO =
   | { type: 'schedule'; schedule: { prompt?: string } }
   | { type: 'remember'; remember: { attribute: string; value?: string; mode?: 'set' | 'add' } }
   | { type: 'draw'; draw: { attribute: string; announce?: string; emptyText?: string } }
-  | { type: 'top'; top: { attribute: string; title?: string; limit?: number } };
+  | { type: 'top'; top: { attribute: string; title?: string; limit?: number } }
+  | { type: 'verify_join'; verifyJoin: { chat: string; prompt?: string; buttonText?: string; url?: string } }
+  | { type: 'streak'; streak: { attribute: string } }
+  | { type: 'milestone'; milestone: { attribute: string; value: number; message: string; buttons?: BehaviorButtonDTO[][] } };
 
 export type BehaviorWhenDTO =
   | { type: 'start' }

@@ -142,6 +142,50 @@ export const behaviorTopSchema = z.object({
   limit: z.number().int().min(1).max(20).default(10),
 });
 
+// "Join gate" — verify the user is a member of a public channel/group
+// (@username) before the flow continues. Not a member → the join prompt is
+// sent (with a t.me link) and the flow STOPS; the user re-presses the button
+// after joining. Verification errors fail OPEN (the flow continues) — an
+// API hiccup must never lock people out.
+export const behaviorVerifyJoinSchema = z.object({
+  chat: z
+    .string()
+    .trim()
+    .regex(/^@[a-zA-Z0-9_]{4,64}$/, 'The channel handle looks like @username (a public chat the bot can verify).'),
+  prompt: z
+    .string()
+    .trim()
+    .max(1000)
+    .default('One quick step: join our channel, then tap the button again.'),
+  buttonText: z.string().trim().max(64).default('Join the channel'),
+  // Defaults to https://t.me/<chat> when omitted (public chats only).
+  url: z.string().trim().url().max(256).optional(),
+});
+
+// "Daily streak" — silently maintains a return-streak counter on the user's
+// state: <attribute> = current streak, <attribute>_best = record,
+// <attribute>_date = last active day (UTC). Same-day revisits do not count
+// twice; a missed day resets to 1. Show it with {{streak}} in a message step.
+export const behaviorStreakSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+});
+
+// "Milestone" — when a counter FIRST reaches `value`, announce it (once).
+// Below the bar (or already claimed) the step is silent and the flow simply
+// continues — conditional celebration inside a linear flow.
+export const behaviorMilestoneSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  value: z.number().int().min(1).max(1_000_000),
+  message: z.string().trim().min(1).max(2000),
+  buttons: z.array(behaviorButtonSchema).max(8).optional(),
+});
+
 export const behaviorStepSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('message'),
@@ -178,6 +222,12 @@ export const behaviorStepSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('draw'), draw: behaviorDrawSchema }),
   // Post the leaderboard for a numeric attribute.
   z.object({ type: z.literal('top'), top: behaviorTopSchema }),
+  // Verify the user joined a public channel/group before continuing.
+  z.object({ type: z.literal('verify_join'), verifyJoin: behaviorVerifyJoinSchema }),
+  // Maintain a daily return-streak counter (silent; {{attr}} shows it).
+  z.object({ type: z.literal('streak'), streak: behaviorStreakSchema }),
+  // Announce once when a counter first reaches a value.
+  z.object({ type: z.literal('milestone'), milestone: behaviorMilestoneSchema }),
 ]);
 
 export const behaviorWhenSchema = z.discriminatedUnion('type', [
@@ -360,6 +410,34 @@ function stepsToReplyMessages(
       return {
         text: '',
         top: { attribute: step.top.attribute, title: step.top.title, limit: step.top.limit },
+      };
+    }
+    if (step.type === 'verify_join') {
+      return {
+        text: '',
+        verifyJoin: {
+          chat: step.verifyJoin.chat,
+          prompt: step.verifyJoin.prompt,
+          buttonText: step.verifyJoin.buttonText,
+          url: step.verifyJoin.url ?? `https://t.me/${step.verifyJoin.chat.slice(1)}`,
+        },
+      };
+    }
+    if (step.type === 'streak') {
+      return { text: '', streak: { attribute: step.streak.attribute } };
+    }
+    if (step.type === 'milestone') {
+      const buttons = step.milestone.buttons?.length
+        ? [step.milestone.buttons.map((b, btnIdx) => compileButton(b, behavior, stepIdx, btnIdx, ctx))]
+        : undefined;
+      return {
+        text: '',
+        milestone: {
+          attribute: step.milestone.attribute,
+          value: step.milestone.value,
+          message: step.milestone.message,
+          ...(buttons ? { buttons } : {}),
+        },
       };
     }
     // message step.
@@ -808,6 +886,9 @@ export function describeSteps(steps: BehaviorStep[]): string {
       }
       if (s.type === 'draw') return `draws a winner by ${s.draw.attribute}`;
       if (s.type === 'top') return `leaderboard: top ${s.top.limit} by ${s.top.attribute}`;
+      if (s.type === 'verify_join') return `join gate: ${s.verifyJoin.chat}`;
+      if (s.type === 'streak') return `daily streak on ${s.streak.attribute}`;
+      if (s.type === 'milestone') return `milestone: ${s.milestone.attribute}=${s.milestone.value}`;
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 42 ? `${s.text.slice(0, 42).trimEnd()}…` : s.text;
       return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';

@@ -171,6 +171,41 @@ export const replyTopSchema = z.object({
   limit: z.number().int().min(1).max(20).default(10),
 });
 
+// "Join gate" — verify the user is a member of a public chat before the
+// flow continues; non-members get the prompt + t.me button and the flow
+// pauses (re-press after joining). The pipeline fails open on any error.
+export const replyVerifyJoinSchema = z.object({
+  chat: z
+    .string()
+    .trim()
+    .regex(/^@[a-zA-Z0-9_]{4,64}$/, 'The channel handle looks like @username (a public chat the bot can verify).'),
+  prompt: z.string().trim().max(1000).default('One quick step: join our channel, then tap the button again.'),
+  buttonText: z.string().trim().max(64).default('Join the channel'),
+  url: z.string().trim().url().max(256),
+});
+
+// "Daily streak" — silently maintains <attribute> (current), <attribute>_best
+// (record) and <attribute>_date (UTC day). Show it with {{attribute}}.
+export const replyStreakSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+});
+
+// "Milestone" — the first time a counter reaches `value`, send `message`
+// (with optional buttons) exactly once; the flag <attribute>_m<value> marks
+// the claim. Otherwise the step is silent and the flow just continues.
+export const replyMilestoneSchema = z.object({
+  attribute: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_-]{1,40}$/, 'Attribute names are short slugs (letters, digits, "-", "_")'),
+  value: z.number().int().min(1).max(1_000_000),
+  message: z.string().trim().min(1).max(2000),
+  buttons: z.array(z.array(replyButtonSchema).max(8)).max(8).optional(),
+});
+
 export const replyMessageSchema = z.object({
   text: z.string().trim().max(4000).default(''),
   buttons: z.array(z.array(replyButtonSchema).max(8)).max(8).optional(),
@@ -187,6 +222,9 @@ export const replyMessageSchema = z.object({
   remember: replyRememberSchema.optional(),
   draw: replyDrawSchema.optional(),
   top: replyTopSchema.optional(),
+  verifyJoin: replyVerifyJoinSchema.optional(),
+  streak: replyStreakSchema.optional(),
+  milestone: replyMilestoneSchema.optional(),
   // Edit the pressed button's message in place instead of sending a new one
   // (the idiomatic UX for pagination/settings/carts). Callback turns only.
   edit: z.boolean().optional(),
@@ -236,7 +274,10 @@ export const botReplySchema = z
           m.schedule !== undefined ||
           m.remember !== undefined ||
           m.draw !== undefined ||
-          m.top !== undefined,
+          m.top !== undefined ||
+          m.verifyJoin !== undefined ||
+          m.streak !== undefined ||
+          m.milestone !== undefined,
       ),
     { message: 'Every message step needs text, media, a poll, a payment, or something to ask' },
   );

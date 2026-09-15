@@ -42,7 +42,27 @@ export const OFFICIAL_FLEET: FleetBotSpec[] = [
   { templateId: 'community-hub', botName: 'NURAE Community Bot' },
 ];
 
+/**
+ * Bump when the built-in fleet configurations change: existing fleet rows
+ * are upgraded in place (behaviors + prompt + description) while their
+ * name, Telegram token and AI key are preserved.
+ */
+export const FLEET_TEMPLATE_VERSION = 2;
+
 const pointerKey = (templateId: string) => `official_fleet_${templateId}`;
+
+/** Pointer values are `{ botId, v }` JSON; v1-era pointers were a bare botId. */
+function parsePointer(value: string): { botId: string; v: number } {
+  try {
+    const parsed = JSON.parse(value) as { botId?: unknown; v?: unknown };
+    if (typeof parsed.botId === 'string' && parsed.botId) {
+      return { botId: parsed.botId, v: typeof parsed.v === 'number' ? parsed.v : 1 };
+    }
+  } catch {
+    /* legacy bare-id pointer */
+  }
+  return { botId: value, v: 1 };
+}
 
 /**
  * The platform's own referral code baked into the fleet's growth hooks.
@@ -75,9 +95,39 @@ export async function ensureOfficialFleet(links?: GrowthLinks): Promise<number> 
     for (const spec of OFFICIAL_FLEET) {
       const key = pointerKey(spec.templateId);
       const pointer = await db.siteSetting.findUnique({ where: { key } });
-      if (pointer) {
-        const existing = await db.bot.findUnique({ where: { id: pointer.value }, select: { id: true } });
-        if (existing) continue; // live row — admin edits are never touched
+      const parsed = pointer ? parsePointer(pointer.value) : null;
+      if (parsed) {
+        const existing = await db.bot.findUnique({ where: { id: parsed.botId } });
+        if (existing) {
+          if (parsed.v >= FLEET_TEMPLATE_VERSION) continue; // current — admin edits are never touched
+          // Template drift upgrade: refresh the built configuration, keep the
+          // identity and every secret (name, token, AI key) exactly as-is.
+          const built = buildTemplateBot(spec.templateId, resolved, refCode);
+          if (!built) continue;
+          const compiled = compileBehaviors(built.behaviors);
+          const caps = serializeCapabilities({ commands: compiled.commands, replies: compiled.replies });
+          await db.bot.update({
+            where: { id: existing.id },
+            data: {
+              description: `Official NURAE fleet bot — ${built.description}`,
+              systemPrompt: built.systemPrompt,
+              commandsJson: caps.commandsJson,
+              repliesJson: caps.repliesJson,
+              behaviorsJson: serializeBehaviors(built.behaviors),
+            },
+          });
+          await db.siteSetting.update({ where: { key }, data: { value: JSON.stringify({ botId: existing.id, v: FLEET_TEMPLATE_VERSION }) } });
+          await db.log.create({
+            data: {
+              botId: existing.id,
+              level: 'info',
+              event: 'OFFICIAL_FLEET_UPGRADED',
+              message: `Fleet bot "${existing.name}" upgraded to fleet template v${FLEET_TEMPLATE_VERSION} (growth engine: join gates, streaks, milestones, group automation). Token and keys preserved.`,
+            },
+          });
+          seeded += 1;
+          continue;
+        }
       }
       const built = buildTemplateBot(spec.templateId, resolved, refCode);
       if (!built) continue; // unknown template — catalog drift guard, skip loudly in tests
@@ -103,8 +153,8 @@ export async function ensureOfficialFleet(links?: GrowthLinks): Promise<number> 
       });
       await db.siteSetting.upsert({
         where: { key },
-        update: { value: bot.id },
-        create: { key, value: bot.id },
+        update: { value: JSON.stringify({ botId: bot.id, v: FLEET_TEMPLATE_VERSION }) },
+        create: { key, value: JSON.stringify({ botId: bot.id, v: FLEET_TEMPLATE_VERSION }) },
       });
       await db.log.create({
         data: {
@@ -154,7 +204,7 @@ export async function officialFleetStatus(): Promise<FleetBotStatus[]> {
     };
     const pointer = await db.siteSetting.findUnique({ where: { key: pointerKey(spec.templateId) } });
     const bot = pointer
-      ? await db.bot.findUnique({ where: { id: pointer.value } })
+      ? await db.bot.findUnique({ where: { id: parsePointer(pointer.value).botId } })
       : null;
     if (!bot) {
       out.push({

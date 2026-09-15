@@ -21,6 +21,8 @@ export interface TelegramStubState {
   sends: Array<{ chatId: string; text: string }>;
   /** Scripted AI replies: when non-empty, each chat completion shifts one. */
   aiResponses: string[];
+  /** getChatMember status per user_id ("*" = wildcard default). Default: member. */
+  chatMemberStatus: Record<string, string>;
 }
 
 export const telegramState: TelegramStubState = {
@@ -29,6 +31,7 @@ export const telegramState: TelegramStubState = {
   registry: new Map(),
   sends: [],
   aiResponses: [],
+  chatMemberStatus: {},
 };
 
 let installed = false;
@@ -95,6 +98,11 @@ export function installTelegramStub(): void {
         telegramState.sends.push({ chatId: String(body.chat_id), text: `invoice:${body.payload}:${body.prices?.[0]?.amount ?? 0}` });
         return tgRes({ ok: true, result: { message_id: 4 } });
       }
+      if (method === 'getChatMember') {
+        const key = String(body.user_id ?? '');
+        const status = telegramState.chatMemberStatus[key] ?? telegramState.chatMemberStatus['*'] ?? 'member';
+        return tgRes({ ok: true, result: { status } });
+      }
       if (
         method === 'answerCallbackQuery' ||
         method === 'setMyCommands' ||
@@ -131,4 +139,5 @@ export function resetTelegramStub(): void {
   telegramState.registry.clear();
   telegramState.sends.length = 0;
   telegramState.aiResponses.length = 0;
+  telegramState.chatMemberStatus = {};
 }

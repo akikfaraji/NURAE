@@ -98,14 +98,36 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.05.001-beta-03** — billing: the pay-as-you-use release, now with
-the official bot fleet.
+**NURAE V00.06.000-beta-03** — billing: the pay-as-you-use release, now with
+the official bot fleet as a self-running growth engine.
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**Official bot fleet (new in 05.001) — the built-in bots, seeded to run**
+**The fleet growth engine (new in 06.000) — bots that recruit while you sleep**
+- **Three new behavior primitives** any bot (official or yours) can use:
+  *Join gate* (`verify_join`) — a flow checks channel/group membership via
+  `getChatMember` and stops non-members at a join prompt (fail-open on API
+  errors, so nobody is ever locked out); *Daily streak* (`streak`) — UTC-day
+  return counters with records (`{{streak}}`, `{{streak_best}}`) that reset
+  after a missed day; *Milestone* (`milestone`) — celebrate exactly once
+  when a counter first reaches a value (3/5/10/25 invite tiers, quiz
+  master, …).
+- **All five fleet bots rebuilt as growth machines**: the Referral
+  Ambassador got a 4-tier reward ladder; the Giveaway's entry is now
+  **join-gated** (every entrant must join your public announcements channel
+  — configure `NURAE_CHANNEL_URL` as a `t.me/<name>` link); Trivia and the
+  Community Hub run daily check-in streaks; every fleet bot greets new
+  members in groups and carries one-tap share/referral loops.
+- **Group automation**: the moment a fleet bot is added to a group or
+  channel it arms ONE daily engagement post for that chat (idempotent,
+  posting hour staggered per chat). User-owned bots are never auto-armed.
+- **Fleet template versioning**: fleet rows upgrade in place when the
+  built-in configurations improve — tokens and AI keys always preserved
+  (currently v2).
+
+**Official bot fleet (05.001) — the built-in bots, seeded to run**
 - The five built-in promotion bots now ship as **platform-owned bot rows**
   inside the "NURAE Official" project — NURAE Referral, Giveaway, Trivia,
   Support and Community Bot, seeded next to NURAE CS Bot (idempotent,
@@ -589,4 +611,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.05.001-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.06.000-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

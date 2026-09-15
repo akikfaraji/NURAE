@@ -165,6 +165,28 @@ function attributionLine(links: GrowthLinks, refCode: string): string {
   return `\n\n—\nBuilt with [NURAE](${nuraeReferralLink(links.siteUrl, refCode)}) — make your own bot in minutes.`;
 }
 
+/**
+ * Group greet — when the bot is added to a GROUP and a new member arrives,
+ * greet them publicly and funnel them into the private bot flow (where the
+ * growth mechanics live: streaks, invites, entries). Included by every
+ * template; the public bot username deep-link starts the private chat.
+ */
+function groupGreetBehavior(): BotBehaviorSpec {
+  return {
+    id: 'group_greet',
+    title: 'Greet new group members',
+    when: { type: 'member_joined' },
+    steps: [
+      {
+        type: 'message',
+        text:
+          '👋 Welcome, {{name}}! This group runs on this bot — tap below and press *Start* in the private chat to join the game, the leaderboard and the rewards.',
+        buttons: [{ label: 'Join — press Start', action: { kind: 'link', url: 'https://t.me/{{bot_username}}' } }],
+      },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The five templates
 // ---------------------------------------------------------------------------
@@ -188,10 +210,11 @@ function buildReferralAmbassador(links: GrowthLinks, refCode: string): BuiltTemp
           {
             type: 'message',
             text:
-              'Welcome, {{name}}! 🎁\n\nHere is the deal: every friend who starts this bot through your personal link counts as your invite. Share your link, climb the leaderboard, get noticed.\n\nPick an option below.',
+              'Welcome, {{name}}! 🎁\n\nHere is the deal: every friend who starts this bot through your personal link counts as your invite. Share your link, climb the leaderboard, unlock reward tiers at 3, 5, 10 and 25 invites.\n\nPick an option below.',
             buttons: [
                 { label: 'Get my link', action: { kind: 'flow', behaviorId: 'invite_link' } },
                 { label: 'My invites', action: { kind: 'flow', behaviorId: 'my_invites' } },
+                { label: 'Rewards', action: { kind: 'flow', behaviorId: 'rewards' } },
                 { label: 'Top referrers', action: { kind: 'flow', behaviorId: 'top_referrers' } },
                 { label: 'About NURAE', action: { kind: 'flow', behaviorId: 'nurae_about' } },
               ],
@@ -219,7 +242,7 @@ function buildReferralAmbassador(links: GrowthLinks, refCode: string): BuiltTemp
       },
       {
         id: 'my_invites',
-        title: 'My invite count',
+        title: 'My invite count + reward tiers',
         when: { type: 'button' },
         steps: [
           {
@@ -229,6 +252,58 @@ function buildReferralAmbassador(links: GrowthLinks, refCode: string): BuiltTemp
             buttons: [
                 { label: 'Get my link', action: { kind: 'flow', behaviorId: 'invite_link' } },
                 { label: 'Top referrers', action: { kind: 'flow', behaviorId: 'top_referrers' } },
+              ],
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'invites',
+              value: 3,
+              message:
+                '🏆 Milestone unlocked: **3 invites!** You are officially a grower — the 5-invite tier (featured on the leaderboard) is within reach.',
+            },
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'invites',
+              value: 5,
+              message:
+                '🏆 **5 invites!** You are now featured on the wall of fame. The 10-invite tier comes with the owner’s special reward — keep going.',
+            },
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'invites',
+              value: 10,
+              message:
+                '🏆 **10 invites — elite tier!** The owner has been notified to deliver your special reward. The 25-invite legend tier awaits.',
+            },
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'invites',
+              value: 25,
+              message:
+                '👑 **25 invites — LEGEND.** You are one of the top growth engines of this entire community. The owner owes you a legendary reward.',
+            },
+          },
+        ],
+      },
+      {
+        id: 'rewards',
+        title: 'Reward tiers',
+        when: { type: 'button' },
+        steps: [
+          {
+            type: 'message',
+            text:
+              '🎖 **Reward ladder**\n\n• **3 invites** — Grower title + shoutout\n• **5 invites** — Featured on the wall of fame\n• **10 invites** — Special reward from the team\n• **25 invites** — Legend status, top-priority rewards\n\nYour progress: **{{invites|0}}** invite(s). Milestones unlock automatically the next time you check your invites.',
+            buttons: [
+                { label: 'Get my link', action: { kind: 'flow', behaviorId: 'invite_link' } },
+                { label: 'My invites', action: { kind: 'flow', behaviorId: 'my_invites' } },
               ],
           },
         ],
@@ -262,6 +337,7 @@ function buildReferralAmbassador(links: GrowthLinks, refCode: string): BuiltTemp
           },
         ],
       },
+      groupGreetBehavior(),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -270,6 +346,15 @@ function buildReferralAmbassador(links: GrowthLinks, refCode: string): BuiltTemp
 const GIVEAWAY_SYSTEM_PROMPT =
   'You are the host of a giveaway. You are playful but precise about the rules. ' +
   'You never promise extra entries or change the prize — that is the owner’s call.';
+
+/**
+ * @username of a PUBLIC t.me link (t.me/<name>) — the only form the join
+ * gate can verify. Invite links (t.me/+…) and non-t.me URLs yield null.
+ */
+function publicChannelHandle(url: string | undefined): string | null {
+  const m = /^https?:\/\/t\.me\/([a-zA-Z0-9_]{4,64})\/?$/i.exec((url ?? '').trim());
+  return m ? `@${m[1]}` : null;
+}
 
 function buildGiveaway(links: GrowthLinks, refCode: string): BuiltTemplate {
   const welcomeButtons: BehaviorButton[] = [
@@ -280,6 +365,23 @@ function buildGiveaway(links: GrowthLinks, refCode: string): BuiltTemplate {
     welcomeButtons.push({ label: 'Bonus: join the NURAE community', action: { kind: 'link', url: links.communityUrl } });
   }
   welcomeButtons.push({ label: 'About NURAE', action: { kind: 'flow', behaviorId: 'nurae_about' } });
+  // When the instance runs a public announcements channel, entry is
+  // join-gated: every entrant becomes a channel member. That is the growth
+  // engine of this template — a giveaway that feeds the channel.
+  const channel = publicChannelHandle(links.channelUrl);
+  const gateSteps: BuiltTemplate['behaviors'][number]['steps'] = channel
+    ? [
+        {
+          type: 'verify_join',
+          verifyJoin: {
+            chat: channel,
+            prompt:
+              'To enter, join our announcements channel — winners and future giveaways are announced there first. Tap *Join the channel*, then come back and press *Enter the giveaway* again.',
+            buttonText: 'Join the channel',
+          },
+        },
+      ]
+    : [];
   return {
     name: 'Giveaway Bot',
     description: 'Giveaway bot — one-tap entries, honest counters, live /draw winner announcement.',
@@ -303,11 +405,35 @@ function buildGiveaway(links: GrowthLinks, refCode: string): BuiltTemplate {
         title: 'Enter the giveaway',
         when: { type: 'button' },
         steps: [
+          ...gateSteps,
           { type: 'remember', remember: { attribute: 'entered', value: 'yes', mode: 'set' } },
           {
             type: 'message',
-            text: 'You are in! 🍀 Your entry is locked — one per person. Winners are announced in this chat.',
-            buttons: [{ label: 'Rules', action: { kind: 'flow', behaviorId: 'rules' } }],
+            text:
+              'You are in! 🍀 Your entry is locked — one per person. Winners are announced in this chat and in the announcements channel.' +
+              (channel ? ' Stay in the channel so you never miss the draw.' : ''),
+            buttons: [
+                { label: 'Rules', action: { kind: 'flow', behaviorId: 'rules' } },
+                { label: 'Share the giveaway', action: { kind: 'flow', behaviorId: 'share' } },
+              ],
+          },
+        ],
+      },
+      {
+        id: 'share',
+        title: 'Share the giveaway',
+        when: { type: 'button' },
+        steps: [
+          {
+            type: 'message',
+            text:
+              'More friends, bigger draws — and the owner notices who grows this giveaway. Pass it on: 🙌',
+            buttons: [
+                {
+                  label: 'Copy invite link',
+                  action: { kind: 'copy', text: '🎁 Free giveaway — press Start to enter: https://t.me/{{bot_username}}?start=ref_{{chat_id}}' },
+                },
+              ],
           },
         ],
       },
@@ -340,6 +466,7 @@ function buildGiveaway(links: GrowthLinks, refCode: string): BuiltTemplate {
           },
         ],
       },
+      groupGreetBehavior(),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -361,10 +488,11 @@ function buildDailyTrivia(links: GrowthLinks, refCode: string): BuiltTemplate {
         title: 'Welcome + first question',
         when: { type: 'start' },
         steps: [
+          { type: 'streak', streak: { attribute: 'streak' } },
           {
             type: 'message',
             text:
-              '🧠 Trivia time, {{name}}!\n\nOne question at a time — every correct answer scores a point. Answer by tapping, no typing needed.\n\nRound 1, question 1 is ready.',
+              '🧠 Trivia time, {{name}}!\n\n🔥 Daily streak: **{{streak|1}} day(s)** — come back every day to grow it. Your record: **{{streak_best|1}}**.\n\nOne question at a time — every correct answer scores a point. Answer by tapping, no typing needed.\n\nRound 1, question 1 is ready.',
             buttons: [
                 { label: 'Question 1', action: { kind: 'flow', behaviorId: 'q1' } },
                 { label: 'My score', action: { kind: 'flow', behaviorId: 'my_score' } },
@@ -456,6 +584,24 @@ function buildDailyTrivia(links: GrowthLinks, refCode: string): BuiltTemplate {
                 { label: 'Back to start', action: { kind: 'flow', behaviorId: 'welcome' } },
               ],
           },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'score',
+              value: 5,
+              message:
+                '🏆 **Quiz master unlocked — 5 correct answers!** You now hold *Quiz Master* status. The owner watches this board — keep your crown.',
+            },
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'score',
+              value: 15,
+              message:
+                '👑 **15 correct answers — Trivia Legend!** Very few ever reach this. The owner has been notified.',
+            },
+          },
         ],
       },
       {
@@ -510,6 +656,7 @@ function buildDailyTrivia(links: GrowthLinks, refCode: string): BuiltTemplate {
           },
         ],
       },
+      groupGreetBehavior(),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -539,7 +686,25 @@ function buildSupportFaq(links: GrowthLinks, refCode: string): BuiltTemplate {
             buttons: [
                 { label: 'FAQ', action: { kind: 'flow', behaviorId: 'faq' } },
                 { label: 'Contact the team', action: { kind: 'flow', behaviorId: 'contact' } },
+                { label: 'Share this bot', action: { kind: 'flow', behaviorId: 'share_bot' } },
               { label: 'About NURAE', action: { kind: 'flow', behaviorId: 'nurae_about' } }],
+          },
+        ],
+      },
+      {
+        id: 'share_bot',
+        title: 'Share this bot',
+        when: { type: 'button' },
+        steps: [
+          {
+            type: 'message',
+            text: 'Know someone who needs this? Pass it on — it takes one tap. 🙌',
+            buttons: [
+                {
+                  label: 'Copy invite link',
+                  action: { kind: 'copy', text: 'Check out this bot: https://t.me/{{bot_username}}?start=ref_{{chat_id}}' },
+                },
+              ],
           },
         ],
       },
@@ -621,6 +786,7 @@ function buildSupportFaq(links: GrowthLinks, refCode: string): BuiltTemplate {
         when: { type: 'anything_else' },
         steps: [{ type: 'ai', instruction: 'Answer the user’s question helpfully and briefly.' }],
       },
+      groupGreetBehavior(),
       nuraeAboutBehavior(links, refCode),
     ],
   };
@@ -634,6 +800,7 @@ const HUB_SYSTEM_PROMPT =
 function buildCommunityHub(links: GrowthLinks, refCode: string): BuiltTemplate {
   const welcomeButtons: BehaviorButton[] = [
     { label: 'Announcements', action: { kind: 'flow', behaviorId: 'news' } },
+    { label: 'Invite challenge', action: { kind: 'flow', behaviorId: 'invite_challenge' } },
     { label: 'Share this bot', action: { kind: 'flow', behaviorId: 'share' } },
   ];
   if (links.communityUrl) {
@@ -642,20 +809,63 @@ function buildCommunityHub(links: GrowthLinks, refCode: string): BuiltTemplate {
   welcomeButtons.push({ label: 'About NURAE', action: { kind: 'flow', behaviorId: 'nurae_about' } });
   return {
     name: 'Community Hub',
-    description: 'Announcements hub bot — subscriptions, broadcasts, one-tap sharing with tracked links.',
+    description: 'Announcements hub bot — subscriptions, daily check-in streaks, broadcasts, one-tap sharing with tracked links.',
     systemPrompt: HUB_SYSTEM_PROMPT,
     behaviors: [
       {
         id: 'welcome',
-        title: 'Welcome + subscribe',
+        title: 'Welcome + subscribe + check-in',
         when: { type: 'start' },
         steps: [
           { type: 'remember', remember: { attribute: 'subscribed', value: 'yes', mode: 'set' } },
+          { type: 'streak', streak: { attribute: 'checkin' } },
           {
             type: 'message',
             text:
-              'Welcome to the hub, {{name}} 📣\n\nAnnouncements land here first — you are on the list. Big things are coming; keep notifications on.',
+              'Welcome to the hub, {{name}} 📣\n\nAnnouncements land here first — you are on the list. Big things are coming; keep notifications on.\n\n🔥 Check-in streak: **{{checkin|1}} day(s)** (record: **{{checkin_best|1}}**). Show up daily — the most consistent members get noticed first.',
             buttons: welcomeButtons,
+          },
+        ],
+      },
+      {
+        id: 'invite_challenge',
+        title: 'Invite challenge',
+        when: { type: 'button' },
+        steps: [
+          {
+            type: 'message',
+            text:
+              '🎯 **The invite challenge**\n\nBring friends into this community — every friend who starts this bot through your link counts:\n\n• **3 invites** — Connector title\n• **10 invites** — Community star, featured by the team\n• **25 invites** — Core member status\n\nYour count: **{{invites|0}}**. Milestones unlock automatically when you check here.',
+            buttons: [
+                {
+                  label: 'Copy my invite link',
+                  action: { kind: 'copy', text: 'Join me here — press Start: https://t.me/{{bot_username}}?start=ref_{{chat_id}}' },
+                },
+              ],
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'invites',
+              value: 3,
+              message: '🎯 Milestone: **3 invites — Connector!** The 10-invite star tier is next.',
+            },
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'invites',
+              value: 10,
+              message: '🌟 **10 invites — Community star!** The team will feature you. Core member status at 25.',
+            },
+          },
+          {
+            type: 'milestone',
+            milestone: {
+              attribute: 'invites',
+              value: 25,
+              message: '👑 **25 invites — CORE MEMBER.** You are the engine of this community. The team owes you big.',
+            },
           },
         ],
       },
@@ -692,6 +902,7 @@ function buildCommunityHub(links: GrowthLinks, refCode: string): BuiltTemplate {
           },
         ],
       },
+      groupGreetBehavior(),
       nuraeAboutBehavior(links, refCode),
     ],
   };

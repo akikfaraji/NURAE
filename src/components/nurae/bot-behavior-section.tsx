@@ -86,6 +86,9 @@ function stepsSummary(steps: BehaviorStepDTO[], all: BotBehaviorDTO[]): string {
       }
       if (s.type === 'draw') return `draws a winner by ${s.draw.attribute}`;
       if (s.type === 'top') return `leaderboard by ${s.top.attribute}`;
+      if (s.type === 'verify_join') return `join gate on ${s.verifyJoin.chat}`;
+      if (s.type === 'streak') return `daily streak on ${s.streak.attribute}`;
+      if (s.type === 'milestone') return `milestone ${s.milestone.attribute}=${s.milestone.value}`;
       const btns = s.buttons?.length ? ` + ${s.buttons.length} button${s.buttons.length === 1 ? '' : 's'}` : '';
       const excerpt = s.text.length > 48 ? `${s.text.slice(0, 48).trimEnd()}…` : s.text;
       return excerpt ? `“${excerpt}”${btns}` : btns || 'a screen';
@@ -537,7 +540,13 @@ function BehaviorEditor({
                                   ? 'Draw a winner'
                                   : step.type === 'top'
                                     ? 'Leaderboard'
-                                    : 'Set a reminder'}
+                                    : step.type === 'verify_join'
+                                      ? 'Join gate (channel check)'
+                                      : step.type === 'streak'
+                                        ? 'Daily streak (silent)'
+                                        : step.type === 'milestone'
+                                          ? 'Milestone (celebrate once)'
+                                          : 'Set a reminder'}
                 </span>
                 <button
                   type="button"
@@ -918,6 +927,15 @@ function BehaviorEditor({
                   </div>
                   <p className="text-[11px] text-muted-foreground">Posts the top users ranked by that attribute (numbers only).</p>
                 </div>
+              ) : step.type === 'verify_join' || step.type === 'streak' || step.type === 'milestone' ? (
+                <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  {step.type === 'verify_join'
+                    ? `Join gate — the flow continues only after the user joins ${step.verifyJoin.chat}. Non-members get a join link and can retry.`
+                    : step.type === 'streak'
+                      ? `Daily streak — maintains the "${step.streak.attribute}" counter (+ its best record) once per UTC day. Show it with {{${step.streak.attribute}}}.`
+                      : `Milestone — when "${step.milestone.attribute}" first reaches ${step.milestone.value}, sends once: “${step.milestone.message.slice(0, 80)}${step.milestone.message.length > 80 ? '…' : ''}”`}
+                  {' '}Managed by NURAE — shown read-only here so it cannot be broken by edits.
+                </p>
               ) : (
                 <>
                   <Textarea

@@ -63,12 +63,19 @@ async function fleetBotRows() {
 
 async function wipeFleet(): Promise<void> {
   // Remove fleet pointers + their bot rows (CS bot has its own pointer key
-  // and is never touched).
+  // and is never touched). Pointer values are JSON {botId,v}; v1-era values
+  // were a bare botId — handle both.
   for (const spec of OFFICIAL_FLEET) {
     const key = `official_fleet_${spec.templateId}`;
     const pointer = await db.siteSetting.findUnique({ where: { key } });
     if (pointer) {
-      await db.bot.deleteMany({ where: { id: pointer.value } });
+      let botId = pointer.value;
+      try {
+        botId = (JSON.parse(pointer.value) as { botId?: string }).botId ?? pointer.value;
+      } catch {
+        /* legacy bare id */
+      }
+      await db.bot.deleteMany({ where: { id: botId } });
       await db.siteSetting.delete({ where: { key } });
     }
   }
@@ -131,15 +138,15 @@ describe('official fleet seeding', () => {
     const { rows } = await fleetBotRows();
     const giveaway = rows.find((r) => r.name === 'NURAE Giveaway Bot')!;
     const oldPointer = await db.siteSetting.findUnique({ where: { key: 'official_fleet_giveaway' } });
-    expect(oldPointer?.value).toBe(giveaway.id);
+    expect(JSON.parse(oldPointer!.value)).toMatchObject({ botId: giveaway.id });
 
     await db.bot.delete({ where: { id: giveaway.id } });
     const seeded = await ensureOfficialFleet(LINKS);
     expect(seeded).toBe(1);
 
     const newPointer = await db.siteSetting.findUnique({ where: { key: 'official_fleet_giveaway' } });
-    expect(newPointer?.value).not.toBe(giveaway.id);
-    const recreated = await db.bot.findUnique({ where: { id: newPointer!.value } });
+    expect(JSON.parse(newPointer!.value).botId).not.toBe(giveaway.id);
+    const recreated = await db.bot.findUnique({ where: { id: JSON.parse(newPointer!.value).botId } });
     expect(recreated?.name).toBe('NURAE Giveaway Bot');
     expect(loadBehaviors(recreated!).some((b) => b.id === 'nurae_about')).toBe(true);
 
@@ -174,6 +181,33 @@ describe('official fleet seeding', () => {
     } finally {
       restore();
     }
+  });
+
+  test('v1 fleet rows auto-upgrade to the current template (secrets preserved)', async () => {
+    // Simulate a v1-era fleet row: current pointer format is JSON {botId,v},
+    // v1 pointers were a bare botId. Set a token to prove it survives.
+    const { rows } = await fleetBotRows();
+    const trivia = rows.find((r) => r.name === 'NURAE Trivia Bot')!;
+    await db.bot.update({
+      where: { id: trivia.id },
+      data: { telegramTokenRef: 'v1:test:encrypted', systemPrompt: 'v1 prompt' },
+    });
+    await db.siteSetting.update({
+      where: { key: 'official_fleet_daily-trivia' },
+      data: { value: trivia.id }, // legacy bare-id pointer → parsed as v1
+    });
+
+    const changed = await ensureOfficialFleet(LINKS);
+    expect(changed).toBe(1); // one row upgraded (the other four are current)
+
+    const upgraded = await db.bot.findUnique({ where: { id: trivia.id } });
+    expect(upgraded?.telegramTokenRef).toBe('v1:test:encrypted'); // secret kept
+    expect(upgraded?.systemPrompt).not.toBe('v1 prompt'); // config refreshed
+    const behaviors = loadBehaviors(upgraded!);
+    expect(behaviors.some((b) => b.when.type === 'start' && b.steps.some((s) => s.type === 'streak'))).toBe(true);
+    expect(behaviors.some((b) => b.id === 'group_greet')).toBe(true);
+    const pointer = await db.siteSetting.findUnique({ where: { key: 'official_fleet_daily-trivia' } });
+    expect(JSON.parse(pointer!.value)).toMatchObject({ botId: trivia.id, v: 2 });
   });
 
   test('officialFleetStatus lists five entries with no secrets', async () => {

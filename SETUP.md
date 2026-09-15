@@ -138,7 +138,7 @@ npm run start      # launcher: loads .env, pins the data root, then serves; hono
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.05.001-beta-03",...}`
+`{"status":"ok","version":"V00.06.000-beta-03",...}`
 
 > **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
 > silently open a build-time SNAPSHOT of your database (bots worked in dev, died in
@@ -164,6 +164,12 @@ Telegram, take the **bot token** (`123456:ABC-...`). Then on the dashboard:
 > see the "NURAE bot fleet" card on the dashboard. Same recipe: open the bot
 > from the card, paste a token from @BotFather, start. Fleet bots are
 > platform-owned and run unmetered.
+>
+> **They grow on their own:** add a fleet bot to a group/channel and it arms
+> a daily engagement post automatically; giveaway entries can require
+> joining your public channel (set `NURAE_CHANNEL_URL` to a `t.me/<name>`
+> link); streaks, invite milestones and share loops are built in. Fleet
+> configurations upgrade in place with each release — your tokens stay.
 
 ### 5.1 Polling mode — zero public URL (best for local/Termux testing)
 

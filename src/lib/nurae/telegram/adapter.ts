@@ -322,6 +322,27 @@ export class TelegramAdapter {
     return this.call<TelegramBotInfo>('getMe', undefined, opts);
   }
 
+  /**
+   * Membership status of a user in a chat (getChatMember) — one of
+   * creator | administrator | member | restricted | left | kicked.
+   * Powers join-gate behaviors: the bot verifies a user joined the
+   * configured channel/group before continuing a flow. Requires the bot
+   * to be a member/admin of the target chat; Telegram returns an error
+   * otherwise (callers treat any failure as fail-open).
+   */
+  async getChatMember(
+    chatRef: string,
+    userId: number,
+    opts?: { signal?: AbortSignal },
+  ): Promise<string> {
+    const res = await this.call<{ status?: string }>(
+      'getChatMember',
+      { chat_id: chatRef, user_id: userId },
+      opts,
+    );
+    return res.status ?? 'left';
+  }
+
   /** Remove any active webhook so getUpdates can run (avoids 409). */
   async deleteWebhook(opts?: { signal?: AbortSignal }): Promise<void> {
     await this.call<boolean>('deleteWebhook', { drop_pending_updates: false }, opts);

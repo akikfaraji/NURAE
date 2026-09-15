@@ -107,6 +107,12 @@ export function meteredSender(inner: MessageSender, opts: MeteredSenderOptions):
       await innerFn(chatId, messageId, text, sendOpts);
     };
   }
+  if (inner.getChatMember) {
+    // Read-only membership check (join gates) — not a message, never metered.
+    const innerFn = inner.getChatMember.bind(inner);
+    sender.getChatMember = (chatRef: string, userId: number, checkOpts?: { signal?: AbortSignal }) =>
+      innerFn(chatRef, userId, checkOpts);
+  }
 
   return sender;
 }

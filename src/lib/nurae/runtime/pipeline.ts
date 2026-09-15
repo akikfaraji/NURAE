@@ -57,6 +57,8 @@ export interface MessageSender {
   answerPreCheckoutQuery?(queryId: string, ok: boolean, opts?: { errorMessage?: string; signal?: AbortSignal }): Promise<void>;
   answerInlineQuery?(queryId: string, results: InlineQueryResult[], opts?: { cacheTime?: number; isPersonal?: boolean; signal?: AbortSignal }): Promise<void>;
   editMessageText?(chatId: number | string, messageId: number, text: string, opts?: SendOptions): Promise<void>;
+  /** Membership status of userId in a public chat (@username) — join gates. Fail-open if absent. */
+  getChatMember?(chatRef: string, userId: number, opts?: { signal?: AbortSignal }): Promise<string>;
 }
 
 /** Captured outbound traffic — powers the /bots Preview console. */
@@ -986,14 +988,56 @@ async function handleMyChatMember(
   const mcm = update.my_chat_member!;
   const status = mcm.new_chat_member?.status ?? 'unknown';
   const chatId = String(mcm.chat?.id ?? 0);
+  const chatType = mcm.chat?.type ?? '';
   if (status === 'kicked') {
     await store.createLog(bot.id, 'info', `The bot was blocked by chat ${chatId}.`, 'BOT_BLOCKED');
   } else if (status === 'member' || status === 'administrator') {
     await store.createLog(bot.id, 'info', `The bot was added to chat ${chatId} as ${status}.`, 'BOT_ADDED');
+    // Official fleet automation: the moment a platform bot lands in a
+    // group/channel it arms ONE daily engagement post for that chat, so the
+    // bot keeps the room alive with zero admin effort. Idempotent per chat;
+    // user-owned bots are never auto-armed (their owners opt in manually).
+    if (!bot.ownerId && chatId && chatId !== '0' && chatType !== 'private') {
+      try {
+        await ensureChatAutomation(bot, chatId, store);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        await store.createLog(bot.id, 'warn', `Fleet automation arming failed for chat ${chatId}: ${detail}`, 'AUTOMATION_ERROR');
+      }
+    }
   } else {
     await store.createLog(bot.id, 'info', `Bot status in chat ${chatId}: ${status}.`, 'BOT_STATUS_CHANGED');
   }
   void sender;
+}
+
+/**
+ * Arm the daily engagement post for one chat (idempotent: skipped when any
+ * pending daily schedule already exists for this bot+chat). The posting hour
+ * is derived from the chat id so a fleet spread over many groups posts
+ * around the clock instead of all at 09:00:00 sharp.
+ */
+async function ensureChatAutomation(bot: RuntimeBotRecord, chatId: string, store: RuntimeStore): Promise<void> {
+  const existing = await store.listSchedules(bot.id).catch(() => []);
+  if (existing.some((s) => s.chatId === chatId && s.recurrence === 'daily' && s.status === 'pending')) return;
+  const chatKey = Number.isFinite(Number(chatId)) ? BigInt(chatId) : BigInt(0);
+  const hour = Number(chatKey % BigInt(24));
+  const runAt = new Date();
+  runAt.setUTCHours(hour, 0, 0, 0);
+  if (runAt.getTime() <= Date.now()) runAt.setUTCDate(runAt.getUTCDate() + 1);
+  const text = [
+    `🔥 *Daily round with ${bot.name}*`,
+    '',
+    'New here? Press *Start* on the bot to join the game and the leaderboard.',
+    "Regulars: bring one friend today — share your personal invite link. That's how this community grows (and how you win it).",
+  ].join('\n');
+  await store.createSchedule({ botId: bot.id, chatId, text, runAt, recurrence: 'daily', createdBy: null });
+  await store.createLog(
+    bot.id,
+    'info',
+    `Fleet automation armed for chat ${chatId}: daily engagement post at ${String(hour).padStart(2, '0')}:00 UTC.`,
+    'AUTOMATION_ARMED',
+  );
 }
 
 async function handlePollAnswer(
@@ -1272,6 +1316,9 @@ interface ReplyMessage {
   remember?: { attribute: string; value: string; mode: 'set' | 'add' };
   draw?: { attribute: string; announce: string; emptyText: string };
   top?: { attribute: string; title: string; limit: number };
+  verifyJoin?: { chat: string; prompt: string; buttonText: string; url: string };
+  streak?: { attribute: string };
+  milestone?: { attribute: string; value: number; message: string; buttons?: OutboundButtons };
   edit?: boolean;
   keyboard?: 'reply' | 'inline' | 'none';
   forceReply?: boolean;
@@ -1505,6 +1552,85 @@ async function executeReplyMessages(
         : `${message.top.title}\n\nNo entries yet.`;
       await sendMarkdownReply(bot, sender, ctx, [{ text }], store, signal);
       await store.createLog(bot.id, 'info', `Leaderboard "${message.top.attribute}" posted (${ranked.length} row(s)).`, 'TOP_POSTED');
+      continue;
+    }
+
+    // Join gate: verify the user is in the target public chat before the
+    // flow continues. Not a member → join prompt + STOP (re-press after
+    // joining). No verifier / check failed / non-numeric chat → fail OPEN.
+    if (message.verifyJoin) {
+      const gate = message.verifyJoin;
+      const userId = Number(ctx.chatId);
+      let member = true;
+      let checked = false;
+      if (sender.getChatMember && Number.isFinite(userId)) {
+        try {
+          const status = await sender.getChatMember(gate.chat, userId, { signal: signal ?? undefined });
+          member = ['creator', 'administrator', 'member', 'restricted'].includes(status);
+          checked = true;
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          await store.createLog(bot.id, 'warn', `Join-gate check against ${gate.chat} failed (fail-open): ${detail}`, 'VERIFY_JOIN_ERROR');
+        }
+      }
+      if (checked && !member) {
+        await store.createLog(bot.id, 'info', `Join gate ${gate.chat}: chat ${ctx.chatId} is not a member — flow paused at the gate.`, 'VERIFY_JOIN_GATE');
+        await sendMarkdownReply(
+          bot,
+          sender,
+          ctx,
+          [{ text: gate.prompt, buttons: [[{ text: gate.buttonText, url: gate.url }]] }],
+          store,
+          signal,
+        );
+        return; // flow stops here — the user re-presses the button after joining
+      }
+      if (checked) {
+        await store.createLog(bot.id, 'info', `Join gate ${gate.chat}: chat ${ctx.chatId} is a member — flow continues.`, 'VERIFY_JOIN_PASS');
+      }
+      continue;
+    }
+
+    // Daily streak: silently maintain <attr>, <attr>_best, <attr>_date (UTC
+    // days). Same-day revisits never double-count; a missed day resets to 1.
+    if (message.streak) {
+      const attr = message.streak.attribute;
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+      const last = st.attributes[`${attr}_date`];
+      let current: number;
+      if (last === today) {
+        current = Number(st.attributes[attr] ?? 1);
+      } else if (last === yesterday) {
+        const prev = Number(st.attributes[attr] ?? 0);
+        current = (Number.isFinite(prev) ? prev : 0) + 1;
+      } else {
+        current = 1;
+      }
+      const best = Math.max(current, Number(st.attributes[`${attr}_best`] ?? 0) || 0);
+      st.attributes[attr] = String(current);
+      st.attributes[`${attr}_best`] = String(best);
+      st.attributes[`${attr}_date`] = today;
+      await patchState(store, bot.id, ctx.chatId, {
+        attributes: { [attr]: String(current), [`${attr}_best`]: String(best), [`${attr}_date`]: today },
+        touch: true,
+      });
+      continue;
+    }
+
+    // Milestone: the FIRST time a counter reaches `value`, announce it (once
+    // — a flag attribute records the claim). Otherwise silent.
+    if (message.milestone) {
+      const { attribute, value, message: celebrate } = message.milestone;
+      const current = Number(st.attributes[attribute] ?? 0);
+      const flag = `${attribute}_m${value}`;
+      if (Number.isFinite(current) && current >= value && !st.attributes[flag]) {
+        st.attributes[flag] = '1';
+        await patchState(store, bot.id, ctx.chatId, { attributes: { [flag]: '1' }, touch: true });
+        const buttons = templateButtons(message.milestone.buttons, st, ctx);
+        await sendMarkdownReply(bot, sender, ctx, [{ text: celebrate, ...(buttons ? { buttons } : {}) }], store, signal);
+        await store.createLog(bot.id, 'info', `Milestone ${attribute}>=${value} reached by chat ${ctx.chatId} — announced.`, 'MILESTONE_HIT');
+      }
       continue;
     }
 
