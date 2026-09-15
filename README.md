@@ -104,21 +104,52 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.08.001-beta-03** — a full UI fix + polish pass over every surface
-(no new features): three real UI bugs fixed, touch support repaired, one
-consistent radius/focus/color language across all 22 components, and the
-console header usable on phones. The underlying release remains the real
-agent system: the Operator runs the platform for the admin, the Bot Builder
-codes bots from the full DSL, and the tool registry is machine-discoverable
-(`/api/agents/tools`, `llms.txt`). The fleet already works together, promotes
-NURAE in your groups, invites over email (consent-first), and plans ride on
-top of pay-as-you-use.
+**NURAE V00.08.002-beta-03** — the live-testing bug round (no new features):
+the chat and agent pages now open your history directly instead of a blank
+default, phones see exactly ONE menu button per screen, every bot has honest
+**Run / Stop / Restart** controls (restart re-registers the Telegram webhook),
+and a bot can no longer be muted wholesale by one malformed saved rule — a
+long-standing silent killer of buttons and replies. The underlying release
+remains the real agent system: the Operator runs the platform for the admin,
+the Bot Builder codes bots from the full DSL, and the tool registry is
+machine-discoverable (`/api/agents/tools`, `llms.txt`).
 
 > «Users describe what they want. NURAE figures out how to build it.»
 
 ### IMPLEMENTED
 
-**UI fix + polish pass (new in 08.001)**
+**Live-testing bug round (new in 08.002)**
+- **Chat history opens itself**: landing on `/chats` (or `/chats/agents`)
+  with previous conversations now opens the most recent one immediately —
+  the empty "new chat" state is only for first-time users or an explicit
+  "+ New chat". No more clicking through defaults to find your own history.
+- **One menu button per screen**: the site header's hamburger and the chat's
+  own `☰ Chats` trigger stacked on phones (two menus, one screen). Chat
+  surfaces now render the single drawer trigger; the drawer carries the
+  session list plus the site navigation (Agents · Bots · Featured · Billing ·
+  Help), and the trigger is reachable on the empty state too.
+- **Run / Stop / Restart for every bot**: the bot page's only lifecycle
+  control was Publish — jargon for "start", with no stop-in-place and no
+  restart at all. The header now shows **Run** (not running), and
+  **Stop + Restart** while running. Restart is the honest "something is off"
+  button: it reloads the compiled configuration and re-registers the Telegram
+  webhook (new secret, current `allowed_updates`) — the fix for stale
+  button wiring after platform updates. Ships as
+  `POST /api/my/bots/[id]/restart` (ownership-checked).
+- **BR-022 — bots muted wholesale by one bad rule (fixed)**: `loadCapabilities`
+  parsed the whole saved configuration all-or-nothing; a single reply that no
+  longer matched the schema (e.g. written by an older compiler) emptied
+  **every** reply — no /start, no buttons, silent bot. The loader is now
+  per-rule: invalid rules are dropped, valid ones keep running.
+- **Actionable dead-button toast**: pressing a button whose rule no longer
+  exists now says so *and* how to recover ("send /start to get fresh
+  buttons") instead of a dead end.
+- Verified end-to-end: a production-mirror reproduction (real compiler →
+  real store → real adapter → real webhook ingestion) confirms buttons render
+  in `reply_markup`, presses answer via `answerCallbackQuery`, and button
+  replies send — the round-trip the e2e harness had never covered.
+
+**UI fix + polish pass (08.001)**
 - **Three real bugs fixed**: the active log-filter chip was white-on-white
   (`bg-foreground text-white` → unreadable), the Errors KPI's red accent was
   dead code (the StatCard prop was accepted but never applied), and 15+
@@ -711,4 +742,4 @@ bots specific instead of generic:
 
 ---
 
-NURAE V00.08.001-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System
+NURAE V00.08.002-beta-03 · FRAZIYM TECH & AI · Autonomous Digital Operations System

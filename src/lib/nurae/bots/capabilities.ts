@@ -333,7 +333,13 @@ export function serializeCapabilities(caps: Partial<BotCapabilities>): {
   };
 }
 
-/** Load + validate capabilities from a Bot row. Corrupt rows degrade to empty. */
+/**
+ * Load + validate capabilities from a Bot row. Resilience contract: ONE
+ * invalid rule (e.g. a button written by an older compiler whose shape today's
+ * schema rejects) is dropped — it can NEVER take the whole bot's replies down
+ * with it (an all-or-nothing parse muted entire bots: no /start, no buttons).
+ * Corrupt JSON degrades to empty the same way as before.
+ */
 export function loadCapabilities(row: {
   commandsJson: string | null;
   repliesJson: string | null;
@@ -341,12 +347,28 @@ export function loadCapabilities(row: {
   let commands: BotCommandSpec[] = [];
   let replies: BotReplySpec[] = [];
   try {
-    if (row.commandsJson) commands = botCommandsSchema.parse(JSON.parse(row.commandsJson));
+    if (row.commandsJson) {
+      const raw: unknown = JSON.parse(row.commandsJson);
+      if (Array.isArray(raw)) {
+        for (const item of raw) {
+          const parsed = botCommandSchema.safeParse(item);
+          if (parsed.success) commands.push(parsed.data);
+        }
+      }
+    }
   } catch {
     commands = [];
   }
   try {
-    if (row.repliesJson) replies = botRepliesSchema.parse(JSON.parse(row.repliesJson));
+    if (row.repliesJson) {
+      const raw: unknown = JSON.parse(row.repliesJson);
+      if (Array.isArray(raw)) {
+        for (const item of raw) {
+          const parsed = botReplySchema.safeParse(item);
+          if (parsed.success) replies.push(parsed.data);
+        }
+      }
+    }
   } catch {
     replies = [];
   }

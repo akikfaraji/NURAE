@@ -1087,7 +1087,12 @@ export async function handleBotCallback(
       `Button press with unknown callback data "${cb.data.slice(0, 64)}" (chat ${cb.chatId}).`,
       'BUTTON_UNKNOWN',
     );
-    await answerSafely(bot.id, sender, cb.callbackId, 'This button is no longer wired up.');
+    await answerSafely(
+      bot.id,
+      sender,
+      cb.callbackId,
+      'This button is no longer wired up. If the bot was edited recently, send /start to get fresh buttons.',
+    );
     return;
   }
 

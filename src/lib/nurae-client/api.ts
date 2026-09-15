@@ -655,6 +655,8 @@ export const nuraeApi = {
     api<{ bot: UserBotDTO }>(`/api/my/bots/${id}/publish`, { method: 'POST', body: JSON.stringify({ confirm: true }) }),
   unpublishMyBot: (id: string) =>
     api<{ bot: UserBotDTO }>(`/api/my/bots/${id}/publish`, { method: 'DELETE' }),
+  restartMyBot: (id: string) =>
+    api<{ bot: UserBotDTO }>(`/api/my/bots/${id}/restart`, { method: 'POST' }),
   testMyBot: (id: string, input: { text?: string; callback?: string }) =>
     api<{ sends: CapturedSendDTO[]; error: string | null }>(`/api/my/bots/${id}/test`, {
       method: 'POST',

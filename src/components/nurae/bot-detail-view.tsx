@@ -4,7 +4,7 @@
  * NURAE — /bots/[id]: one bot, end to end.
  *
  * Sections (Behavior is the primary surface — the technical layer is underneath):
- *   header row    name · status · publish / unpublish
+ *   header row    name · status · run / stop / restart (run = go live)
  *   behavior      what the bot does, in plain language (the source of truth)
  *   preview       a REAL pipeline turn — exactly what Telegram will deliver
  *   configuration identity + AI settings (token/key write-only)
@@ -115,7 +115,21 @@ export function BotDetailView() {
       await nuraeApi.unpublishMyBot(botId);
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unpublish failed.');
+      setError(err instanceof ApiError ? err.message : 'Stop failed.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restart = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await nuraeApi.restartMyBot(botId);
+      await load();
+      setSavedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Restart failed.');
     } finally {
       setSaving(false);
     }
@@ -190,14 +204,36 @@ export function BotDetailView() {
             {bot.status}
             {bot.telegramUsername ? ` · ${bot.telegramUsername}` : ''}
           </span>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {bot.status === 'running' ? (
-              <Button size="sm" variant="outline" disabled={saving} onClick={() => void unpublish()}>
-                Unpublish
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={saving}
+                  title="Stop the bot — it stops answering on Telegram until you run it again"
+                  onClick={() => void unpublish()}
+                >
+                  Stop
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={saving}
+                  title="Restart — reloads the bot's configuration and re-registers the Telegram webhook"
+                  onClick={() => void restart()}
+                >
+                  {saving ? '…' : 'Restart'}
+                </Button>
+              </>
             ) : (
-              <Button size="sm" disabled={saving} onClick={() => void publish()}>
-                Publish
+              <Button
+                size="sm"
+                disabled={saving}
+                title="Put the bot live on Telegram — it starts answering right away"
+                onClick={() => void publish()}
+              >
+                {saving ? '…' : bot.status === 'stopped' || bot.status === 'error' ? 'Run' : 'Publish'}
               </Button>
             )}
           </div>

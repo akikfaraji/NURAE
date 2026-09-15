@@ -147,6 +147,37 @@ describe('bot capabilities', () => {
     const loaded = loadCapabilities({ commandsJson: '{not json', repliesJson: '[broken' });
     expect(loaded).toEqual({ commands: [], replies: [] });
   });
+
+  test('one invalid reply is dropped — valid replies keep working (BR-022)', () => {
+    // A bot row written across versions: the middle reply has a button without
+    // any action (today's schema rejects it). The all-or-nothing loader of
+    // pre-08.002 muted the WHOLE bot — /start, buttons, everything.
+    const valid = {
+      id: 'r1',
+      name: 'Start',
+      trigger: { type: 'command', value: '/start' },
+      messages: [{ text: 'Hi!', buttons: [[{ text: 'More', callback: 'r:more' }]] }],
+    };
+    const invalid = {
+      id: 'r2',
+      name: 'Broken',
+      trigger: { type: 'button', value: 'r:legacy' },
+      messages: [{ text: 'Broken rule', buttons: [[{ text: 'Dead' }]] }],
+    };
+    const loaded = loadCapabilities({
+      commandsJson: null,
+      repliesJson: JSON.stringify([valid, invalid]),
+    });
+    expect(loaded.replies).toHaveLength(1);
+    expect(loaded.replies[0].id).toBe('r1');
+    // A single valid command survives a broken sibling too.
+    const okCmd = { command: '/start2', description: 'works', kind: 'static', response: 'hey' };
+    const loadedCmds = loadCapabilities({
+      commandsJson: JSON.stringify([okCmd, { command: 'nope', description: '' }]),
+      repliesJson: null,
+    });
+    expect(loadedCmds.commands).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -638,6 +669,38 @@ describe('user-owned bots', () => {
     const bad = await createUserBot(owner.id, { name: 'Bad Token', telegramToken: 'not-a-token' });
     expect(bad.error).toMatch(/Validation failed/);
     expect(bad.fields?.telegramToken).toBeTruthy();
+  });
+
+  test('restart lifecycle stops + starts in one call and re-registers the webhook (BR-022)', async () => {
+    const owner = await makeUser();
+    const created = await createUserBot(owner.id, {
+      name: 'Restart Bot',
+      telegramToken: '1234567890:AAValidFormatTokenForTesting1234',
+      commands: [{ command: '/ping', description: 'ping', kind: 'static', response: 'pong' }],
+    });
+    const botId = created.bot!.id;
+
+    // 127.0.0.1 is webhook-eligible with the API-base override in place, so
+    // the restart actually registers against the stub (as production would).
+    process.env.NURAE_PUBLIC_BASE_URL = TELEGRAM_STUB_BASE;
+    try {
+      const restarted = await userBotLifecycle(owner.id, botId, 'restart', TELEGRAM_STUB_BASE);
+      expect(restarted.ok).toBe(true);
+      if (restarted.ok) expect(restarted.status).toBe('running');
+      const row = await db.bot.findUnique({ where: { id: botId } });
+      expect(row?.status).toBe('running');
+      expect(row?.webhookSecretRef).toBeTruthy();
+      // setWebhook hit the stub with the current allowed_updates (callbacks).
+      const registration = telegramState.registry.get('1234567890:AAValidFormatTokenForTesting1234');
+      expect(registration?.url).toContain(`/api/telegram/webhook/${botId}`);
+
+      // Foreign owners cannot restart a bot they do not own.
+      const stranger = await makeUser();
+      const foreign = await userBotLifecycle(stranger.id, botId, 'restart', TELEGRAM_STUB_BASE);
+      expect(foreign.ok).toBe(false);
+    } finally {
+      process.env.NURAE_PUBLIC_BASE_URL = '';
+    }
   });
 
   test('test console runs the REAL pipeline: custom commands, buttons, and AI turns', async () => {

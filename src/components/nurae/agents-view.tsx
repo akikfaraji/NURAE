@@ -48,6 +48,7 @@ export function AgentsView() {
   const taskSentRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const autoOpenedRef = useRef<string | null>(null);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -63,6 +64,17 @@ export function AgentsView() {
       if (user) await refreshSessions();
     })();
   }, [user, refreshSessions]);
+
+  // Landing on /chats/agents with no build selected opens the most recent one —
+  // the empty state is for first-time users (or an explicit "+ New build").
+  // Skipped when a ?task= deep link is about to start a fresh build.
+  useEffect(() => {
+    if (!user || taskParam || activeId || !sessions.length) return;
+    if (autoOpenedRef.current === user.id) return;
+    autoOpenedRef.current = user.id;
+    setActiveId(sessions[0].id);
+    router.replace(`/chats/agents?session=${sessions[0].id}`);
+  }, [user, taskParam, activeId, sessions, router]);
 
   const loadSession = useCallback(async (id: string) => {
     setError(null);
@@ -273,7 +285,7 @@ export function AgentsView() {
 
   return (
     <div className="flex h-dvh flex-col bg-background">
-      <SiteHeader user={user} onSignOut={signOut} />
+      <SiteHeader user={user} onSignOut={signOut} hideMobileMenu />
 
       <div className="flex min-h-0 flex-1">
         {/* Sessions */}
@@ -328,9 +340,52 @@ export function AgentsView() {
                   onDelete={deleteSession}
                   onArchive={archiveSession}
                 />
+                <nav className="mt-auto flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border/60 p-3" aria-label="Site">
+                  {[
+                    { href: '/chats', label: 'Chats' },
+                    { href: '/bots', label: 'Bots' },
+                    { href: '/featured', label: 'Featured' },
+                    { href: '/billing', label: 'Billing' },
+                    { href: '/help', label: 'Help' },
+                  ].map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setDrawerOpen(false)}
+                      className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </nav>
               </div>
             </div>
           )}
+
+          {/* One slim top bar, shared by the empty state and open builds — the
+              drawer trigger inside it is the ONLY menu button on phones. */}
+          <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 sm:px-6">
+            <button
+              type="button"
+              aria-label="Open builds"
+              onClick={() => setDrawerOpen(true)}
+              className="-ml-1 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground md:hidden"
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                <path d="M1 3.5h14M1 8h14M1 12.5h14" stroke="currentColor" strokeWidth="1.2" />
+              </svg>
+            </button>
+            <span className="truncate text-xs uppercase tracking-widest text-muted-foreground">
+              Bot Builder agent
+            </span>
+            {draftBotId ? (
+              <Link href={`/bots/${draftBotId}`} className="text-xs text-foreground underline-offset-4 hover:underline">
+                Open bot →
+              </Link>
+            ) : (
+              <span className="w-px" aria-hidden />
+            )}
+          </div>
 
           {!activeId ? (
             <EmptyAgent
@@ -339,24 +394,6 @@ export function AgentsView() {
             />
           ) : (
             <>
-              <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 sm:px-6">
-                <button
-                  type="button"
-                  onClick={() => setDrawerOpen(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground md:hidden"
-                >
-                  ☰ Builds
-                </button>
-                <span className="truncate text-xs uppercase tracking-widest text-muted-foreground">
-                  Bot Builder agent
-                </span>
-                {draftBotId && (
-                  <Link href={`/bots/${draftBotId}`} className="text-xs text-foreground underline-offset-4 hover:underline">
-                    Open bot →
-                  </Link>
-                )}
-              </div>
-
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
                   {entries.map((m) => (

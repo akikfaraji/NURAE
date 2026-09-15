@@ -223,11 +223,15 @@ export function SiteHeader({
   user,
   onSignOut,
   variant = 'app',
+  hideMobileMenu = false,
 }: {
   user: SessionUserDTO | null;
   onSignOut?: () => void;
   /** "app" shows the product nav; "public" shows Home/Help/About. */
   variant?: 'app' | 'public';
+  /** Chat surfaces render their own single session-drawer trigger — the
+   * header hamburger would stack a SECOND menu button on the same screen. */
+  hideMobileMenu?: boolean;
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -239,14 +243,16 @@ export function SiteHeader({
       <div className="mx-auto flex h-12 max-w-6xl items-center gap-4 px-4 sm:px-6">
         {/* Mobile menu */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetTrigger
-            aria-label="Open menu"
-            className="-ml-1 flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground sm:hidden"
-          >
-            <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
-              <path d="M1 3.5h14M1 8h14M1 12.5h14" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
-          </SheetTrigger>
+          {!hideMobileMenu && (
+            <SheetTrigger
+              aria-label="Open menu"
+              className="-ml-1 flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground sm:hidden"
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                <path d="M1 3.5h14M1 8h14M1 12.5h14" stroke="currentColor" strokeWidth="1.2" />
+              </svg>
+            </SheetTrigger>
+          )}
           <SheetContent side="left" className="w-64 border-border bg-background p-5">
             <SheetTitle className="text-xs uppercase tracking-widest text-muted-foreground">NURAE</SheetTitle>
             <nav className="mt-4 flex flex-col gap-1" aria-label="Site">
@@ -281,7 +287,7 @@ export function SiteHeader({
         </nav>
 
         {/* Mobile: current area label */}
-        <span className="truncate text-xs font-medium text-foreground sm:hidden">
+        <span className={"truncate text-xs font-medium text-foreground sm:hidden " + (hideMobileMenu ? "pl-0" : "")}>
           {nav.find((n) => pathname.startsWith(n.href))?.label ?? 'NURAE'}
         </span>
 
