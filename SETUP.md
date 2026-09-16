@@ -138,7 +138,7 @@ npm run start      # launcher: loads .env, pins the data root, then serves; hono
 ```
 
 Health check: `curl http://localhost:3000/api/health` →
-`{"status":"ok","version":"V00.10.000-beta-01",...}`
+`{"status":"ok","version":"V00.11.000-beta-01",...}`
 
 > **Fixed in V00.02.002:** production used to chdir into `.next/standalone` and could
 > silently open a build-time SNAPSHOT of your database (bots worked in dev, died in

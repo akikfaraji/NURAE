@@ -104,16 +104,45 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.10.000-beta-01** — the cinematic boot: the site now opens with the
+**NURAE V00.11.000-beta-01** — the loader redesign ("Reality is being
+resolved"): the loading experience was rebuilt from the ground up around one
+idea — a measurement axis standing still while reality resolves around it.
+
+- **Six beats, one protagonist**: VOID (one microscopic point) → PERCEPTION
+  (fine marks reveal at five parallax depths around the vertical axis) →
+  INFINITE APPROACH (the field streams outward and accelerates; the point never
+  grows — no camera zoom) → RESOLUTION (one thin lock wave sweeps out from the
+  axis and every mark snaps onto a precise polar lattice — rings, spokes,
+  ticks) → COLLAPSE (the instrument dives into the axis; the axis contracts to
+  the surviving point) → NURAE (the point becomes the centered wordmark).
+- **The signatures**: the vertical measurement axis with ruler ticks; the
+  unchanging point; micro-saccades (the whole field re-fixates like a gaze,
+  then stabilises forever at RESOLUTION); violet noise that resolves to pure
+  blue-white signal.
+- **Reduction as a feature**: the eye/iris, 24 ribbon rings, wireframe sphere,
+  dust field, nebulae and 14 ripples are gone — ~13 draw calls + bloom, sparse
+  marks, emptiness as a design material. HUD reduced to `NURAE / RESOLVING`
+  microcopy and six beat dots; the loading bar only exists once reality starts
+  resolving.
+- **Same contract, better engine**: `NuraeEngine` API unchanged (start /
+  restart / seek / dispose, `LOOP_END = 12.0`), seamless loop re-verified
+  pixel-level, deterministic seek (the scene is a pure function of the
+  timeline), `?static` opt-in, unconditional playback, DPR pairing, dt cap.
+  See `integration.md` for the full public contract.
+- **Full-site intro (Option A)**: one-time per session, pre-paint boot
+  decision with no flash of the site, 15s failsafe, WebGL-failure bail-out,
+  700ms fade handoff — unchanged from V00.10.000.
+
+**V00.10.000-beta-01** — the cinematic boot: the site opened with the
+8-phase WebGL storyboard as a one-time intro before the site reveals.
+
+**NURAE V00.11.000-beta-01** — the cinematic boot: the site now opens with the
 NURAE loading experience, the 8-phase WebGL storyboard (point → layers →
 expansion → depth → the eye opens → collapse → reborn → READY), as a one-time
 intro before the site reveals.
-
-- **Full-site intro (Option A in the integration guide)**: the experience is
-  mounted once at the root layout behind a client wrapper — a fixed, opaque
-  `z-[100]` boot layer above every route. It plays the ~8.6s storyboard,
-  holds the READY wordmark + tagline, then the layer fades (700ms) and
-  unmounts, disposing WebGL with no leaks.
+- The V00.10 intro mechanics (boot layer, no-flash hiding, failsafe,
+  WebGL-failure bail-out, Option A mount) are preserved as-is; only the
+  cinematic itself was rebuilt.
 - **No flash, no trap**: an inline pre-paint script decides per session —
   site content is hidden behind the boot stage colour from first paint
   (`data-nurae-intro='pending'`), and a 15s failsafe plus a WebGL-failure

@@ -1,9 +1,19 @@
 /**
- * NURAE — storyboard timeline
- * Mirrors the 8-frame storyboard exactly:
- * 01 INITIAL POINT 0.0–0.6 · 02 LAYERS REVEAL 0.6–1.4 · 03 INFINITE EXPANSION 1.4–2.8
- * 04 DEPTH & PERSPECTIVE 2.8–4.2 · 05 THE EYE OPENS 4.2–5.8 · 06 COLLAPSE 5.8–6.8
- * 07 REBORN 6.8–7.4 · 08 READY 7.4+
+ * NURAE — storyboard timeline (v3 — "Reality is being resolved")
+ *
+ * Six beats, one idea: a measurement axis stands still while reality drifts
+ * around it as fine restless marks — then the system understands, everything
+ * locks into order around the axis, collapses into it, and the last point
+ * becomes the identity.
+ *
+ * 01 VOID               0.0 – 1.1   black; one microscopic point; the axis draws
+ * 02 PERCEPTION         1.1 – 3.6   depth layers reveal — information was already there
+ * 03 INFINITE APPROACH  3.6 – 6.3   flow accelerates; the point never grows
+ * 04 RESOLUTION         6.3 – 7.9   one lock wave sweeps out; chaos snaps to a polar instrument
+ * 05 COLLAPSE           7.9 – 9.3   the instrument dives into the axis; axis → point
+ * 06 NURAE              9.3 – 12.0  the point becomes the identity; READY hold; seam fade
+ *
+ * PHASES is internal timing data only — NEVER render phase names in the UI.
  */
 
 export interface Phase {
@@ -15,14 +25,12 @@ export interface Phase {
 }
 
 export const PHASES: Phase[] = [
-  { id: '01', name: 'INITIAL POINT', window: '0.0s – 0.6s', start: 0.0, end: 0.6 },
-  { id: '02', name: 'LAYERS REVEAL', window: '0.6s – 1.4s', start: 0.6, end: 1.4 },
-  { id: '03', name: 'INFINITE EXPANSION', window: '1.4s – 2.8s', start: 1.4, end: 2.8 },
-  { id: '04', name: 'DEPTH & PERSPECTIVE', window: '2.8s – 4.2s', start: 2.8, end: 4.2 },
-  { id: '05', name: 'THE EYE OPENS', window: '4.2s – 5.8s', start: 4.2, end: 5.8 },
-  { id: '06', name: 'COLLAPSE', window: '5.8s – 6.8s', start: 5.8, end: 6.8 },
-  { id: '07', name: 'REBORN', window: '6.8s – 7.4s', start: 6.8, end: 7.4 },
-  { id: '08', name: 'READY', window: '7.4s +', start: 7.4, end: Infinity },
+  { id: '01', name: 'VOID', window: '0.0s – 1.1s', start: 0.0, end: 1.1 },
+  { id: '02', name: 'PERCEPTION', window: '1.1s – 3.6s', start: 1.1, end: 3.6 },
+  { id: '03', name: 'INFINITE APPROACH', window: '3.6s – 6.3s', start: 3.6, end: 6.3 },
+  { id: '04', name: 'RESOLUTION', window: '6.3s – 7.9s', start: 6.3, end: 7.9 },
+  { id: '05', name: 'COLLAPSE', window: '7.9s – 9.3s', start: 7.9, end: 9.3 },
+  { id: '06', name: 'NURAE', window: '9.3s +', start: 9.3, end: Infinity },
 ]
 
 /* ---------- easing helpers ---------- */
@@ -43,6 +51,8 @@ export const bell = (t: number, c: number, w: number) => {
 
 export const easeOutCubic = (x: number) => 1 - Math.pow(1 - clamp01(x), 3)
 
+export const easeInCubic = (x: number) => Math.pow(clamp01(x), 3)
+
 export const easeOutBack = (x: number) => {
   const c1 = 1.20158
   const c3 = c1 + 1
@@ -55,11 +65,42 @@ export const easeInOutCubic = (x: number) => {
   return y < 0.5 ? 4 * y * y * y : 1 - Math.pow(-2 * y + 2, 3) / 2
 }
 
-/** key timeline moments (seconds) */
+/** key timeline moments (seconds) — every consumer reads these, never literals */
 export const T = {
-  hide: [6.68, 6.76] as const, // global blackout during collapse flash
-  flashAt: 6.78,
-  reborn: [6.86, 7.2] as const,
-  ready: 7.4,
-  idle: 8.8, // everything settled, pure ambient drift
+  /* beat windows */
+  voidEnd: 1.1,
+  perceptionEnd: 3.6,
+  approachEnd: 6.3,
+  resolutionEnd: 7.9,
+  collapseEnd: 9.3,
+
+  /* reveals */
+  pointIn: [0.12, 0.6] as const, // the microscopic point
+  axisGrow: [0.7, 1.7] as const, // the axis draws out from the point
+  layerIn: [1.15, 3.4] as const, // far → near field reveal window
+
+  /* perception pulse — the first measurement wave (setup for the lock wave) */
+  pulseAt: 1.2,
+
+  /* infinite approach */
+  flowRamp: [3.6, 6.25] as const, // outward flow accelerates
+  flowStop: [6.3, 6.68] as const, // abrupt-but-smooth halt
+
+  /* resolution */
+  lockWave: [6.45, 7.5] as const, // lock radius sweeps 0 → maxR
+  settle: 7.6, // fully ordered, hold one beat
+
+  /* collapse */
+  collapse: [7.9, 9.18] as const,
+  axisPeak: 8.75, // axis brightness peak while drinking the structure
+  axisVanish: [9.0, 9.32] as const, // scaleY → 0.012, only the point remains
+  flashAt: 9.26, // one 40ms blink as the axis finishes
+
+  /* identity */
+  ready: 9.45, // wordmark reveal begins
+  readyFull: 10.9, // lockup fully settled
+  idle: 10.9, // pure ambient hold
+
+  /* loop seam (master fade) */
+  fadeOut: [11.35, 11.92] as const,
 }

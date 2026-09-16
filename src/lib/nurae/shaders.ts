@@ -1,36 +1,28 @@
 /**
- * NURAE — GLSL shader library (v2 — premium pass)
- * Custom shaders for the cosmic eye, orbital ribbon rings, SDF ripples,
- * light beam and nebula haze. All additive-blended, tuned for UnrealBloom.
+ * NURAE — GLSL shader library (v3 — "Reality is being resolved")
+ *
+ * Four shaders, one idea:
+ *  - FIELD  depth layers of fine restless marks (polar slots around the axis);
+ *           outward flow = infinite approach, lock wave = resolution
+ *  - AXIS   the vertical measurement axis — ruler ticks, reading sweep, vanishing
+ *  - SWEEP  one thin measurement circle (perception pulse / lock wave / click ripple)
+ *
+ * All additive-blended, tuned for UnrealBloom with a high threshold so hairlines
+ * stay crisp. No noise fields, no nebulae, no eyes — empty space is the design.
  */
 
-/** shared value-noise + fbm chunk */
-const NOISE = /* glsl */ `
-float hash21(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
+/** deterministic per-element hash (one clean hash is all the field needs) */
+const HASH = /* glsl */ `
+float hash11(float p) {
+  p = fract(p * 271.13);
+  p *= p + 71.7;
+  p += dot(p, p + 137.31);
+  return fract(p);
 }
-float vnoise(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = hash21(i);
-  float b = hash21(i + vec2(1.0, 0.0));
-  float c = hash21(i + vec2(0.0, 1.0));
-  float d = hash21(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-float fbm(vec2 p) {
-  float v = 0.0;
-  float a = 0.5;
-  mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
-  for (int i = 0; i < 5; i++) {
-    v += a * vnoise(p);
-    p = rot * p * 2.03 + vec2(11.7, 9.2);
-    a *= 0.5;
-  }
-  return v;
+vec2 hash22(float p) {
+  float a = hash11(p);
+  float b = hash11(p + 19.19);
+  return vec2(a, b);
 }
 `
 
@@ -43,266 +35,259 @@ void main() {
 `
 
 /* ------------------------------------------------------------------ */
-/*  RING — constant-width elliptical ribbon with travelling energy     */
+/*  FIELD — fine marks in polar slots, radial flow, lock wave           */
 /* ------------------------------------------------------------------ */
 
 /**
- * Vertex: builds a constant-width ribbon along an ellipse.
- * aAngle  0..2PI along the path, aSide -1..1 across the width.
- * The ellipse (uRx, uRz) is evaluated in the shader so a single unit
- * geometry is shared by every ring; mesh transforms still apply.
+ * The plane is centred on the axis (local 0,0 == the axis line).
+ * Elements live in polar slots: i = radial band, j = angular slot.
+ * uFlow advances every element outward (band wrap masked at the edges);
+ * the lock wave (uLockR) snaps each element to its nearest ring/spoke,
+ * removes its jitter, steadies its flicker and resolves violet → blue.
  */
-const RING_VERT = /* glsl */ `
-attribute float aAngle;
-attribute float aSide;
-uniform float uRx;
-uniform float uRz;
-uniform float uWidth;
-varying float vAngle;
-varying float vSide;
-
-void main() {
-  vAngle = aAngle;
-  vSide = aSide;
-  vec2 c = vec2(uRx * cos(aAngle), uRz * sin(aAngle));
-  vec2 tang = normalize(vec2(-uRz * sin(aAngle), uRx * cos(aAngle)));
-  vec2 nrm = vec2(-tang.y, tang.x);
-  vec3 p = vec3(c + nrm * (uWidth * aSide), 0.0);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-}
-`
-
-/**
- * Fragment: thin bright core + soft halo across the width; organic
- * brightness around the circumference (base line + travelling arc
- * clusters + fine shimmer) plus an optional comet head with tail.
- * All frequencies are integers so the pattern wraps seamlessly.
- */
-const RING_FRAG = /* glsl */ `
+const FIELD_FRAG = /* glsl */ `
 uniform float uTime;
 uniform float uIntensity;
+uniform float uFlow;      // accumulated radial displacement (world units)
+uniform float uLockR;     // lock wave radius (world units; > uMaxR = all locked)
+uniform float uChaos;     // global chaos amount 1 -> 0 across resolution
+uniform float uMaxR;      // field outer radius (world units)
+uniform float uScale;     // plane half-size in world units
+uniform float uSizeMul;   // per-plane element size factor
 uniform float uSeed;
-uniform float uSegs;       // integer arc count around the ring
-uniform float uSharp;      // arc sharpness
-uniform float uSpeed;      // arc travel speed (signed)
-uniform float uComet;      // 0 = off, >0 comet tail length factor
-uniform float uCometSpeed; // comet angular speed (turns/sec, signed)
-varying float vAngle;
-varying float vSide;
+varying vec2 vUv;
+
+${HASH}
 
 const float TAU = 6.28318530718;
+const float BANDS  = 8.0;
+const float SLOTS  = 26.0;
 
 void main() {
-  float across = 1.0 - abs(vSide);
-  float core = pow(across, 5.0);
-  float halo = pow(across, 1.7) * 0.45;
-
-  float a = vAngle + uSeed;
-
-  // organic base — every segment visible, some dimmer than others
-  float base = 0.20 + 0.14 * (0.5 + 0.5 * sin(a * 3.0 + uSeed * 5.0))
-             + 0.08 * (0.5 + 0.5 * sin(a * 8.0 - uSeed * 2.0));
-
-  // travelling bright arc clusters
-  float wave = 0.5 + 0.5 * sin(a * uSegs - uTime * uSpeed);
-  float arcs = pow(wave, uSharp);
-
-  // fine shimmer racing over the arcs
-  float fine = pow(0.5 + 0.5 * sin(a * (uSegs * 4.0 + 7.0) + uTime * (uSpeed * 1.1 + 0.16) + uSeed * 3.0), 6.0) * 0.32;
-
-  // comet head with exponential tail
-  float head = fract(uTime * uCometSpeed + uSeed * 0.6180339);
-  float d = fract(a / TAU - head);
-  float comet = exp(-d * (26.0 - uComet * 14.0)) * step(0.01, uComet);
-
-  float energy = base + arcs * 1.05 + fine + comet * 1.7;
-  float alpha = (core * (0.5 + energy) + halo * energy) * uIntensity;
-
-  vec3 blue  = vec3(0.38, 0.58, 1.00);
-  vec3 white = vec3(0.90, 0.95, 1.00);
-  vec3 col = mix(blue, white, clamp(arcs * 0.5 + comet * 0.7, 0.0, 1.0));
-
-  gl_FragColor = vec4(col * alpha, alpha);
-}
-`
-
-/* ------------------------------------------------------------------ */
-/*  RIPPLE — SDF expansion circle with angular hotspots                */
-/* ------------------------------------------------------------------ */
-
-const RIPPLE_FRAG = /* glsl */ `
-uniform float uR;          // current circle radius (world units)
-uniform float uScale;      // quad half-size in world units
-uniform float uIntensity;
-uniform float uSeed;
-uniform float uTime;
-varying vec2 vUv;
-
-void main() {
-  vec2 p = vUv * 2.0 - 1.0;
-  float rUV = length(p);
-  float r = rUV * uScale;   // world-unit radius
-  float d = r - uR;
-  float line = exp(-d * d * 950.0);
-  float glowL = exp(-abs(d) * 12.0) * 0.14;
-
-  float ang = atan(p.y, p.x);
-  float arcs = pow(0.5 + 0.5 * sin(ang * 4.0 + uSeed * 9.0 + uTime * 0.85), 3.0);
-  float hot  = pow(0.5 + 0.5 * sin(ang * 2.0 - uSeed * 3.0 - uTime * 1.35), 8.0) * 0.85;
-
-  float edgeFade = smoothstep(1.0, 0.9, rUV);
-  float energy = 0.30 + arcs * 0.8 + hot;
-  float alpha = (line * energy + glowL * (0.2 + arcs * 0.35)) * uIntensity * edgeFade;
-
-  vec3 col = mix(vec3(0.36, 0.56, 1.0), vec3(0.92, 0.96, 1.0), clamp(hot * 0.8 + arcs * 0.35, 0.0, 1.0));
-  gl_FragColor = vec4(col * alpha, alpha);
-}
-`
-
-/* ------------------------------------------------------------------ */
-/*  IRIS — the cosmic eye (v2: radial fibres + limbal ring)            */
-/* ------------------------------------------------------------------ */
-
-const IRIS_FRAG = /* glsl */ `
-uniform float uTime;
-uniform float uOpen;      // 0..1 eye reveal
-uniform float uSwirl;     // extra angular swirl (phase 05 / collapse)
-uniform float uBoost;     // intensity boost (collapse flash build)
-uniform float uSeed;
-varying vec2 vUv;
-
-${NOISE}
-
-void main() {
-  vec2 p = vUv * 2.0 - 1.0;
+  vec2 p = (vUv * 2.0 - 1.0) * uScale;
   float r = length(p);
-  float ang = atan(p.y, p.x);
+  float ang = atan(p.y, p.x + 0.0001);
 
-  // galaxy-style differential swirl — stronger near the core
-  float swirl = uSwirl * pow(1.0 - smoothstep(0.0, 0.95, r), 1.6);
-  float a = ang + swirl + uTime * 0.05;
-  vec2 dir = vec2(cos(a), sin(a));
+  float ringStep = uMaxR / BANDS;
 
-  // layered radial filaments — higher contrast
-  float n1 = fbm(dir * 2.6 + r * 7.0 - uTime * 0.04 + uSeed);
-  float n2 = fbm(dir * 6.5 + r * 15.0 + uTime * 0.07 + uSeed * 2.3);
-  float fil = pow(smoothstep(0.40, 1.0, n1 * 0.72 + n2 * 0.48), 1.35);
+  // ---- the one large arc per plane (hierarchy mark) ----
+  // chaotic: a 2.4-rad arc drifting off its base angle — resolved: a full circle
+  float arcR = uMaxR * (0.28 + 0.30 * hash11(uSeed));
+  float arcA = fract(uSeed * 0.611) * TAU + uChaos * (hash11(uSeed + 4.4) - 0.5) * 2.0;
+  float ad = mod(ang - arcA + TAU, TAU);
+  float span = mix(2.4, TAU, 1.0 - uChaos);
+  float arcMask = step(ad, span);
+  float arcD = abs(r - arcR);
+  float aa = fwidth(r) * 1.4 + 0.004;
+  float arc = exp(-pow(arcD / aa, 2.0)) * arcMask * mix(0.30, 0.42, 1.0 - uChaos);
 
-  // thin radial fibre strands — fast variation in angle, slow in radius
-  float fib1 = fbm(vec2(a * 5.0 + uSeed, r * 2.4 - uTime * 0.05));
-  float fib2 = fbm(vec2(a * 11.0 - uSeed, r * 4.2 + uTime * 0.03));
-  float fib = pow(smoothstep(0.42, 0.95, fib1 * 0.62 + fib2 * 0.48), 1.6);
+  float alpha = arc * uIntensity;
 
-  // radial masks
-  float pupil   = smoothstep(0.38, 0.22, r);
-  float band    = smoothstep(0.14, 0.34, r) * smoothstep(1.02, 0.70, r);
-  float limbal  = smoothstep(0.05, 0.0, abs(r - 0.82));    // bright outer ring
-  float ringIn  = smoothstep(0.028, 0.0, abs(r - 0.40));   // bright ring at pupil edge
+  // ---- two long horizontal hairlines (data rows) ----
+  for (int k = 0; k < 2; k++) {
+    float fh = hash11(uSeed + float(k) * 7.31);
+    float ly = (fh - 0.5) * uScale * 1.15;
+    // drifts slightly, then locks perfectly horizontal (it already is) + steady
+    float lx = p.x + (fh - 0.5) * uChaos * 2.2;
+    float dx = abs(p.y - ly);
+    float lin = exp(-pow(dx / (aa * 1.1), 2.0));
+    float lx0 = -uScale * 0.55 + fh * uScale * 0.3;
+    float lxs = uScale * (0.5 + 0.4 * hash11(fh * 31.7));
+    float inX = step(lx0, lx) * step(lx, lx0 + lxs);
+    alpha += lin * inX * uIntensity * 0.16;
+  }
 
-  // colour ramp — deep navy -> electric blue -> cyan-white
-  vec3 cDeep   = vec3(0.020, 0.060, 0.480);
-  vec3 cBlue   = vec3(0.110, 0.320, 0.960);
-  vec3 cCyan   = vec3(0.560, 0.760, 1.000);
-  vec3 cPink   = vec3(0.960, 0.470, 0.880);
-  vec3 cViolet = vec3(0.520, 0.330, 1.000);
+  // ---- polar slot elements ----
+  // flow is applied per element: erD = mod(er + uFlow, uMaxR) — marks stream
+  // outward and wrap at the masked edges, so there is never a hole at the axis.
+  // The fragment therefore searches the SOURCE bands around (r - uFlow).
+  float F = uFlow;
+  float srcR = mod(r - F, uMaxR);
+  float band0 = floor(srcR / ringStep);
+  float slot = floor((ang + TAU) / TAU * SLOTS);
 
-  vec3 col = mix(cDeep, cBlue, fil);
-  col = mix(col, cViolet, smoothstep(0.45, 0.85, r) * 0.12);
-  col = mix(col, cCyan, pow(fil, 3.0) * smoothstep(0.22, 0.80, r) * 0.42);
+  for (int b = -1; b <= 1; b++) {
+    float bi = band0 + float(b);
+    if (bi < 0.0 || bi > BANDS - 1.0) continue;
+    float eId = bi * SLOTS + slot + uSeed * 13.0;
+    vec2 h = hash22(eId);
+    vec2 h2 = hash22(eId + 3.7);
+    if (h.x > 0.70) continue;                 // ~70% of slots are empty — sparseness is the design
 
-  // fibre strands lift brightness
-  col += cCyan * fib * band * 0.34;
-  col += vec3(1.0) * pow(fib, 3.0) * band * 0.10;
+    // element base radius in its band, then outward flow displacement (wraps)
+    float er = (bi + 0.18 + 0.64 * h.y) * ringStep;
+    float erD = mod(er + F, uMaxR);
+    float ea = (slot + 0.5) / SLOTS * TAU - TAU + (h2.x - 0.5) * (TAU / SLOTS) * 1.45;
 
-  // pink / violet accents around the pupil and outer field
-  float accent = pow(fbm(dir * 3.4 + r * 5.2 + uSeed * 3.1), 2.2);
-  col += cPink * accent * smoothstep(0.18, 0.32, r) * smoothstep(0.64, 0.40, r) * 1.35;
-  col += cViolet * accent * smoothstep(0.38, 0.78, r) * 0.9;
+    // lock: quantise radius to rings, angle to spokes, remove jitter
+    float ringQ = (floor(erD / ringStep + 0.5) + 0.5) * ringStep;
+    float spokeQ = (floor((ea + TAU) / TAU * SLOTS + 0.5)) / SLOTS * TAU - TAU;
+    float lockE = 1.0 - smoothstep(uLockR - 0.10, uLockR + 0.14, erD);
+    lockE = max(lockE, 1.0 - uChaos);
+    float lr = mix(erD, ringQ, lockE);
+    float la = mix(ea, spokeQ, lockE);
 
-  // bright structures — limbal ring + inner ring
-  col += cCyan * limbal * 0.6;
-  col += mix(cPink, vec3(1.0), 0.6) * ringIn * 0.55;
+    vec2 ep = vec2(cos(la), sin(la)) * lr;
 
-  float alpha = (fil * band * 1.0 + fib * band * 0.65 + limbal * 0.55 + ringIn * 0.6) * uOpen;
-  alpha *= (1.0 - pupil * 0.995);
+    // element type + size
+    float type = h2.y;
+    float esz = (0.05 + 0.10 * hash11(eId + 9.1)) * uSizeMul;
 
-  // subtle glow bleeding at the pupil edge
-  float core = smoothstep(0.12, 0.06, r);
-  col += vec3(0.72, 0.82, 1.0) * core * 0.12;
-  alpha += core * 0.04 * uOpen;
+    // chaotic drift while unresolved
+    vec2 drift = (hash22(eId + 5.3) - 0.5) * uChaos * (0.24 * uSizeMul);
+    ep += drift * (1.0 - lockE);
 
-  gl_FragColor = vec4(col * uBoost * 0.82, alpha);
+    vec2 d2 = p - ep;
+    float dd = length(d2);
+    float e = 0.0;
+
+    if (type < 0.46) {
+      // hairline segment — tangent while locked, random angle while chaotic
+      float la2 = mix(h.x * TAU, la + 1.5707963, lockE);
+      vec2 dir = vec2(cos(la2), sin(la2));
+      float along = dot(d2, dir);
+      float across = dot(d2, vec2(-dir.y, dir.x));
+      float halfL = esz * (1.2 + 1.6 * hash11(eId + 2.2));
+      float seg = exp(-pow(across / (aa * 0.9), 2.0))
+                * smoothstep(halfL, halfL * 0.55, abs(along));
+      e = seg * 0.72;
+    } else if (type < 0.68) {
+      // tiny circle outline
+      float cr = esz * 0.9;
+      e = exp(-pow((dd - cr) / (aa * 1.1), 2.0)) * 0.52;
+    } else if (type < 0.86) {
+      // dot
+      e = exp(-pow(dd / (aa * 1.3), 2.0)) * 0.7;
+    } else {
+      // measurement cross +
+      vec2 q = abs(d2);
+      float arm = esz * 1.1;
+      float tk = exp(-pow(q.y / (aa * 0.9), 2.0)) * step(q.x, arm)
+               + exp(-pow(q.x / (aa * 0.9), 2.0)) * step(q.y, arm);
+      e = tk * 0.5;
+    }
+
+    // restless flicker pre-lock; steady, dimmer, whiter post-lock — the mark
+    // yields to the lattice it now sits on
+    float flick = 0.62 + 0.38 * sin(uTime * (2.0 + 3.0 * h.y) + h2.x * 41.0);
+    e *= mix(flick, 0.5 + 0.05 * sin(uTime * 0.8 + h.x * 9.0), lockE);
+
+    // colour: violet accents live only in the unresolved noise
+    vec3 blue = vec3(0.40, 0.58, 1.00);
+    vec3 white = vec3(0.90, 0.95, 1.00);
+    vec3 violet = vec3(0.60, 0.44, 1.00);
+    float isV = step(h.x, 0.055) * (1.0 - lockE);
+    vec3 col = mix(mix(blue, white, step(0.90, h2.y)), violet, isV);
+    col = mix(col, white, lockE * 0.55);
+
+    alpha += e * uIntensity;
+  }
+
+  // clear zone around the axis + outer fade — the ruler never touches chaos
+  float edge = smoothstep(0.34, 0.62, r) * smoothstep(uMaxR * 1.02, uMaxR * 0.84, r);
+
+  // the resolved instrument itself: faint precise rings + spokes the marks sit on
+  float lockAll = 1.0 - uChaos;
+  if (lockAll > 0.001) {
+    float ringD = (fract(r / ringStep + 0.5) - 0.5) * ringStep;
+    float ring = exp(-pow(ringD / (aa * 1.7), 2.0)) * 0.105;
+    float spokeW = TAU / SLOTS;
+    float spokeD = (fract(ang / spokeW + 0.5) - 0.5) * spokeW * max(r, 0.4);
+    float spoke = exp(-pow(spokeD / (aa * 1.7), 2.0)) * 0.052;
+    alpha += (ring + spoke) * lockAll * uIntensity;
+  }
+
+  alpha *= edge;
+
+  vec3 baseCol = vec3(0.52, 0.66, 1.0);
+  gl_FragColor = vec4(baseCol * alpha, alpha);
 }
 `
 
 /* ------------------------------------------------------------------ */
-/*  BEAM — vertical light shaft with centre-out draw                   */
+/*  AXIS — the vertical measurement axis (the signature)                */
 /* ------------------------------------------------------------------ */
 
-const BEAM_FRAG = /* glsl */ `
-uniform float uTime;
+const AXIS_FRAG = /* glsl */ `
 uniform float uGrow;      // 0..1 draw from centre outward
 uniform float uIntensity;
+uniform float uClean;     // 0..1 — ticks retract, line purifies
+uniform float uReadY;     // reading sweep position (-1..1, off-axis = 10)
 varying vec2 vUv;
 
+${HASH}
+
 void main() {
-  float x = abs(vUv.x - 0.5) * 2.0;
-  float y = abs(vUv.y - 0.5) * 2.0;
+  float nx = abs(vUv.x - 0.5) * 2.0;   // across
+  float ny = (vUv.y - 0.5) * 2.0;      // along, -1..1
 
-  float growMask = 1.0 - smoothstep(uGrow - 0.06, uGrow + 0.02, y);
-  float core  = exp(-x * x * 170.0);
-  float halo  = exp(-x * x * 12.0) * 0.22;
-  float endFade = exp(-y * y * 2.1);
-  float shimmer = 0.82 + 0.18 * sin(uTime * 1.1 + vUv.y * 24.0);
+  float k = mix(240.0, 460.0, uClean);
+  float core = exp(-nx * nx * k);
+  float glow = exp(-nx * nx * 13.0) * 0.15;
 
-  vec3 col = mix(vec3(0.30, 0.52, 1.0), vec3(0.96, 0.98, 1.0), core);
-  float a = (core + halo) * endFade * growMask * shimmer * uIntensity;
+  // ruler ticks — deterministic hash sequence, perfectly static (the invariant)
+  float tickN = 30.0;
+  float tv = vUv.y * tickN;
+  float cell = floor(tv);
+  float f = fract(tv) - 0.5;
+  float exists = step(0.34, hash11(cell + 0.7));
+  float major = step(0.86, hash11(cell + 0.7));
+  float tickLen = mix(0.055, 0.16, major);
+  float tick = exp(-f * f * 620.0)
+             * smoothstep(tickLen, tickLen * 0.5, nx)
+             * exists * mix(0.5, 1.0, major);
+  tick *= (1.0 - uClean);
+
+  // reading sweep — the axis taking measurements during resolution
+  float read = exp(-pow((ny - uReadY) * 2.4, 2.0)) * 0.55 * step(abs(uReadY), 1.5);
+
+  // draw-on mask from the centre out, soft ends
+  float growMask = 1.0 - smoothstep(uGrow - 0.05, uGrow + 0.01, abs(ny));
+  float endFade = exp(-ny * ny * 2.0);
+
+  float a = (core + glow + tick * 0.8) * growMask * endFade * uIntensity;
+  a += read * core * growMask * endFade * 0.8;
+
+  vec3 col = mix(vec3(0.42, 0.60, 1.00), vec3(0.95, 0.97, 1.00), core * 0.75 + read * 0.6);
   gl_FragColor = vec4(col * a, a);
 }
 `
 
 /* ------------------------------------------------------------------ */
-/*  NEBULA — slow drifting haze planes                                 */
+/*  SWEEP — one thin measurement circle                                 */
 /* ------------------------------------------------------------------ */
 
-const NEBULA_FRAG = /* glsl */ `
-uniform float uTime;
+const SWEEP_FRAG = /* glsl */ `
+uniform float uR;         // circle radius (world units)
+uniform float uScale;     // quad half-size (world units)
 uniform float uIntensity;
 uniform float uSeed;
 varying vec2 vUv;
 
-${NOISE}
-
 void main() {
-  vec2 p = vUv * 2.0 - 1.0;
+  vec2 p = (vUv * 2.0 - 1.0) * uScale;
   float r = length(p);
-  float n = fbm(p * 2.2 + uTime * 0.015 + uSeed);
-  n = pow(smoothstep(0.25, 1.05, n), 1.6);
-  float falloff = smoothstep(1.0, 0.15, r);
-  vec3 col = mix(vec3(0.07, 0.16, 0.55), vec3(0.30, 0.45, 1.0), n);
-  float a = n * falloff * uIntensity;
+  float d = r - uR;
+
+  float aa = fwidth(r) * 1.2 + 0.004;
+  float ring = exp(-pow(d / (aa * 2.2), 2.0));
+  float trail = exp(-abs(d) * 2.6) * 0.055;
+
+  // faint angular breathing — life, never a hotspot
+  float ang = atan(p.y, p.x);
+  float micro = 0.86 + 0.14 * sin(ang * 3.0 + uSeed * 7.0);
+
+  float edgeFade = smoothstep(1.0, 0.92, length(vUv * 2.0 - 1.0));
+  float a = (ring + trail) * micro * uIntensity * edgeFade;
+
+  vec3 col = mix(vec3(0.93, 0.96, 1.0), vec3(0.45, 0.62, 1.0), 0.3);
   gl_FragColor = vec4(col * a, a);
-}
-`
-
-const PUPIL_FRAG = /* glsl */ `
-varying vec2 vUv;
-uniform float uOpen;
-void main() {
-  vec2 p = vUv * 2.0 - 1.0;
-  float r = length(p);
-  float a = smoothstep(1.0, 0.80, r) * uOpen;
-  gl_FragColor = vec4(vec3(0.0, 0.004, 0.015), a);
 }
 `
 
 export const SHADERS = {
   QUAD_VERT,
-  RING_VERT,
-  RING_FRAG,
-  RIPPLE_FRAG,
-  IRIS_FRAG,
-  BEAM_FRAG,
-  NEBULA_FRAG,
-  PUPIL_FRAG,
+  FIELD_FRAG,
+  AXIS_FRAG,
+  SWEEP_FRAG,
 }
