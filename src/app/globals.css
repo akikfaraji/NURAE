@@ -214,3 +214,87 @@
   }
   .md-compact pre, .md-compact table { font-size: 0.75rem; }
 }
+
+/* ---------------------------------------------------------------------------
+ * NURAE — WebGL intro boot (integration.md §6 Option A).
+ * The inline boot <script> in app/layout.tsx sets data-nurae-intro on <html>
+ * BEFORE first paint:
+ *   'pending' → the intro will play. Site content is hidden so the visitor
+ *               sees only the loader stage colour — never a flash of the site
+ *               under the overlay. Pull-to-refresh is suppressed while the
+ *               cinematic plays (a page reload mid-sequence reads as a glitch).
+ *   'done'    → intro played (or skipped / 15s failsafe) — everything renders
+ *               normally and none of these rules apply.
+ * The boot layer itself re-enables visibility for its subtree: visibility is
+ * inheritable, so a visible child overrides a hidden ancestor. Both selectors
+ * are kept — :not() is the mechanism, the explicit re-show is belt-and-suspenders.
+ * ------------------------------------------------------------------------- */
+html[data-nurae-intro='pending'] body > :not(.nurae-boot-layer) {
+  visibility: hidden;
+}
+html[data-nurae-intro='pending'],
+html[data-nurae-intro='pending'] body {
+  overscroll-behavior: none;
+  background: #010208;
+}
+html[data-nurae-intro='pending'] .nurae-boot-layer,
+html[data-nurae-intro='pending'] .nurae-boot-layer * {
+  visibility: visible;
+}
+
+/* ---------------------------------------------------------------------------
+ * NURAE — loading-sequence experience (WebGL intro overlay).
+ * Classes required by NuraeExperience (integration.md §3 — do not delete):
+ * filmic vignette, animated film grain, blinking LOADING label and the
+ * loading-bar track/dash (dash sweeps during the sequence, eases to centre
+ * and breathes once READY).
+ * ------------------------------------------------------------------------- */
+.nurae-vignette {
+  background: radial-gradient(
+    ellipse 74% 64% at 50% 46%,
+    transparent 0%,
+    rgba(1, 2, 8, 0.45) 72%,
+    rgba(1, 2, 8, 0.88) 100%
+  );
+}
+
+.nurae-grain {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+  animation: nurae-grain 0.9s steps(2) infinite;
+}
+
+@keyframes nurae-grain {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-38px, 22px); }
+  50% { transform: translate(26px, -30px); }
+  75% { transform: translate(-16px, -12px); }
+  100% { transform: translate(0, 0); }
+}
+
+.nurae-loading {
+  animation: nurae-loading-blink 2.4s ease-in-out infinite;
+}
+
+@keyframes nurae-loading-blink {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.35; }
+}
+
+.nurae-dash {
+  transition: left 0.35s linear;
+}
+
+/* once READY, the bright segment eases to the centre and breathes — final storyboard frame */
+.nurae-track[data-ready='true'] .nurae-dash {
+  left: 50% !important;
+  width: 2.6rem !important;
+  transition:
+    left 1.9s cubic-bezier(0.22, 1, 0.36, 1),
+    width 1.9s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: nurae-dash-pulse 3.4s ease-in-out infinite 2s;
+}
+
+@keyframes nurae-dash-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}

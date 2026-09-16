@@ -104,6 +104,33 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
+**NURAE V00.10.000-beta-01** — the cinematic boot: the site now opens with the
+NURAE loading experience, the 8-phase WebGL storyboard (point → layers →
+expansion → depth → the eye opens → collapse → reborn → READY), as a one-time
+intro before the site reveals.
+
+- **Full-site intro (Option A in the integration guide)**: the experience is
+  mounted once at the root layout behind a client wrapper — a fixed, opaque
+  `z-[100]` boot layer above every route. It plays the ~8.6s storyboard,
+  holds the READY wordmark + tagline, then the layer fades (700ms) and
+  unmounts, disposing WebGL with no leaks.
+- **No flash, no trap**: an inline pre-paint script decides per session —
+  site content is hidden behind the boot stage colour from first paint
+  (`data-nurae-intro='pending'`), and a 15s failsafe plus a WebGL-failure
+  bail-out in the experience guarantee the site always reveals.
+- **Once per session**: `sessionStorage.nuraeIntroDone` skips the intro on
+  subsequent full loads (refreshes, direct links) — the site renders
+  immediately. Keyboard `R` still replays; `?static` still forces the frozen
+  READY frame.
+- **Engine imported verbatim** from the loading-screen project
+  (`src/lib/nurae/{phases,shaders,textures,engine}.ts`, 24-ring orbital
+  system + bloom, DPR caps 1.8 desktop / 1.5 phones, dt-capped timeline) —
+  `three@0.186` added; the loader shares `src/lib/nurae/` with the platform
+  server modules without overlap (distinct filenames).
+- **Phase names/timeframes stay out of the UI** (product decision) — the HUD
+  shows only corner labels, the 8-dot indicator, the loading bar and the
+  READY wordmark.
+
 **NURAE V00.09.003-beta-03** — the agent-continuity round: the bug every live
 tester hits ("the agent says working and then it stops") is fixed at the loop
 level, for both agents.
