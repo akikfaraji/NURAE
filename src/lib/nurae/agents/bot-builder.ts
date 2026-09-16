@@ -31,9 +31,13 @@ import type { GrowthLinks } from '../bots/templates';
 const TURN_LIMIT = 20; // agent turns per minute per user — same budget as chat
 const TURN_WINDOW_MS = 60 * 1000;
 
-const MAX_ROUNDS = 3; // model rounds per user turn
+const MAX_ROUNDS = 6; // model rounds per user turn — a real build is create → configure → verify → report
 const MAX_ACTIONS_PER_ROUND = 6;
 const HISTORY_ENTRIES = 20;
+/** Floor for per-round output tokens. Behavior-JSON envelopes are large; the
+ *  old 1500 floor truncated them mid-generation, which ended turns mid-work
+ *  (BR-034). The platform bot's own maxTokens stays respected above this. */
+const AI_ROUND_TOKEN_FLOOR = 3000;
 
 // ---------------------------------------------------------------------------
 // Session state
@@ -180,9 +184,13 @@ function builderSystemPrompt(state: AgentState, userApproved: boolean): string {
     'Rules:',
     '- Tool calls happen ONLY through "actions". NEVER emit markup such as <tool_call>, <invoke>,',
     '  mcp:tool, function-call brackets or name=value call syntax — that is not this protocol.',
-    '- "actions" may contain 0 to ' + MAX_ACTIONS_PER_ROUND + ' items. Use tools to DO things, not to narrate.',
-    '- Set "done": false if you expect tool results back and want another round; otherwise true.',
+    '- "actions" may contain 0 to ' + MAX_ACTIONS_PER_ROUND + ' items. BATCH WORK: put every independent call of the',
+    '  current step into ONE actions array — fewer rounds, faster builds. Use tools to DO things, not to narrate.',
+    '- "done" is a hint, not a gate: NURAE always executes your actions and always shows you each tool\u2019s',
+    '  result before the turn ends. Set "done": true once the task is complete and nothing is left to run.',
     '- Read tools first when you need information (files_list, files_read, bots_list, bot_get, bot_list_users).',
+    '- Aim to finish a build in a few focused rounds: create → configure → verify → report. When the tool',
+    '  results show the task is complete, reply with your final summary and no actions.',
     '- Build in this order when creating: bot_create_draft (with behaviors) \u2192 bot_set_behaviors for later',
     '  changes \u2192 bot_add_knowledge (if documents) \u2192 bot_set_profile \u2192 offer to publish. bot_set_commands /',
     '  bot_set_replies are ADVANCED escape hatches \u2014 prefer behaviors.',
@@ -467,6 +475,91 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
   let pendingApproval = state.pendingApproval ?? null;
   let finalMessage = '';
 
+  /** Execute a batch of actions through the registry, tracking state. Returns
+   *  how many ran (every action produces a record — unknown tools too). */
+  const runActions = async (
+    actions: Array<{ tool: string; args: Record<string, unknown> }>,
+  ): Promise<number> => {
+    let executed = 0;
+    for (const action of actions) {
+      // Unknown tools are executed through the registry too — executeTool
+      // records them as errors so the audit trail stays complete.
+      const record: ExecRecord = await executeTool(ctx, action.tool, action.args, seq++);
+      activity.push({ seq: record.seq, tool: record.tool, label: record.label, status: record.status, detail: record.detail, data: record.data });
+
+      // Track state transitions.
+      if (action.tool === 'bot_create_draft' && record.status === 'ok') {
+        // The tool result carries the new bot id in the AgentStep row; read it back cheaply.
+        const step = await db.agentStep.findFirst({
+          where: { sessionId: session.id, seq: record.seq },
+          select: { resultJson: true },
+        });
+        if (step?.resultJson) {
+          try {
+            const data = JSON.parse(step.resultJson) as { botId?: string };
+            if (data.botId) draftBotId = data.botId;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      if (action.tool === 'bot_publish' && record.status === 'confirm') {
+        pendingApproval = { tool: action.tool, botId: String((action.args as { botId?: string })?.botId ?? '') };
+      }
+      if (action.tool === 'bot_publish' && record.status === 'ok') {
+        pendingApproval = null;
+      }
+      if (action.tool === 'bot_unpublish' && record.status === 'ok') {
+        pendingApproval = null;
+      }
+      executed++;
+    }
+    return executed;
+  };
+
+  const resultsFeedback = (from: number): ChatMessage => {
+    const resultsText = activity
+      .slice(from)
+      .map((a) => {
+        const dataSuffix =
+          a.data !== undefined
+            ? ` | data: ${truncateForLog(typeof a.data === 'string' ? a.data : JSON.stringify(a.data), 600)}`
+            : '';
+        return `[${a.status}] ${a.tool}: ${a.label}${dataSuffix}`;
+      })
+      .join('\n');
+    return { role: 'user', content: `TOOL RESULTS:\n${resultsText}\n\nContinue (JSON envelope only).` };
+  };
+
+  /** One billed model round. Returns the parsed envelope, or null when the
+   *  billing gate stopped the turn. */
+  const modelRound = async (messages: ChatMessage[]) => {
+    // Pay-as-you-use: every builder round is one `ai_build` unit.
+    try {
+      const charge = await chargeFeature(input.userId, 'ai_build');
+      if (charge.outcome === 'skipped') {
+        finalMessage = finalMessage || `Out of credits — this turn needs ${formatUsd(charge.chargedMicros)}. Top up in Billing (Stars or crypto) and I will continue exactly where we stopped.`;
+        return null;
+      }
+    } catch {
+      /* billing outage → fail open */
+    }
+    const text = await selection.provider.generate(messages, {
+      model: platformBot.model,
+      temperature: 0.3, // agents want precision, not poetry
+      maxTokens: Math.max(platformBot.maxTokens, AI_ROUND_TOKEN_FLOOR),
+      apiKey: apiKey ?? selection.apiKey,
+      baseUrl: selection.baseUrl,
+    });
+    return parseAgentReply(text);
+  };
+
+  // BR-034: tool results the model has not seen yet. The turn must not end
+  // while this is true — that is how the agent used to "say working, then
+  // stop": the budget ran out (or the model marked done) right after actions
+  // executed, and the results were never reported.
+  let pendingResults = false;
+
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const messages: ChatMessage[] = [
@@ -474,83 +567,57 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
         ...history,
       ];
 
-      // Pay-as-you-use: every builder round is one `ai_build` unit.
-      try {
-        const charge = await chargeFeature(input.userId, 'ai_build');
-        if (charge.outcome === 'skipped') {
-          finalMessage = finalMessage || `Out of credits — this turn needs ${formatUsd(charge.chargedMicros)}. Top up in Billing (Stars or crypto) and I will continue exactly where we stopped.`;
-          break;
-        }
-      } catch {
-        /* billing outage → fail open */
+      const parsed = await modelRound(messages);
+      pendingResults = false; // the model just saw the full history incl. any results
+      if (!parsed) break; // billing gate — finalMessage already explains
+
+      if (parsed.message) finalMessage = parsed.message;
+
+      if (parsed.actions.length === 0) {
+        // A round with no actions is the model's final word for this turn.
+        break;
       }
 
-      const text = await selection.provider.generate(messages, {
-        model: platformBot.model,
-        temperature: 0.3, // agents want precision, not poetry
-        maxTokens: Math.max(platformBot.maxTokens, 1500),
-        apiKey: apiKey ?? selection.apiKey,
-        baseUrl: selection.baseUrl,
+      // BR-034: execute actions in EVERY round, regardless of the done flag.
+      // Free models habitually set done:true (or omit it) while still listing
+      // work — the old loop dropped all such actions from round 1 on, so the
+      // agent did round 0 and froze mid-task.
+      const before = activity.length;
+      await runActions(parsed.actions);
+
+      // Always feed results back — the model MUST see what happened before
+      // the turn ends. done is advisory; results are not optional.
+      history.push(resultsFeedback(before));
+      pendingResults = true;
+    }
+
+    // Budget exhausted with unreported results → ONE wrap-up round so the
+    // turn ends with a real report instead of a stale "Working on it…".
+    if (pendingResults) {
+      history.push({
+        role: 'user',
+        content:
+          'ROUND BUDGET REACHED. Give your final answer NOW based on the tool results above: state what is done, what failed, and what you still need. Do not start new tool work unless it is essential; if more work remains, tell the user to send "continue".',
       });
-
-      const parsed = parseAgentReply(text);
-      finalMessage = parsed.message || finalMessage;
-
-      if (parsed.actions.length === 0 || parsed.done) {
-        if (round > 0 || parsed.actions.length === 0) break;
+      const messages: ChatMessage[] = [
+        { role: 'system', content: builderSystemPrompt({ ...state, draftBotId, pendingApproval }, Boolean(ctx.userConfirmed)) },
+        ...history,
+      ];
+      const parsed = await modelRound(messages);
+      pendingResults = false;
+      if (parsed) {
+        if (parsed.message) finalMessage = parsed.message;
+        const before = activity.length;
+        const executed = await runActions(parsed.actions);
+        if (executed > 0) {
+          // The wrap-up did more work; its results are unreported by design
+          // (hard budget). Be honest instead of pretending the turn closed.
+          history.push(resultsFeedback(before));
+        }
       }
-
-      // Execute actions through the registry.
-      let executed = 0;
-      for (const action of parsed.actions) {
-        // Unknown tools are executed through the registry too — executeTool
-        // records them as errors so the audit trail stays complete.
-        const record: ExecRecord = await executeTool(ctx, action.tool, action.args, seq++);
-        activity.push({ seq: record.seq, tool: record.tool, label: record.label, status: record.status, detail: record.detail, data: record.data });
-
-        // Track state transitions.
-        if (action.tool === 'bot_create_draft' && record.status === 'ok') {
-          // The tool result carries the new bot id in the AgentStep row; read it back cheaply.
-          const step = await db.agentStep.findFirst({
-            where: { sessionId: session.id, seq: record.seq },
-            select: { resultJson: true },
-          });
-          if (step?.resultJson) {
-            try {
-              const data = JSON.parse(step.resultJson) as { botId?: string };
-              if (data.botId) draftBotId = data.botId;
-            } catch {
-              /* ignore */
-            }
-          }
-        }
-        if (action.tool === 'bot_publish' && record.status === 'confirm') {
-          pendingApproval = { tool: action.tool, botId: String((action.args as { botId?: string })?.botId ?? '') };
-        }
-        if (action.tool === 'bot_publish' && record.status === 'ok') {
-          pendingApproval = null;
-        }
-        if (action.tool === 'bot_unpublish' && record.status === 'ok') {
-          pendingApproval = null;
-        }
-        executed++;
-      }
-
-      if (executed === 0 || parsed.done) break;
-
-      // Feed results back for the next round: append a synthetic user message
-      // with the tool outcomes (labels + compact data) so the model can react.
-      const resultsText = activity
-        .slice(-executed)
-        .map((a) => {
-          const dataSuffix =
-            a.data !== undefined
-              ? ` | data: ${truncateForLog(typeof a.data === 'string' ? a.data : JSON.stringify(a.data), 600)}`
-              : '';
-          return `[${a.status}] ${a.tool}: ${a.label}${dataSuffix}`;
-        })
-        .join('\n');
-      history.push({ role: 'user', content: `TOOL RESULTS:\n${resultsText}\n\nContinue (JSON envelope only).` });
+      finalMessage =
+        (finalMessage ? `${finalMessage}\n\n` : '') +
+        '(Round budget reached — if anything is still unfinished, send "continue" and I will pick up exactly where I stopped.)';
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -573,6 +640,15 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
       draftBotId,
       error: sanitizeForLog(detail),
     };
+  }
+
+  // BR-034: a turn must never end in silence. An empty final message used to
+  // persist as a blank assistant bubble — the user saw "working…" and then
+  // literally nothing.
+  if (!finalMessage.trim()) {
+    finalMessage = activity.length
+      ? 'I ran the steps above, but my final reply came back empty. Send "continue" (or restate the task) and I will pick it up from here.'
+      : 'I could not produce a reply for that turn — please send it again.';
   }
 
   // Persist task state + the assistant entry with its activity feed.

@@ -104,7 +104,31 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.09.002-beta-03** — the design round: every surface re-questioned
+**NURAE V00.09.003-beta-03** — the agent-continuity round: the bug every live
+tester hits ("the agent says working and then it stops") is fixed at the loop
+level, for both agents.
+
+- **Actions are no longer dropped mid-task (BR-034)**: free models habitually
+  set `done:true` (or omit `done` — which used to default to TRUE) while
+  still listing actions. The old loop executed round 0 and silently discarded
+  every later envelope's actions — the agent narrated "Working on it…" and
+  froze. Now EVERY round's actions execute; `done` is advisory.
+- **Tool results are always reported**: after actions run, the model always
+  sees the results before the turn may end. If the round budget (now 6, was
+  3) runs out mid-work, ONE wrap-up round produces a real report plus an
+  honest "send continue" note — never a stale narration or silence.
+- **No more blank replies**: a turn that ends without a message now persists
+  an honest fallback ("send continue…") instead of an empty bubble.
+- **Bigger envelopes**: agent rounds request ≥3000 output tokens (was 1500)
+  so behavior-JSON no longer truncates mid-generation; prompts now tell the
+  model to batch independent calls into one actions array (fewer rounds).
+- **Ghost bubble fixed**: a failed agent turn removed a mismatched optimistic
+  id — the user message could linger as if the agent had ignored it.
+- **Free build budget**: `ai_build` daily free units 10 → 40 (fresh installs;
+  existing deployments can raise it in the pricing panel) — turns got honest,
+  so they got longer.
+
+**V00.09.002-beta-03** — the design round: every surface re-questioned
 from first principles ("does the user need this?"), then removed, simplified
 or rebuilt around its actual job.
 

@@ -32,9 +32,12 @@ import { skillIndexLines } from './skills';
 const TURN_LIMIT = 20; // operator turns per minute — same budget as chat
 const TURN_WINDOW_MS = 60 * 1000;
 
-const MAX_ROUNDS = 4; // platform questions fan out wider than a single build
+const MAX_ROUNDS = 6; // platform questions fan out wide; a real diagnosis chains read → act → report
 const MAX_ACTIONS_PER_ROUND = 6;
 const HISTORY_ENTRIES = 24;
+/** Floor for per-round output tokens (BR-034): envelopes with several tool
+ *  calls plus a report truncate at 1500, ending turns mid-work. */
+const AI_ROUND_TOKEN_FLOOR = 3000;
 
 /** Synthetic session owner for operator workspaces (no User row exists — the admin authenticates by token). */
 export const OPERATOR_USER_ID = '__operator__';
@@ -142,8 +145,9 @@ function operatorSystemPrompt(state: OperatorState, userConfirmed: boolean): str
     'Rules:',
     '- Tool calls happen ONLY through "actions". NEVER emit markup such as <tool_call>, <invoke>,',
     '  mcp:tool, function-call brackets or name=value call syntax — that is not this protocol.',
-    `- "actions" may contain 0 to ${MAX_ACTIONS_PER_ROUND} items. Set "done": false if you expect tool`,
-    '  results back and want another round; otherwise true.',
+    `- "actions" may contain 0 to ${MAX_ACTIONS_PER_ROUND} items. BATCH WORK: put every independent call of`,
+    '  the current step into ONE actions array. "done" is a hint, not a gate — NURAE always executes',
+    '  your actions and shows you each result before the turn ends; set "done": true when nothing is left.',
     '- platform_settings_set: set args.confirm=true ONLY when the operator clearly asked for the',
     '  change; the console still requires their one-click approval.',
     stateLines.length ? `\nSESSION STATE:\n${stateLines.join('\n')}` : '',
@@ -253,6 +257,57 @@ export async function runOperatorTurn(input: OperatorTurnInput): Promise<Operato
   let pendingApproval = state.pendingApproval ?? null;
   let finalMessage = '';
 
+  /** Execute a batch of actions through the registry, tracking approvals. */
+  const runActions = async (
+    actions: Array<{ tool: string; args: Record<string, unknown> }>,
+  ): Promise<number> => {
+    let executed = 0;
+    for (const action of actions) {
+      const record: ExecRecord = await executeTool(ctx, action.tool, action.args, seq++);
+      activity.push({ seq: record.seq, tool: record.tool, label: record.label, status: record.status, detail: record.detail, data: record.data });
+      const spec = getTool(action.tool);
+      if (spec?.consequential && record.status === 'confirm') {
+        pendingApproval = { tool: action.tool };
+      }
+      if (spec?.consequential && record.status === 'ok') {
+        pendingApproval = null;
+      }
+      executed += 1;
+    }
+    return executed;
+  };
+
+  const resultsFeedback = (from: number): ChatMessage => {
+    const resultsText = activity
+      .slice(from)
+      .map((a) => {
+        const dataSuffix =
+          a.data !== undefined
+            ? ` | data: ${truncateForLog(typeof a.data === 'string' ? a.data : JSON.stringify(a.data), 600)}`
+            : '';
+        return `[${a.status}] ${a.tool}: ${a.label}${dataSuffix}`;
+      })
+      .join('\n');
+    return { role: 'user', content: `TOOL RESULTS:\n${resultsText}\n\nContinue (JSON envelope only).` };
+  };
+
+  /** One model round. No billing gate here — the operator IS the platform. */
+  const modelRound = async (messages: ChatMessage[]) => {
+    const text = await selection.provider.generate(messages, {
+      model: platformBot.model,
+      temperature: 0.2, // operators want precision even more than builders
+      maxTokens: Math.max(platformBot.maxTokens, AI_ROUND_TOKEN_FLOOR),
+      apiKey: apiKey ?? selection.apiKey,
+      baseUrl: selection.baseUrl,
+    });
+    return parseAgentReply(text);
+  };
+
+  // BR-034: tool results the model has not seen yet — never end the turn on
+  // them (the old loop dropped round-1+ actions on done:true and never
+  // reported the last batch when the budget ran out).
+  let pendingResults = false;
+
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const messages: ChatMessage[] = [
@@ -260,48 +315,48 @@ export async function runOperatorTurn(input: OperatorTurnInput): Promise<Operato
         ...history,
       ];
 
-      const text = await selection.provider.generate(messages, {
-        model: platformBot.model,
-        temperature: 0.2, // operators want precision even more than builders
-        maxTokens: Math.max(platformBot.maxTokens, 1500),
-        apiKey: apiKey ?? selection.apiKey,
-        baseUrl: selection.baseUrl,
+      const parsed = await modelRound(messages);
+      pendingResults = false; // the model just saw the full history incl. any results
+
+      if (parsed.message) finalMessage = parsed.message;
+
+      if (parsed.actions.length === 0) {
+        // A round with no actions is the model's final word for this turn.
+        break;
+      }
+
+      // Execute actions in EVERY round — done is advisory (BR-034).
+      const before = activity.length;
+      await runActions(parsed.actions);
+
+      // Always feed results back before the turn may end.
+      history.push(resultsFeedback(before));
+      pendingResults = true;
+    }
+
+    // Budget exhausted with unreported results → ONE wrap-up round.
+    if (pendingResults) {
+      history.push({
+        role: 'user',
+        content:
+          'ROUND BUDGET REACHED. Give your final answer NOW based on the tool results above: state what you found, what you changed, and what is blocking. Do not start new tool work unless it is essential; if more work remains, tell the operator to send "continue".',
       });
-
-      const parsed = parseAgentReply(text);
-      finalMessage = parsed.message || finalMessage;
-
-      if (parsed.actions.length === 0 || parsed.done) {
-        if (round > 0 || parsed.actions.length === 0) break;
-      }
-
-      let executed = 0;
-      for (const action of parsed.actions) {
-        const record: ExecRecord = await executeTool(ctx, action.tool, action.args, seq++);
-        activity.push({ seq: record.seq, tool: record.tool, label: record.label, status: record.status, detail: record.detail, data: record.data });
-        const spec = getTool(action.tool);
-        if (spec?.consequential && record.status === 'confirm') {
-          pendingApproval = { tool: action.tool };
+      const messages: ChatMessage[] = [
+        { role: 'system', content: operatorSystemPrompt({ ...state, pendingApproval }, Boolean(ctx.userConfirmed)) },
+        ...history,
+      ];
+      const parsed = await modelRound(messages);
+      if (parsed) {
+        if (parsed.message) finalMessage = parsed.message;
+        const before = activity.length;
+        const executed = await runActions(parsed.actions);
+        if (executed > 0) {
+          history.push(resultsFeedback(before));
         }
-        if (spec?.consequential && record.status === 'ok') {
-          pendingApproval = null;
-        }
-        executed += 1;
       }
-
-      if (executed === 0 || parsed.done) break;
-
-      const resultsText = activity
-        .slice(-executed)
-        .map((a) => {
-          const dataSuffix =
-            a.data !== undefined
-              ? ` | data: ${truncateForLog(typeof a.data === 'string' ? a.data : JSON.stringify(a.data), 600)}`
-              : '';
-          return `[${a.status}] ${a.tool}: ${a.label}${dataSuffix}`;
-        })
-        .join('\n');
-      history.push({ role: 'user', content: `TOOL RESULTS:\n${resultsText}\n\nContinue (JSON envelope only).` });
+      finalMessage =
+        (finalMessage ? `${finalMessage}\n\n` : '') +
+        '(Round budget reached — if anything is still unfinished, send "continue" and I will pick up exactly where I stopped.)';
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -326,6 +381,14 @@ export async function runOperatorTurn(input: OperatorTurnInput): Promise<Operato
   }
 
   const needsConfirm = activity.some((a) => a.status === 'confirm');
+
+  // BR-034: a turn must never end in silence (blank bubbles read as "it stopped").
+  if (!finalMessage.trim()) {
+    finalMessage = activity.length
+      ? 'I ran the steps above, but my final reply came back empty. Send "continue" (or restate the request) and I will pick it up from here.'
+      : 'I could not produce a reply for that turn — please send it again.';
+  }
+
   await db.chatSession.update({
     where: { id: session.id },
     data: {

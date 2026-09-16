@@ -138,15 +138,19 @@ export function AgentsView() {
   };
 
   /** Optimistic user entry — skipped when the same task is already on screen
-   * (e.g. the handoff already persisted it server-side). */
-  const optimisticUser = (text: string) => {
+   *  (e.g. the handoff already persisted it server-side). Returns the local id
+   *  so the caller can remove EXACTLY this entry on failure (BR-034: two
+   *  independent Date.now() ids could mismatch, leaving a ghost bubble that
+   *  made the agent look like it received the task and ignored it). */
+  const optimisticUser = (text: string): string => {
+    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setEntries((e) => {
       const last = e[e.length - 1];
       if (last && last.role === 'user' && last.content === text) return e;
       return [
         ...e,
         {
-          id: `local-${Date.now()}`,
+          id: localId,
           role: 'user',
           content: text,
           attachments: attachments.map((a) => ({ fileId: a.id, name: a.name, kind: a.kind })),
@@ -158,15 +162,16 @@ export function AgentsView() {
         } satisfies EntryDTO,
       ];
     });
+    return localId;
   };
 
   const runTurn = async (sessionId: string, text: string, approve: boolean, attachmentIds?: string[]) => {
     setBusy(true);
     setError(null);
     setPendingSteps([]);
-    const localId = `local-${Date.now()}`;
+    let localId: string | null = null;
     if (text || (attachmentIds ?? []).length) {
-      optimisticUser(text);
+      localId = optimisticUser(text);
       setAttachments([]);
     }
     try {
@@ -197,7 +202,7 @@ export function AgentsView() {
     } catch (err) {
       // The optimistic user entry was never persisted — remove it (same rule
       // as chat) and surface the error.
-      setEntries((e) => e.filter((x) => x.id !== localId));
+      if (localId) setEntries((e) => e.filter((x) => x.id !== localId));
       setError(err instanceof Error ? err.message : 'The agent could not continue.');
     } finally {
       setBusy(false);

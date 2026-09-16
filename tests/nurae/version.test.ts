@@ -12,7 +12,7 @@ import {
 
 describe('FRAZIYM versioning', () => {
   test('current release has the correct authoritative value', () => {
-    expect(NURAE_VERSION).toBe('V00.09.002-beta-03');
+    expect(NURAE_VERSION).toBe('V00.09.003-beta-03');
     expect(NURAE_NAME).toBe('NURAE');
     expect(NURAE_VENDOR).toBe('FRAZIYM TECH & AI');
   });
@@ -49,9 +49,9 @@ describe('FRAZIYM versioning', () => {
 
   test('banner and identity line contain the authoritative version', () => {
     const banner = startupBanner();
-    expect(banner).toContain('NURAE V00.09.002-beta-03');
+    expect(banner).toContain('NURAE V00.09.003-beta-03');
     expect(banner).toContain(NURAE_VENDOR);
     expect(banner).toContain(NURAE_TAGLINE);
-    expect(identityLine()).toBe('NURAE V00.09.002-beta-03 | FRAZIYM TECH & AI');
+    expect(identityLine()).toBe('NURAE V00.09.003-beta-03 | FRAZIYM TECH & AI');
   });
 });

@@ -54,7 +54,10 @@ export const DEFAULT_CATALOG: FeatureSpec[] = [
     description: 'One model round of the bot-builder agent (tools included).',
     unit: 'round',
     unitPriceMicros: 5_000, // $0.005
-    freeDailyUnits: 10,
+    // A complete build turn runs create → configure → verify → report (4–7
+    // rounds); 10/day bought only ~2 broken turns, 40/day buys ~6 complete
+    // ones (BR-034 round: turns got honest, so they got longer).
+    freeDailyUnits: 40,
     hardGate: true,
   },
   {

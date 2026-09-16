@@ -17,7 +17,7 @@ export const NURAE_NAME = 'NURAE';
 export const NURAE_VENDOR = 'FRAZIYM TECH & AI';
 export const NURAE_TAGLINE = 'Build, run and improve AI Telegram bots';
 
-export const NURAE_VERSION = 'V00.09.002-beta-03';
+export const NURAE_VERSION = 'V00.09.003-beta-03';
 
 /** Structured representation of the FRAZIYM version format. */
 export interface FraziymVersion {

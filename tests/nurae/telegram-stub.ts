@@ -21,6 +21,8 @@ export interface TelegramStubState {
   sends: Array<{ chatId: string; text: string }>;
   /** Scripted AI replies: when non-empty, each chat completion shifts one. */
   aiResponses: string[];
+  /** Parsed request bodies of every AI chat-completion call (config assertions). */
+  aiRequests: Array<Record<string, unknown>>;
   /** getChatMember status per user_id ("*" = wildcard default). Default: member. */
   chatMemberStatus: Record<string, string>;
 }
@@ -31,6 +33,7 @@ export const telegramState: TelegramStubState = {
   registry: new Map(),
   sends: [],
   aiResponses: [],
+  aiRequests: [],
   chatMemberStatus: {},
 };
 
@@ -122,6 +125,13 @@ export function installTelegramStub(): void {
 
     // OpenAI-compatible AI stub: scripted queue first, fixed reply otherwise.
     if (url.includes('/chat/completions')) {
+      let aiBody: Record<string, unknown> = {};
+      try {
+        aiBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      } catch {
+        aiBody = {};
+      }
+      telegramState.aiRequests.push(aiBody);
       const scripted = telegramState.aiResponses.shift();
       return tgRes({ choices: [{ message: { content: scripted ?? 'stubbed AI reply' } }] });
     }
@@ -139,5 +149,6 @@ export function resetTelegramStub(): void {
   telegramState.registry.clear();
   telegramState.sends.length = 0;
   telegramState.aiResponses.length = 0;
+  telegramState.aiRequests.length = 0;
   telegramState.chatMemberStatus = {};
 }
