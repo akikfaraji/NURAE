@@ -17,7 +17,7 @@ import { ApiError, SessionUserDTO, UserBotDTO, nuraeApi } from '@/lib/nurae-clie
 import { TEMPLATE_CATALOG } from '@/lib/nurae/bots/templates';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { LoadingRow } from '@/components/nurae/bits';
+import { LoadingRow, PageFade } from '@/components/nurae/bits';
 
 export function BotsListView() {
   const { user, checked, signOut } = useSiteUser();
@@ -46,6 +46,7 @@ export function BotsListView() {
     <div className="flex min-h-dvh flex-col bg-background">
       <SiteHeader user={user} onSignOut={signOut} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6">
+        <PageFade>
         <div className="flex flex-wrap items-baseline justify-between gap-4">
           <div>
             <h1 className="text-xl font-medium tracking-tight text-foreground">Bots</h1>
@@ -132,6 +133,7 @@ export function BotsListView() {
         )}
 
         <BuiltInBotsSection />
+        </PageFade>
       </main>
     </div>
   );

@@ -50,6 +50,49 @@ function sectionOf(view: View): Section {
   }
 }
 
+/** The canonical URL for a view — sections are real routes; deep views
+ *  (project/bot) ride their section as query params so they survive a
+ *  refresh, a share, and Back/forward. */
+function urlForView(view: View): string {
+  const url = `/admin/${sectionOf(view)}`;
+  if (view.type === 'project') return `${url}?p=${encodeURIComponent(view.id)}`;
+  if (view.type === 'bot') {
+    return `${url}?p=${encodeURIComponent(view.projectId)}&b=${encodeURIComponent(view.id)}`;
+  }
+  return url;
+}
+
+/** Rebuild the view from the URL — the single source of truth for Back,
+ *  forward, refresh and pasted links. */
+function viewFromUrl(): View {
+  if (typeof window === 'undefined') return { type: 'overview' };
+  try {
+    const path = window.location.pathname.replace(/\/$/, '');
+    const seg = path.startsWith('/admin/') ? path.slice('/admin/'.length) : '';
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('p');
+    const botId = params.get('b');
+    switch (seg) {
+      case 'bots':
+        return { type: 'bots' };
+      case 'customers':
+        return { type: 'customers' };
+      case 'agent':
+        return { type: 'agent' };
+      case 'settings':
+        return { type: 'settings' };
+      case 'projects':
+        if (botId && projectId) return { type: 'bot', id: botId, projectId };
+        if (projectId) return { type: 'project', id: projectId };
+        return { type: 'projects' };
+      default:
+        return { type: 'overview' };
+    }
+  } catch {
+    return { type: 'overview' };
+  }
+}
+
 function viewFromSection(section: string | undefined): View {
   switch (section) {
     case 'bots':
@@ -72,20 +115,45 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
   const [authRequired, setAuthRequired] = useState(false);
   const [authed, setAuthed] = useState(true);
   const [checked, setChecked] = useState(false);
-  const [view, setView] = useState<View>(() => viewFromSection(initialSection));
+  const [view, setViewState] = useState<View>(() => viewFromSection(initialSection));
   const [coreUp, setCoreUp] = useState<boolean | null>(null);
 
-  // Every navigation keeps the URL honest (/admin/<section>) without a router
-  // round-trip — deep views (project/bot) map back to their section.
+  // The URL owns the view: every navigation is a REAL history push (Back
+  // steps through sections and deep views instead of exiting /admin), and
+  // popstate re-derives the view from the URL for forward/refresh/share.
   const go = useCallback((next: View) => {
-    setView(next);
+    setViewState(next);
     try {
-      const url = `/admin/${sectionOf(next)}`;
-      if (window.location.pathname !== url) window.history.replaceState(null, '', url);
+      const url = urlForView(next);
+      if (window.location.pathname + window.location.search !== url) {
+        window.history.pushState(null, '', url);
+      }
     } catch {
       /* SSR-ish edge — URL sync is best-effort */
     }
   }, []);
+
+  useEffect(() => {
+    // One sync from the URL on mount: deep links (?p=…&b=…) and refreshes
+    // land on the exact view the URL describes. initialSection is only a
+    // fallback for URLs without a section (never in practice — /admin
+    // redirects to /admin/dashboard).
+    const kick = setTimeout(() => {
+      const urlView = viewFromUrl();
+      if (initialSection) {
+        const fallback = viewFromSection(initialSection);
+        setViewState(urlView.type === 'overview' && fallback.type !== 'overview' ? fallback : urlView);
+      } else {
+        setViewState(urlView);
+      }
+    }, 0);
+    const onPop = () => setViewState(viewFromUrl());
+    window.addEventListener('popstate', onPop);
+    return () => {
+      clearTimeout(kick);
+      window.removeEventListener('popstate', onPop);
+    };
+  }, [initialSection]);
 
   // Load catalog + auth state. Catalog lives behind the auth guard, so fetch
   // it only once authenticated.
@@ -176,10 +244,17 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
                   : key === 'projects'
                     ? view.type === 'projects' || view.type === 'project'
                     : view.type === key;
+              const target = urlForView(key === 'overview' ? { type: 'overview' } : ({ type: key } as View));
               return (
-                <button
+                <a
                   key={key}
-                  onClick={() => go(key === 'overview' ? { type: 'overview' } : ({ type: key } as View))}
+                  href={target}
+                  onClick={(e) => {
+                    // A real anchor — right-click / cmd-click / copy all work —
+                    // while a plain click stays inside the SPA.
+                    e.preventDefault();
+                    go(key === 'overview' ? { type: 'overview' } : ({ type: key } as View));
+                  }}
                   aria-current={active ? 'page' : undefined}
                   className={
                     'shrink-0 text-xs transition-colors sm:text-[13px] ' +
@@ -187,15 +262,12 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
                   }
                 >
                   {label}
-                </button>
+                </a>
               );
             })}
           </nav>
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            <span
-              className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex"
-              title={coreUp ? 'NURAE core reachable' : 'NURAE core unreachable — API calls will fail'}
-            >
+            <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
               <span
                 className={
                   'inline-block h-1.5 w-1.5 rounded-full ' +
@@ -204,6 +276,9 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
               />
               {coreUp === null ? '…' : coreUp ? 'Core online' : 'Core offline'}
             </span>
+            {coreUp === false && (
+              <span className="sr-only">NURAE core unreachable — API calls will fail</span>
+            )}
             <Link
               href="/"
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -260,7 +335,7 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
           <BotView
             botId={view.id}
             catalog={catalog!}
-            onBack={() => setView({ type: 'project', id: view.projectId })}
+            onBack={() => go({ type: 'project', id: view.projectId })}
           />
         )}
       </main>

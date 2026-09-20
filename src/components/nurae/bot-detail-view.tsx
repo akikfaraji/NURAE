@@ -21,6 +21,7 @@ import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-she
 import { Markdown } from '@/components/nurae/markdown';
 import { BehaviorSection } from '@/components/nurae/bot-behavior-section';
 import { AudienceSection, BroadcastSection, PaymentsSection, SchedulesSection } from '@/components/nurae/bot-ecosystem-sections';
+import { PageFade } from '@/components/nurae/bits';
 import {
   ApiError,
   CapturedSendDTO,
@@ -136,14 +137,24 @@ export function BotDetailView() {
     }
   };
 
+  // Archive/delete navigate away ONLY on success — a silent failure used to
+  // look exactly like a success (the user landed on /bots none the wiser).
   const archive = async () => {
-    await nuraeApi.updateMyBot(botId, { archived: true }).catch(() => undefined);
-    router.push('/bots');
+    try {
+      await nuraeApi.updateMyBot(botId, { archived: true });
+      router.push('/bots');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not archive the bot.');
+    }
   };
 
   const remove = async () => {
-    await nuraeApi.deleteMyBot(botId).catch(() => undefined);
-    router.push('/bots');
+    try {
+      await nuraeApi.deleteMyBot(botId);
+      router.push('/bots');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not delete the bot.');
+    }
   };
 
   if (!checked) return <SiteSplash />;
@@ -191,6 +202,7 @@ export function BotDetailView() {
     <div className="flex min-h-dvh flex-col bg-background">
       <SiteHeader user={user} onSignOut={signOut} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6">
+        <PageFade>
         {/* Header row */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <Link href="/bots" className="text-xs text-muted-foreground hover:text-foreground">← Bots</Link>
@@ -282,6 +294,7 @@ export function BotDetailView() {
             <DangerButton label="Delete bot" destructive onConfirm={() => void remove()} />
           </div>
         </section>
+        </PageFade>
       </main>
     </div>
   );
@@ -345,6 +358,36 @@ function ConfigSection({
 
   const providerInfo = catalog?.providers.find((p) => p.id === provider);
 
+  // --- Dirty tracking + visible validation (no more silent coercion) ---
+  const dirty =
+    name !== bot.name ||
+    description !== bot.description ||
+    systemPrompt !== bot.systemPrompt ||
+    provider !== bot.provider ||
+    model !== bot.model ||
+    temperature !== String(bot.temperature) ||
+    maxTokens !== String(bot.maxTokens) ||
+    memorySize !== String(bot.memorySize) ||
+    token.trim() !== '' ||
+    apiKey.trim() !== '';
+
+  const temperatureError = (() => {
+    if (!temperature.trim() || !Number.isFinite(Number(temperature))) return 'Enter a number between 0 and 2.';
+    const n = Number(temperature);
+    return n < 0 || n > 2 ? 'Temperature must be between 0 and 2.' : null;
+  })();
+  const maxTokensError = (() => {
+    if (!maxTokens.trim() || !Number.isFinite(Number(maxTokens))) return 'Enter a whole number of 1 or more.';
+    const n = Number(maxTokens);
+    return !Number.isInteger(n) || n < 1 ? 'Max tokens must be a whole number of at least 1.' : null;
+  })();
+  const memorySizeError = (() => {
+    if (!memorySize.trim() || !Number.isFinite(Number(memorySize))) return 'Enter a whole number of 1 or more.';
+    const n = Number(memorySize);
+    return !Number.isInteger(n) || n < 1 || n > 50 ? 'Memory must be a whole number between 1 and 50.' : null;
+  })();
+  const invalid = Boolean(temperatureError || maxTokensError || memorySizeError);
+
   return (
     <Section title="Configuration" hint="The bot must be stopped before transport changes apply — configuration saves instantly.">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -388,15 +431,43 @@ function ConfigSection({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Temperature (0–2)</Label>
-          <Input type="number" step="0.1" min={0} max={2} value={temperature} onChange={(e) => setTemperature(e.target.value)} className="bg-transparent" />
+          <Input
+            type="number"
+            step="0.1"
+            min={0}
+            max={2}
+            value={temperature}
+            onChange={(e) => setTemperature(e.target.value)}
+            className="bg-transparent"
+            aria-invalid={temperatureError ? true : undefined}
+          />
+          {temperatureError && <p className="text-xs text-destructive">{temperatureError}</p>}
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Max tokens</Label>
-          <Input type="number" min={1} max={100000} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} className="bg-transparent" />
+          <Input
+            type="number"
+            min={1}
+            max={100000}
+            value={maxTokens}
+            onChange={(e) => setMaxTokens(e.target.value)}
+            className="bg-transparent"
+            aria-invalid={maxTokensError ? true : undefined}
+          />
+          {maxTokensError && <p className="text-xs text-destructive">{maxTokensError}</p>}
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Memory (recent messages kept)</Label>
-          <Input type="number" min={1} max={50} value={memorySize} onChange={(e) => setMemorySize(e.target.value)} className="bg-transparent" />
+          <Input
+            type="number"
+            min={1}
+            max={50}
+            value={memorySize}
+            onChange={(e) => setMemorySize(e.target.value)}
+            className="bg-transparent"
+            aria-invalid={memorySizeError ? true : undefined}
+          />
+          {memorySizeError && <p className="text-xs text-destructive">{memorySizeError}</p>}
         </div>
       </div>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -464,7 +535,7 @@ function ConfigSection({
         <Button
           size="sm"
           variant="outline"
-          disabled={saving}
+          disabled={saving || !dirty || invalid}
           onClick={() =>
             onSave({
               name,
@@ -472,9 +543,9 @@ function ConfigSection({
               systemPrompt,
               provider,
               model,
-              temperature: Number(temperature) || 0.7,
-              maxTokens: Number(maxTokens) || 1024,
-              memorySize: Number(memorySize) || 10,
+              temperature: Number(temperature),
+              maxTokens: Number(maxTokens),
+              memorySize: Number(memorySize),
               ...(token.trim() ? { telegramToken: token.trim() } : {}),
               ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
             })
@@ -482,6 +553,13 @@ function ConfigSection({
         >
           {saving ? 'Saving…' : 'Save configuration'}
         </Button>
+        {/* Disabled buttons explain themselves visibly — a title alone shows
+            nothing (especially on Chrome and on touch). */}
+        {invalid ? (
+          <p className="mt-2 text-xs text-destructive">Fix the highlighted fields to save.</p>
+        ) : !dirty ? (
+          <p className="mt-2 text-xs text-muted-foreground">Unchanged — edit a field to save.</p>
+        ) : null}
       </div>
     </Section>
   );

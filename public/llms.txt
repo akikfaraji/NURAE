@@ -39,8 +39,9 @@ Telegram commands, inline keyboards, callbacks and flows:
 
 ## Integration notes
 
-- Identity always comes from the authenticated session/admin token — never from
-  model output. Consequential actions require an explicit human approval flag.
+- Identity always comes from the authenticated session, admin token or Bearer
+  AgentToken — never from model output. Consequential actions require an
+  explicit human approval flag.
 - Bots follow the Telegram Bot API honestly: no first-contact DMs (the API
   refuses), no unsolicited email (consent-first only). Growth comes from
   join-gates, streaks, referral loops and shareable deep links.
@@ -50,6 +51,33 @@ Telegram commands, inline keyboards, callbacks and flows:
 - Self-hosting: one Node process + SQLite; point NURAE_SITE_URL at the public
   origin, add a Telegram token per bot, an AI provider key (OpenRouter has free
   models), and the fleet + agents wake up on their own.
+
+## Remote API
+
+External AI agents (e.g. Claude) can operate NURAE directly over Bearer
+AgentTokens. Mint them in the NURAE dashboard (API keys card) — the raw key
+(`nrae_…`) is shown once, only its hash is stored, revocation is instant.
+
+- Auth: `Authorization: Bearer nrae_…`. Identity comes from the token, never
+  from the request body. User-scope tokens act as their owner; platform-scope
+  tokens (operator only) unlock the platform tool tier.
+- `GET /api/v1/me` — token identity (name, scope, owner email).
+- `GET /api/v1/tools` — the tool registry as JSON-schema descriptors + the
+  skill library; platform scope also gets `platformTools` + `operatorSkills`.
+- `POST /api/v1/tools/call` — `{tool, args?, confirm?}` → always HTTP 200 with
+  `{ok, status: "ok"|"error"|"confirm", label, detail?, data?}`. Consequential
+  tools (publish, unpublish, broadcast) answer `status: "confirm"` and DO NOT
+  run until the human approves; then resend with `confirm: true`. Tokens
+  minted with allowConsequential=false can never execute them.
+- `POST /api/v1/agent/turn` — `{text, sessionId?, attachmentIds?}` → one full
+  Bot Builder turn (`{sessionId, reply, steps, done}`). User-scope tokens
+  only; approvals still happen in the web UI. Limits: 20 turns/min.
+- `POST /api/mcp` — MCP connector surface (JSON-RPC 2.0): `initialize`,
+  `notifications/initialized` (202), `tools/list`, `tools/call`. Missing auth
+  → 401 with `WWW-Authenticate: Bearer`.
+- `GET /api/openapi.json` — the machine-readable contract (OpenAPI 3.1).
+- Limits: 60 tool calls/min and 20 agent turns/min per token. Every call is
+  audit-logged; secrets (bot tokens, AI keys) are never returned.
 
 ## Vendor
 

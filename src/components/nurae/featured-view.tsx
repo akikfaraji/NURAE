@@ -7,8 +7,10 @@
  */
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { SiteFooter, SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
+import { PageFade } from '@/components/nurae/bits';
 
 const FEATURED_QUESTIONS = [
   'What can NURAE do?',
@@ -17,49 +19,56 @@ const FEATURED_QUESTIONS = [
 ];
 
 export function FeaturedView() {
+  const router = useRouter();
   const { user, checked, signOut } = useSiteUser();
 
   if (!checked) return <SiteSplash />;
 
+  // The handoff contract: the question is stored, the user is MOVED to the
+  // conversation. A silent sessionStorage write with no navigation reads as a
+  // dead button — the navigation IS the feedback.
   const pick = (text: string) => {
     try {
       sessionStorage.setItem('nurae:prefill', text);
     } catch {
-      /* private mode — the plain link still works */
+      /* private mode — navigate anyway; the chat is still one tap away */
     }
+    router.push('/chats');
   };
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <SiteHeader user={user} onSignOut={signOut} variant={user ? 'app' : 'public'} />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-14 sm:px-6">
-        <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Featured</p>
-        <h1 className="mt-3 text-2xl font-medium tracking-tight text-foreground">
-          The NURAE CS conversation
-        </h1>
-        <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
-          The official NURAE assistant — the same one that answers here — talks through what the
-          platform can do, how bots are built, and what your agents can take off your hands.
-          It renders markdown, remembers context, and hands real work to the Bot Builder.
-        </p>
+        <PageFade>
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Featured</p>
+          <h1 className="mt-3 text-2xl font-medium tracking-tight text-foreground">
+            The NURAE CS conversation
+          </h1>
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
+            The official NURAE assistant — the same one that answers here — talks through what the
+            platform can do, how bots are built, and what your agents can take off your hands.
+            It renders markdown, remembers context, and hands real work to the Bot Builder.
+          </p>
 
-        <div className="mt-8 border-t border-border/60">
-          {FEATURED_QUESTIONS.map((q) => (
-            <button
-              key={q}
-              type="button"
-              onClick={() => pick(q)}
-              className="group flex w-full items-center justify-between gap-4 border-b border-border/60 py-3 text-left"
-            >
-              <span className="text-sm text-muted-foreground transition-colors group-hover:text-foreground">{q}</span>
-              <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">→</span>
-            </button>
-          ))}
-        </div>
+          <div className="mt-8 border-t border-border/60">
+            {FEATURED_QUESTIONS.map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => pick(q)}
+                className="group flex w-full items-center justify-between gap-4 border-b border-border/60 py-3 text-left"
+              >
+                <span className="text-sm text-muted-foreground transition-colors group-hover:text-foreground">{q}</span>
+                <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">→</span>
+              </button>
+            ))}
+          </div>
 
-        <Button size="sm" asChild className="mt-8">
-          <Link href="/chats">Open the conversation {user ? '' : '(sign in first)'}</Link>
-        </Button>
+          <Button size="sm" asChild className="mt-8">
+            <Link href="/chats">Open the conversation {user ? '' : '(sign in first)'}</Link>
+          </Button>
+        </PageFade>
       </main>
       {!user && <SiteFooter siteName="NURAE" />}
     </div>

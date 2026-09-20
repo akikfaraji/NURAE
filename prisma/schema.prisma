@@ -170,6 +170,7 @@ model User {
 
   sessions           Session[]
   verificationTokens VerificationToken[]
+  agentTokens        AgentToken[]
 
   @@map("users")
 }
@@ -566,4 +567,36 @@ model TopupOrder {
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@map("topup_orders")
+}
+
+// ---------------------------------------------------------------------------
+// External AI agents — Bearer API tokens so agents like Claude can operate
+// NURAE over /api/v1/* and /api/mcp
+// ---------------------------------------------------------------------------
+
+// A minted credential for an external AI agent. The raw key is shown ONCE at
+// creation; only its SHA-256 hash is stored. User-scope tokens act as their
+// owner (ownerId set); platform-scope tokens are operator credentials
+// (ownerId null) and unlock the platform tool tier. Identity ALWAYS comes
+// from this row — never from the request body.
+model AgentToken {
+  id                 String    @id @default(cuid())
+  name               String
+  // First 12 chars of the raw key — safe to display in lists.
+  prefix             String
+  // SHA-256 hex of the full raw key.
+  keyHash            String    @unique
+  // 'user' | 'platform'
+  scope              String    @default("user")
+  ownerId            String?
+  // False ⇒ consequential tools always answer "confirm" and never execute.
+  allowConsequential Boolean   @default(false)
+  lastUsedAt         DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@map("agent_tokens")
 }

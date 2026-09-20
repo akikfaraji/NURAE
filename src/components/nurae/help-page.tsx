@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { SiteFooter, SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
+import { PageFade } from '@/components/nurae/bits';
 import { MailIcon, TelegramIcon } from '@/components/nurae/icons';
 import { SiteInfoResponse, nuraeApi } from '@/lib/nurae-client/api';
 
@@ -100,6 +101,7 @@ export function HelpPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
+        <PageFade>
         <h1 className="text-2xl font-medium tracking-tight text-foreground">Help &amp; FAQ</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Quick answers about accounts, verification codes and bots. Anything else — the{' '}
@@ -158,6 +160,7 @@ export function HelpPage() {
             )}
           </div>
         </div>
+        </PageFade>
       </main>
       <SiteFooter siteName={siteName} />
     </div>

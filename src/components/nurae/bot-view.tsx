@@ -30,6 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { BotForm } from '@/components/nurae/bot-form';
 import { BotMeta, Pill, StatusBadge } from '@/components/nurae/bits';
 import { BotDTO, Catalog, LogEntry, nuraeApi } from '@/lib/nurae-client/api';
+import { usePoll } from '@/hooks/use-poll';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +38,14 @@ const LOG_COLORS: Record<LogEntry['level'], string> = {
   info: 'text-muted-foreground',
   warn: 'text-muted-foreground',
   error: 'text-destructive',
+};
+
+/** `Bot ${action}ed` produced "Bot stoped"/"restarteded" — say what actually
+ *  happened instead of conjugating with -ed. */
+const ACTION_LABEL: Record<'start' | 'stop' | 'restart', string> = {
+  start: 'Bot is starting',
+  stop: 'Bot stopped',
+  restart: 'Bot restarted',
 };
 
 function timeOf(ts: string): string {
@@ -88,15 +97,12 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
       void refreshBot();
       void refreshLogs();
     }, 0);
-    const t = setInterval(() => {
-      void refreshBot();
-      void refreshLogs();
-    }, 4000);
-    return () => {
-      clearTimeout(kick);
-      clearInterval(t);
-    };
+    return () => clearTimeout(kick);
   }, [refreshBot, refreshLogs]);
+  usePoll(() => {
+    void refreshBot();
+    void refreshLogs();
+  }, 4000);
 
   const lifecycle = async (action: 'start' | 'stop' | 'restart') => {
     setBusy(action);
@@ -108,7 +114,7 @@ export function BotView({ botId, catalog, onBack }: { botId: string; catalog: Ca
             ? await nuraeApi.stopBot(botId)
             : await nuraeApi.restartBot(botId);
       setBot(res.bot);
-      toast.success(`Bot ${action}ed`, { description: `Runtime status: ${res.runtime.status}` });
+      toast.success(ACTION_LABEL[action], { description: `Runtime status: ${res.runtime.status}` });
       await Promise.all([refreshBot(), refreshLogs()]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Failed to ${action} bot`);

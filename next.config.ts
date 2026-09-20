@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 /**
+ * NOTE (dev workflow): after `prisma db push` / `prisma generate` regenerates
+ * the Prisma Client, a long-running `next dev` process keeps serving its
+ * in-memory (stale) client until the server worker reloads. Touching this
+ * config file makes Next.js dev restart itself cleanly — no manual kill.
+ *
  * Split-deployment mode (used by the split E2E workflow):
  *
  *   Vercel serves the dashboard (this deployment) and PROXIES every /api/*

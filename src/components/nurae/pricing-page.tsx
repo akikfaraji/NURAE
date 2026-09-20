@@ -9,6 +9,7 @@
 
 import Link from 'next/link';
 import { SiteFooter, SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
+import { PageFade } from '@/components/nurae/bits';
 import { DEFAULT_CATALOG, MICRO, STARS_PRESETS, TRIAL_DAYS } from '@/lib/nurae/billing/catalog';
 import { PLANS } from '@/lib/nurae/billing/plan-catalog';
 
@@ -28,6 +29,7 @@ export function PricingPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-12 sm:px-6">
+        <PageFade>
         <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Pricing</p>
         <h1 className="mt-2 text-2xl font-medium tracking-tight text-foreground">Pay as you use — or boost it with a plan</h1>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
@@ -187,6 +189,7 @@ export function PricingPage() {
             Build your first bot — free for {TRIAL_DAYS} days
           </Link>
         </div>
+        </PageFade>
       </main>
       <SiteFooter siteName="NURAE" />
     </div>

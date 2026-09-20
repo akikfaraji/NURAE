@@ -15,7 +15,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SiteHeader, useSiteUser } from '@/components/nurae/site-shell';
-import { StatusBadge, StatLine } from '@/components/nurae/bits';
+import { LoadState, PageFade, StatusBadge, StatLine } from '@/components/nurae/bits';
+import { ApiKeysCard } from '@/components/nurae/api-keys-card';
 import { MyDashboardDTO, nuraeApi, ApiError } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -42,6 +43,7 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
   const load = useCallback(async () => {
     try {
       setData(await nuraeApi.myDashboard());
+      setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : (err as Error).message);
     }
@@ -74,10 +76,31 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
     }
   };
 
-  if (!checked || !user || !data) {
+  if (!checked || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-xs text-muted-foreground" role="status">{loadError ? loadError : 'Loading your dashboard…'}</p>
+        <p className="text-xs text-muted-foreground" role="status">Loading your dashboard…</p>
+      </div>
+    );
+  }
+
+  // A failed load is a STATE, not a forever-“Loading…” — loading / error /
+  // empty come from the one shared LoadState primitive, retry is one tap.
+  if (!data) {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <SiteHeader user={user} onSignOut={() => void signOut()} />
+        <main className="mx-auto w-full max-w-md flex-1 px-4 py-16 sm:px-6">
+          <LoadState
+            loading={!loadError}
+            error={loadError}
+            onRetry={() => void load()}
+            isEmpty={false}
+            loadingLabel="Loading your dashboard…"
+          >
+            {null}
+          </LoadState>
+        </main>
       </div>
     );
   }
@@ -92,6 +115,7 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader user={user} onSignOut={() => void signOut()} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
+        <PageFade>
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-xl font-medium tracking-tight text-foreground sm:text-2xl">
             Welcome back, {data.user.name.split(' ')[0]}
@@ -161,15 +185,22 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
                         </Button>
                       </>
                     ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busyId === b.id + 'start' || !b.hasTelegramToken}
-                        title={b.hasTelegramToken ? undefined : 'Add the Telegram token first'}
-                        onClick={() => void lifecycle(b.id, 'start')}
+                      <span
+                        className="inline-flex items-center"
+                        title={b.hasTelegramToken ? undefined : 'Add the Telegram token first — configure it on the bot page'}
                       >
-                        Run
-                      </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busyId === b.id + 'start' || !b.hasTelegramToken}
+                          onClick={() => void lifecycle(b.id, 'start')}
+                        >
+                          Run
+                        </Button>
+                        {!b.hasTelegramToken && (
+                          <span className="text-[11px] text-muted-foreground">no token yet</span>
+                        )}
+                      </span>
                     )}
                   </div>
                 </li>
@@ -209,6 +240,9 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
           </section>
         )}
 
+        {/* External AI agents (Claude etc.) operate NURAE with these Bearer keys. */}
+        <ApiKeysCard />
+
         {/* The vanity route is an address, not news — quiet, last, mono. */}
         <p className="mt-12 text-[11px] text-muted-foreground">
           Your dashboard also lives at{' '}
@@ -216,6 +250,7 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
             /{vanity}/dashboard
           </Link>
         </p>
+        </PageFade>
       </main>
     </div>
   );

@@ -9,11 +9,10 @@ const MARK = "'Julius Sans One', 'Helvetica Neue', 'Segoe UI', sans-serif"
 const TAG = "'Jost', 'Helvetica Neue', 'Segoe UI', sans-serif"
 
 /**
- * NURAE WebGL loading experience (v3 — "Reality is being resolved", six beats,
- * 12s seamless loop).
+ * NURAE WebGL loading experience (8-phase storyboard, 12s seamless loop).
  *
  * Site integration (Option A in integration.md): pass `playOnce` + `onComplete`
- * — onComplete fires ~1.2s after the NURAE lockup begins its reveal, giving
+ * — onComplete fires ~1.2s after the READY wordmark begins its reveal, giving
  * the parent time to fade the boot overlay and unmount this component.
  * Without the props it behaves exactly like the standalone experience
  * (continuous loop, keyboard R restart).
@@ -28,7 +27,6 @@ export default function NuraeExperience({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const flashRef = useRef<HTMLDivElement>(null)
   const dashRef = useRef<HTMLDivElement>(null)
-  const trackRef = useRef<HTMLDivElement>(null)
   const fadeRef = useRef<HTMLDivElement>(null)
   const engineRef = useRef<NuraeEngine | null>(null)
   const readyRef = useRef(false)
@@ -51,8 +49,7 @@ export default function NuraeExperience({
       engine = new NuraeEngine(canvasRef.current!, {
         onPhase: (i) => {
           setPhase(i)
-          // PHASES[5] = NURAE — the identity reveal
-          if (i >= 5 && !readyRef.current) {
+          if (i >= 7 && !readyRef.current) {
             readyRef.current = true
             setReady(true)
             // one-time intro: hand off to the site ~1.2s after the wordmark
@@ -65,7 +62,7 @@ export default function NuraeExperience({
                 }
               }, 1200)
             }
-          } else if (i < 5 && readyRef.current) {
+          } else if (i < 7 && readyRef.current) {
             // loop wrap / seek backwards — reset READY state for the next cycle
             readyRef.current = false
             setReady(false)
@@ -74,11 +71,7 @@ export default function NuraeExperience({
         onTick: ({ flash, progress, fade }) => {
           if (flashRef.current) flashRef.current.style.opacity = String(flash)
           if (dashRef.current && !readyRef.current) dashRef.current.style.left = `${progress * 100}%`
-          // the loading bar only exists once reality starts resolving — never at first
-          if (trackRef.current) {
-            trackRef.current.style.opacity = readyRef.current || progress > 0.6 ? '1' : '0'
-          }
-          // lockup block rides the loop seam fade with the scene
+          // wordmark block rides the loop seam fade with the scene
           if (fadeRef.current) fadeRef.current.style.opacity = String(readyRef.current ? fade : 1)
         },
       })
@@ -131,10 +124,10 @@ export default function NuraeExperience({
       <div className="nurae-vignette pointer-events-none absolute inset-0" aria-hidden />
       <div className="nurae-grain pointer-events-none absolute -inset-16 opacity-[0.05] mix-blend-soft-light" aria-hidden />
 
-      {/* collapse blink */}
+      {/* collapse / reveal flash */}
       <div ref={flashRef} className="pointer-events-none absolute inset-0 bg-[#dcecff]" style={{ opacity: 0 }} aria-hidden />
 
-      {/* ---------- HUD — microcopy only, the animation explains itself ---------- */}
+      {/* ---------- corner HUD ---------- */}
       <div
         className={`pointer-events-none absolute inset-0 transition-opacity duration-[1800ms] ${cornersVisible}`}
         style={{ fontFamily: MONO }}
@@ -142,11 +135,27 @@ export default function NuraeExperience({
       >
         <div className="absolute left-5 top-5 text-[9px] leading-[1.9] tracking-[0.32em] text-[#7d8ab4]/80 sm:left-8 sm:top-7 sm:text-[10px]">
           <div>NURAE</div>
-          <div className="nurae-loading">RESOLVING</div>
+          <div>AI PLATFORM</div>
+          <div className="nurae-loading">LOADING</div>
+        </div>
+        <div className="absolute right-5 top-5 text-right text-[9px] leading-[1.9] tracking-[0.32em] text-[#7d8ab4]/80 sm:right-8 sm:top-7 sm:text-[10px]">
+          <div>MORE</div>
+          <div>THAN</div>
+          <div>CHAT</div>
+        </div>
+        <div className="absolute bottom-6 left-5 text-[9px] leading-[1.9] tracking-[0.32em] text-[#7d8ab4]/80 sm:bottom-9 sm:left-8 sm:text-[10px]">
+          <div>BUILD</div>
+          <div>CREATE</div>
+          <div>AUTOMATE</div>
+        </div>
+        <div className="absolute bottom-6 right-5 text-right text-[9px] leading-[1.9] tracking-[0.32em] text-[#7d8ab4]/80 sm:bottom-9 sm:right-8 sm:text-[10px]">
+          <div>NURAE</div>
+          <div>EST 2026</div>
+          <div className="text-[11px] sm:text-xs">&infin;</div>
         </div>
 
-        {/* right-edge beat dots — a quiet measure of the sequence itself */}
-        <div className="absolute right-5 top-1/2 flex -translate-y-1/2 flex-col items-center gap-[10px] sm:right-8">
+        {/* right-edge phase dots */}
+        <div className="absolute right-5 top-1/2 flex -translate-y-1/2 flex-col items-center gap-[9px] sm:right-8">
           {PHASES.map((ph, i) => (
             <span
               key={ph.id}
@@ -154,7 +163,7 @@ export default function NuraeExperience({
               style={
                 i === phase
                   ? { background: '#a9c6ff', boxShadow: '0 0 8px 2px rgba(140,170,255,0.8)', transform: 'scale(1.7)' }
-                  : { background: 'rgba(150,165,205,0.26)' }
+                  : { background: 'rgba(150,165,205,0.28)' }
               }
             />
           ))}
@@ -162,16 +171,16 @@ export default function NuraeExperience({
         </div>
       </div>
 
-      {/* ---------- the identity (READY) — the point becomes the wordmark ---------- */}
-      <div ref={fadeRef} className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 flex-col items-center">
+      {/* ---------- hero wordmark (READY) ---------- */}
+      <div ref={fadeRef} className="pointer-events-none absolute bottom-[7.5%] left-1/2 flex -translate-x-1/2 flex-col items-center sm:bottom-[9%]">
         <div
           className={`whitespace-nowrap text-[26px] text-[#eef2ff] transition-all duration-[1600ms] ease-out sm:text-[42px] ${
             ready ? 'opacity-100' : 'opacity-0'
           }`}
           style={{
             fontFamily: MARK,
-            letterSpacing: ready ? '0.46em' : '0.9em',
-            marginLeft: ready ? '0.46em' : '0.9em',
+            letterSpacing: ready ? '0.46em' : '0.85em',
+            marginLeft: ready ? '0.46em' : '0.85em',
             textShadow: '0 0 26px rgba(130,165,255,0.5), 0 0 70px rgba(80,120,255,0.3)',
           }}
         >
@@ -186,14 +195,13 @@ export default function NuraeExperience({
           Your AI. Your world.
         </div>
 
-        {/* loading bar — appears only during RESOLUTION, then becomes the measure */}
+        {/* loading bar */}
         <div
-          ref={trackRef}
           data-ready={ready}
-          className={`nurae-track relative mt-6 h-px w-52 transition-opacity duration-[900ms] sm:mt-7 sm:w-64 ${
+          className={`nurae-track relative mt-5 h-px w-52 transition-opacity duration-1000 sm:mt-6 sm:w-64 ${
             ready ? 'opacity-100' : 'opacity-70'
           }`}
-          style={{ background: 'rgba(143,165,216,0.18)', opacity: 0 }}
+          style={{ background: 'rgba(143,165,216,0.18)' }}
           aria-hidden
         >
           <div

@@ -225,6 +225,17 @@ export interface MyDashboardDTO {
   agentSessions: Array<{ id: string; title: string; lastMessageAt: string | null }>;
 }
 
+export interface AgentTokenDTO {
+  id: string;
+  name: string;
+  prefix: string;
+  scope: string;
+  allowConsequential: boolean;
+  lastUsedAt: string | null;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 export interface FleetEntry {
   templateId: string;
   name: string;
@@ -654,6 +665,16 @@ export const nuraeApi = {
 
   myDashboard: () =>
     api<MyDashboardDTO>('/api/my/dashboard'),
+
+  // --- API keys (external AI-agent Bearer tokens) --------------------------
+  myTokens: () => api<{ tokens: AgentTokenDTO[] }>('/api/my/tokens'),
+  mintToken: (name: string, allowConsequential: boolean) =>
+    api<{ token: string; tokenMeta: AgentTokenDTO }>('/api/my/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ name, allowConsequential }),
+    }),
+  revokeToken: (id: string) =>
+    api<{ ok: true; revokedAt: string | null }>(`/api/my/tokens/${id}`, { method: 'DELETE' }),
 
   // --- Chats + agents -------------------------------------------------------
   listSessions: (kind?: 'chat' | 'agent') =>

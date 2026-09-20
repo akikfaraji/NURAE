@@ -26,6 +26,7 @@ import {
   SiteSplash,
   useSiteUser,
 } from '@/components/nurae/site-shell';
+import { PageFade } from '@/components/nurae/bits';
 import {
   ApiError,
   SessionUserDTO,
@@ -77,6 +78,7 @@ export function SiteHome() {
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader variant="public" user={null} />
       <main className="flex-1">
+        <PageFade>
         {/* Hero — typography and space, nothing else */}
         <section>
           <div className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24">
@@ -153,6 +155,7 @@ export function SiteHome() {
             </dl>
           </div>
         </section>
+        </PageFade>
       </main>
       <SiteFooter siteName={siteName} />
     </div>

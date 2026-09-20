@@ -104,42 +104,53 @@ The **single authoritative version source** is `src/lib/nurae/version.ts`
 
 ## 4. Current release
 
-**NURAE V00.11.000-beta-01** — the loader redesign ("Reality is being
-resolved"): the loading experience was rebuilt from the ground up around one
-idea — a measurement axis standing still while reality resolves around it.
+**NURAE V00.12.000-beta-01** — the operator's round: the orbital loader is
+back (by owner preference) with a dedicated smoothing pass, the whole site got
+a UI/UX fix round, and external AI agents can now operate NURAE over a real
+API.
 
-- **Six beats, one protagonist**: VOID (one microscopic point) → PERCEPTION
-  (fine marks reveal at five parallax depths around the vertical axis) →
-  INFINITE APPROACH (the field streams outward and accelerates; the point never
-  grows — no camera zoom) → RESOLUTION (one thin lock wave sweeps out from the
-  axis and every mark snaps onto a precise polar lattice — rings, spokes,
-  ticks) → COLLAPSE (the instrument dives into the axis; the axis contracts to
-  the surviving point) → NURAE (the point becomes the centered wordmark).
-- **The signatures**: the vertical measurement axis with ruler ticks; the
-  unchanging point; micro-saccades (the whole field re-fixates like a gaze,
-  then stabilises forever at RESOLUTION); violet noise that resolves to pure
-  blue-white signal.
-- **Reduction as a feature**: the eye/iris, 24 ribbon rings, wireframe sphere,
-  dust field, nebulae and 14 ripples are gone — ~13 draw calls + bloom, sparse
-  marks, emptiness as a design material. HUD reduced to `NURAE / RESOLVING`
-  microcopy and six beat dots; the loading bar only exists once reality starts
-  resolving.
-- **Same contract, better engine**: `NuraeEngine` API unchanged (start /
-  restart / seek / dispose, `LOOP_END = 12.0`), seamless loop re-verified
-  pixel-level, deterministic seek (the scene is a pure function of the
-  timeline), `?static` opt-in, unconditional playback, DPR pairing, dt cap.
-  See `integration.md` for the full public contract.
-- **Full-site intro (Option A)**: one-time per session, pre-paint boot
-  decision with no flash of the site, 15s failsafe, WebGL-failure bail-out,
-  700ms fade handoff — unchanged from V00.10.000.
+- **Loader restored, transitions smoothed**: the v3 "Reality is being
+  resolved" redesign was reverted; the 8-phase orbital storyboard (V00.10)
+  plays again — identical look, better temporal quality. The collapse/eye
+  flashes use an asymmetric light pulse (fast attack, eased release) instead
+  of 50ms bells that rendered 2-3 frames and popped; the beam grow and loop
+  seam fade are eased; and the loader→site handoff is now a true crossfade
+  (the site rises in under the fading boot layer, opacity-only).
+- **Reduced-motion skip**: `prefers-reduced-motion: reduce` users skip the
+  intro entirely — instant site, no canvas, no frozen frames (the frozen-frame
+  fallback remained a trap on Android, so skipping is the honest policy).
+- **Whole-site UI/UX round**: featured-page questions now actually navigate
+  into the chat; the destructive two-click confirms stay open; dashboard and
+  admin failures show error + Retry instead of fake empty states; the public
+  mobile menu lost its duplicate Home/About; active-area detection matches
+  exactly; the admin console is URL-driven (Back/forward/refresh/deep links
+  work); chat mobile drawers use the real Sheet primitive (Esc, focus trap,
+  scroll lock); bot archive/delete failures surface instead of navigating
+  away; config save is dirty-tracked with real field validation; clipboard
+  copy is honest; topups refresh the balance and validate below 25 Stars.
+- **Motion + primitives**: `PageFade` (framer-motion, reduced-motion aware)
+  on the main views, a shared `LoadState` for loading/error/empty, route-level
+  `not-found.tsx`/`error.tsx`, pollers pause when the tab is hidden.
+- **External AI-agent API**: mint Bearer `nrae_…` AgentTokens in the
+  dashboard (user scope) or admin console (platform scope) and let agents like
+  Claude operate NURAE: `GET /api/v1/me`, `GET /api/v1/tools`,
+  `POST /api/v1/tools/call` (the full 23-tool gated registry with confirm
+  semantics — consequential writes execute only with per-token
+  `allowConsequential` AND per-call `confirm:true`), `POST /api/v1/agent/turn`
+  (drive a Bot Builder turn), MCP-style JSON-RPC at `POST /api/mcp`
+  (initialize / tools/list / tools/call), and a machine-readable contract at
+  `GET /api/openapi.json`. Identity always comes from the token row, every
+  call is audited, platform tools stay platform-only. Documented in
+  `public/llms.txt` + `integration.md`.
 
-**V00.10.000-beta-01** — the cinematic boot: the site opened with the
-8-phase WebGL storyboard as a one-time intro before the site reveals.
+**V00.11.000-beta-01 (reverted)** — the "Reality is being resolved" loader
+redesign: a measurement axis while reality resolved around it. Reverted in
+V00.12 by owner preference; the smoothing techniques it pioneered (shaped
+pulses, eased seams) carried over to the restored orbital loader.
 
-**NURAE V00.11.000-beta-01** — the cinematic boot: the site now opens with the
-NURAE loading experience, the 8-phase WebGL storyboard (point → layers →
-expansion → depth → the eye opens → collapse → reborn → READY), as a one-time
-intro before the site reveals.
+**V00.10.000-beta-01** — the cinematic boot: the site opens with the
+8-phase WebGL storyboard (point → layers → expansion → depth → the eye opens
+→ collapse → reborn → READY) as a one-time intro before the site reveals.
 - The V00.10 intro mechanics (boot layer, no-flash hiding, failsafe,
   WebGL-failure bail-out, Option A mount) are preserved as-is; only the
   cinematic itself was rebuilt.

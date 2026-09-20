@@ -243,6 +243,25 @@ html[data-nurae-intro='pending'] .nurae-boot-layer * {
 }
 
 /* ---------------------------------------------------------------------------
+ * NURAE — site-reveal crossfade (loader → site handoff).
+ * The overlay fade alone revealed the site with a hard visibility flip under
+ * it; now the site itself rises in (opacity-only — never transform, which
+ * would re-parent position:fixed descendants) while the boot layer fades.
+ * The .nurae-revealed class is added by intro-overlay ONLY when the intro
+ * actually completed this page-load, so returning users / route navigations
+ * never get a phantom 0.9s fade on their content.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  body.nurae-revealed > :not(.nurae-boot-layer) {
+    animation: nurae-site-reveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+@keyframes nurae-site-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------------------------------------------------------------------------
  * NURAE — loading-sequence experience (WebGL intro overlay).
  * Classes required by NuraeExperience (integration.md §3 — do not delete):
  * filmic vignette, animated film grain, blinking LOADING label and the

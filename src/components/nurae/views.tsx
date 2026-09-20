@@ -19,7 +19,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { EmptyState, LoadingRow, Pill, StatLine, StatusBadge } from '@/components/nurae/bits';
+import { EmptyState, ErrorPanel, LoadState, LoadingRow, Pill, StatLine, StatusBadge } from '@/components/nurae/bits';
+import { usePoll } from '@/hooks/use-poll';
 import {
   ArrowRightIcon,
   BotIcon,
@@ -84,12 +85,9 @@ export function OverviewView({
 
   useEffect(() => {
     const kick = setTimeout(() => void refresh(), 0);
-    const t = setInterval(refresh, 5000);
-    return () => {
-      clearTimeout(kick);
-      clearInterval(t);
-    };
+    return () => clearTimeout(kick);
   }, [refresh]);
+  usePoll(refresh, 5000);
 
   return (
     <div className="space-y-8">
@@ -153,6 +151,7 @@ export function ProjectsView({
   onOpenProject: (id: string) => void;
 }) {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -162,20 +161,19 @@ export function ProjectsView({
     try {
       const res = await nuraeApi.listProjects();
       setProjects(res.projects);
+      setLoadError(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load projects');
-      setProjects([]);
+      // Polling errors are non-fatal — but the FIRST load must surface as an
+      // error, never as the "No projects yet" empty state.
+      setLoadError(err instanceof Error ? err.message : 'Failed to load projects');
     }
   }, []);
 
   useEffect(() => {
     const kick = setTimeout(() => void refresh(), 0);
-    const t = setInterval(refresh, 5000);
-    return () => {
-      clearTimeout(kick);
-      clearInterval(t);
-    };
+    return () => clearTimeout(kick);
   }, [refresh]);
+  usePoll(refresh, 5000);
 
   const handleCreate = async () => {
     if (!name.trim()) {
@@ -210,9 +208,15 @@ export function ProjectsView({
       </div>
 
       {projects === null ? (
-        <div className="mt-4">
-          <LoadingRow label="Loading projects…" />
-        </div>
+        loadError ? (
+          <div className="mt-4">
+            <ErrorPanel message={loadError} onRetry={() => void refresh()} />
+          </div>
+        ) : (
+          <div className="mt-4">
+            <LoadingRow label="Loading projects…" />
+          </div>
+        )
       ) : projects.length === 0 ? (
         <EmptyState
           title="No projects yet"
@@ -307,6 +311,7 @@ export function ProjectView({
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [bots, setBots] = useState<BotDTO[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -314,8 +319,9 @@ export function ProjectView({
       const res = await nuraeApi.getProject(projectId);
       setProject(res.project);
       setBots(res.bots);
+      setLoadError(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load project');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load project');
     } finally {
       setLoaded(true);
     }
@@ -323,12 +329,9 @@ export function ProjectView({
 
   useEffect(() => {
     const kick = setTimeout(() => void refresh(), 0);
-    const t = setInterval(refresh, 5000);
-    return () => {
-      clearTimeout(kick);
-      clearInterval(t);
-    };
+    return () => clearTimeout(kick);
   }, [refresh]);
+  usePoll(refresh, 5000);
 
   return (
     <div className="space-y-4">
@@ -345,7 +348,9 @@ export function ProjectView({
         </Button>
       </div>
 
-      {loaded && bots.length === 0 ? (
+      {loaded && loadError && !project ? (
+        <ErrorPanel message={loadError} onRetry={() => void refresh()} />
+      ) : loaded && bots.length === 0 ? (
         <EmptyState
           title="No bots in this project"
           description="Create an AI-powered Telegram bot: pick a provider, paste the Telegram token, and start it."
@@ -486,12 +491,9 @@ export function OfficialBotCard({
 
   useEffect(() => {
     const kick = setTimeout(() => void refresh(), 0);
-    const t = setInterval(refresh, 10000);
-    return () => {
-      clearTimeout(kick);
-      clearInterval(t);
-    };
+    return () => clearTimeout(kick);
   }, [refresh]);
+  usePoll(refresh, 10000);
 
   const saveConfig = async (input: Parameters<typeof nuraeApi.updateConfig>[1]) => {
     if (!data?.bot) return;
@@ -650,12 +652,9 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
 
   useEffect(() => {
     const kick = setTimeout(() => void refresh(), 300);
-    const t = setInterval(refresh, 15000);
-    return () => {
-      clearTimeout(kick);
-      clearInterval(t);
-    };
+    return () => clearTimeout(kick);
   }, [refresh]);
+  usePoll(refresh, 15000);
 
   return (
     <Card className="border-border">
@@ -711,7 +710,8 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
                           : 'bg-muted-foreground/60')
                     }
                   />
-                  {stateLabel}
+                  {/* The blocker stays visible — a tooltip alone never reaches touch. */}
+                  {needsToken ? 'Needs a @BotFather token' : stateLabel}
                 </span>
                 {entry.telegramUsername && (
                   <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
@@ -777,14 +777,15 @@ function KeyStep({
 
 export function CustomersView() {
   const [customers, setCustomers] = useState<CustomerDTO[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const r = await nuraeApi.listCustomers();
       setCustomers(r.customers);
+      setLoadError(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load customers');
-      setCustomers([]);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load customers');
     }
   }, []);
 
@@ -802,13 +803,18 @@ export function CustomersView() {
 
       <Card className="border-border">
         <CardContent className="p-0">
-          {customers === null ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading customers…</div>
-          ) : customers.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-              No customers yet — they will appear here as soon as someone signs up at <span className="font-mono">/</span>.
-            </div>
-          ) : (
+          <LoadState
+            loading={customers === null && !loadError}
+            error={customers === null ? loadError : null}
+            onRetry={() => void refresh()}
+            isEmpty={customers !== null && customers.length === 0}
+            loadingLabel="Loading customers…"
+            empty={
+              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No customers yet — they will appear here as soon as someone signs up at <span className="font-mono">/</span>.
+              </div>
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -822,7 +828,9 @@ export function CustomersView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {customers.map((c) => (
+                {/* LoadState renders children only past loading/error/empty —
+                    the optional chain satisfies the type without narrowing. */}
+                {customers?.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell>
                       <div className="min-w-0">
@@ -853,7 +861,7 @@ export function CustomersView() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </LoadState>
         </CardContent>
       </Card>
     </div>
@@ -867,6 +875,7 @@ export function CustomersView() {
 
 export function AdminBotsView() {
   const [bots, setBots] = useState<AdminBotDTO[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
 
@@ -874,9 +883,9 @@ export function AdminBotsView() {
     try {
       const r = await nuraeApi.listAdminBots();
       setBots(r.bots);
+      setLoadError(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load bots');
-      setBots([]);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load bots');
     }
   }, []);
 
@@ -934,13 +943,18 @@ export function AdminBotsView() {
 
       <Card className="border-border">
         <CardContent className="p-0">
-          {bots === null ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading bots…</div>
-          ) : visible.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-              {filter ? 'No bots match that filter.' : 'No bots yet.'}
-            </div>
-          ) : (
+          <LoadState
+            loading={bots === null && !loadError}
+            error={bots === null ? loadError : null}
+            onRetry={() => void refresh()}
+            isEmpty={bots !== null && visible.length === 0}
+            loadingLabel="Loading bots…"
+            empty={
+              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                {filter ? 'No bots match that filter.' : 'No bots yet.'}
+              </div>
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -1020,7 +1034,7 @@ export function AdminBotsView() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </LoadState>
         </CardContent>
       </Card>
     </div>
@@ -1033,18 +1047,23 @@ export function AdminBotsView() {
 
 export function SiteSettingsView() {
   const [form, setForm] = useState<SiteInfoDTO | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await nuraeApi.getSettings();
-        setForm(r.settings);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to load settings');
-      }
-    })();
+  const load = useCallback(async () => {
+    try {
+      const r = await nuraeApi.getSettings();
+      setForm(r.settings);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load settings');
+    }
   }, []);
+
+  useEffect(() => {
+    const kick = setTimeout(() => void load(), 0);
+    return () => clearTimeout(kick);
+  }, [load]);
 
   if (!form) {
     return (
@@ -1052,7 +1071,17 @@ export function SiteSettingsView() {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Site settings</h1>
         </div>
-        <div className="text-sm text-muted-foreground">Loading settings…</div>
+        {/* One shared idiom for loading/failed — a dead "Loading settings…" is
+            never the last thing the admin sees. */}
+        <LoadState
+          loading={!loadError}
+          error={loadError}
+          onRetry={() => void load()}
+          isEmpty={false}
+          loadingLabel="Loading settings…"
+        >
+          {null}
+        </LoadState>
       </div>
     );
   }

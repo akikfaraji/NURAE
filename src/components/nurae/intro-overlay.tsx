@@ -38,9 +38,31 @@ export default function NuraeIntroOverlay() {
   const fadeTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    const skip = document.documentElement.getAttribute('data-nurae-intro') === 'done'
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount gate: the boot decision lives in the DOM (set pre-paint), so it can only be read after hydration; SSR always renders 'waiting' to keep hydration matching
-    setBoot(skip ? 'done' : 'playing')
+    const alreadyDone = document.documentElement.getAttribute('data-nurae-intro') === 'done'
+    // Motion policy: never freeze the loader (many Android phones report
+    // prefers-reduced-motion permanently — a frozen WebGL frame looks broken).
+    // Instead the intro is skipped entirely: reduced-motion users go straight
+    // to the site, instantly, with no fade and no canvas ever mounting.
+    let reducedMotion = false
+    try {
+      reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    } catch {
+      /* no matchMedia — play normally */
+    }
+    if (alreadyDone || reducedMotion) {
+      if (!alreadyDone) {
+        try {
+          sessionStorage.setItem('nuraeIntroDone', '1')
+        } catch {
+          /* private mode */
+        }
+        document.documentElement.setAttribute('data-nurae-intro', 'done')
+      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount gate: the boot decision lives in the DOM (set pre-paint), so it can only be read after hydration; SSR always renders 'waiting' to keep hydration matching
+      setBoot('done')
+      return
+    }
+    setBoot('playing')
     return () => {
       if (fadeTimerRef.current !== null) window.clearTimeout(fadeTimerRef.current)
     }
@@ -54,8 +76,10 @@ export default function NuraeIntroOverlay() {
     } catch {
       /* private mode — intro simply replays next full load */
     }
-    // reveal the site (CSS stops hiding body children), then fade the layer
+    // reveal the site (CSS stops hiding body children) and start the soft
+    // site-rise crossfade under the fading layer, then unmount the engine
     document.documentElement.setAttribute('data-nurae-intro', 'done')
+    document.body.classList.add('nurae-revealed')
     setBoot('fading')
     fadeTimerRef.current = window.setTimeout(() => setBoot('done'), FADE_MS + 50)
   }, [])
@@ -64,7 +88,7 @@ export default function NuraeIntroOverlay() {
 
   return (
     <div
-      className="nurae-boot-layer fixed inset-0 z-[100] bg-[#010208] transition-opacity duration-700 ease-out"
+      className="nurae-boot-layer fixed inset-0 z-[100] bg-[#010208] transition-opacity duration-700 ease-in-out"
       style={{ opacity: boot === 'fading' ? 0 : 1 }}
       aria-hidden="true"
     >

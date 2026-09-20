@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { SiteFooter, SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
+import { PageFade } from '@/components/nurae/bits';
 import { SiteInfoResponse, nuraeApi } from '@/lib/nurae-client/api';
 
 export function AboutPage() {
@@ -34,6 +35,7 @@ export function AboutPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-12 sm:px-6">
+        <PageFade>
         <h1 className="text-2xl font-medium tracking-tight text-foreground">About {siteName}</h1>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
           {siteName} is a platform by <strong className="font-medium text-foreground">FRAZIYM TECH &amp; AI</strong> that puts
@@ -69,6 +71,7 @@ export function AboutPage() {
             Ask the CS bot
           </Link>
         </div>
+        </PageFade>
       </main>
       <SiteFooter siteName={siteName} />
     </div>

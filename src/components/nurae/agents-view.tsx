@@ -19,7 +19,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
 import { AgentActivity } from '@/components/nurae/agent-activity';
+import { PageFade } from '@/components/nurae/bits';
 import { SessionList } from '@/components/nurae/session-list';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ActivityStepDTO, ApiError, EntryDTO, FileDTO, SessionDTO, nuraeApi } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
 
@@ -374,6 +376,7 @@ export function AgentsView() {
     <div className="flex h-dvh flex-col bg-background">
       <SiteHeader user={user} onSignOut={signOut} hideMobileMenu />
 
+      <PageFade className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
         {/* Sessions */}
         <aside className="hidden w-64 shrink-0 flex-col border-r border-border/60 md:flex">
@@ -399,55 +402,53 @@ export function AgentsView() {
 
         {/* Main */}
         <main className="flex min-w-0 flex-1 flex-col">
-          {drawerOpen && (
-            <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true">
-              <div className="absolute inset-0 bg-black/60" onClick={() => setDrawerOpen(false)} />
-              <div className="absolute inset-y-0 left-0 flex w-72 flex-col border-r border-border bg-background">
-                <div className="flex items-center justify-between p-3">
-                  <span className="text-xs uppercase tracking-widest text-muted-foreground">Builds</span>
-                  <button type="button" onClick={() => setDrawerOpen(false)} className="text-xs text-muted-foreground hover:text-foreground">
-                    Close
-                  </button>
-                </div>
-                <div className="px-3 pb-3">
-                  <button
-                    type="button"
-                    onClick={() => openSession(null)}
-                    className="w-full rounded-md border border-border px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60"
-                  >
-                    + New build
-                  </button>
-                </div>
-                <SessionList
-                  sessions={sessions}
-                  activeId={activeId}
-                  emptyText="No builds yet."
-                  onOpen={(id) => { setActiveId(id); openSession(id); }}
-                  onRename={renameSession}
-                  onDelete={deleteSession}
-                  onArchive={archiveSession}
-                />
-                <nav className="mt-auto flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border/60 p-3" aria-label="Site">
-                  {[
-                    { href: '/chats', label: 'Chats' },
-                    { href: '/bots', label: 'Bots' },
-                    { href: '/featured', label: 'Featured' },
-                    { href: '/billing', label: 'Billing' },
-                    { href: '/help', label: 'Help' },
-                  ].map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setDrawerOpen(false)}
-                      className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </nav>
+          {/* Mobile sessions drawer — Sheet (slide, focus trap, Esc, scroll lock). */}
+          <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+            <SheetContent
+              side="left"
+              className="flex w-72 flex-col border-border bg-background p-0 md:hidden [&>button]:hidden"
+            >
+              <SheetTitle className="flex items-center justify-between px-3 pt-3 text-xs uppercase tracking-widest text-muted-foreground">
+                Builds
+              </SheetTitle>
+              <div className="px-3 pb-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => openSession(null)}
+                  className="flex min-h-11 w-full items-center rounded-md border border-border px-3 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
+                >
+                  + New build
+                </button>
               </div>
-            </div>
-          )}
+              <SessionList
+                sessions={sessions}
+                activeId={activeId}
+                emptyText="No builds yet."
+                onOpen={(id) => { setActiveId(id); openSession(id); }}
+                onRename={renameSession}
+                onDelete={deleteSession}
+                onArchive={archiveSession}
+              />
+              <nav className="mt-auto flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border/60 p-3" aria-label="Site">
+                {[
+                  { href: '/chats', label: 'Chats' },
+                  { href: '/bots', label: 'Bots' },
+                  { href: '/featured', label: 'Featured' },
+                  { href: '/billing', label: 'Billing' },
+                  { href: '/help', label: 'Help' },
+                ].map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setDrawerOpen(false)}
+                    className="min-h-11 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            </SheetContent>
+          </Sheet>
 
           {/* One slim top bar, shared by the empty state and open builds — the
               drawer trigger inside it is the ONLY menu button on phones. */}
@@ -496,14 +497,25 @@ export function AgentsView() {
                     <AgentMessage key={m.id} entry={m} />
                   ))}
                   {busy && (
-                    <p className="text-xs text-muted-foreground" aria-label="Agent is working">
+                    <p className="text-xs text-muted-foreground" aria-label="Agent is working" role="status" aria-live="polite">
                       <span className="animate-pulse">●</span> working…
                     </p>
                   )}
                   {pendingSteps.length > 0 && <AgentActivity steps={pendingSteps} live />}
                   {error && (
-                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
-                      {error}
+                    <div
+                      className="flex items-start justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                      role="alert"
+                    >
+                      <span>{error}</span>
+                      <button
+                        type="button"
+                        aria-label="Dismiss error"
+                        onClick={() => setError(null)}
+                        className="shrink-0 px-1 text-destructive/70 transition-colors hover:text-destructive"
+                      >
+                        ×
+                      </button>
                     </div>
                   )}
                   <div ref={bottomRef} />
@@ -543,6 +555,7 @@ export function AgentsView() {
           )}
         </main>
       </div>
+      </PageFade>
     </div>
   );
 }

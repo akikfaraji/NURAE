@@ -23,6 +23,7 @@ import {
   nuraeApi,
 } from '@/lib/nurae-client/api';
 import { formatUsd } from '@/lib/nurae/billing/catalog';
+import { PageFade } from '@/components/nurae/bits';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -96,12 +97,23 @@ export function BillingView() {
   async function topupStars(stars: number) {
     setBusy(true);
     setError(null);
+    // Popup opened SYNCHRONOUSLY inside the click gesture — window.open after
+    // an await is treated as unsolicited by every modern browser.
+    const popup = window.open('', '_blank');
     try {
       const { order } = await nuraeApi.billingTopupStars(stars);
       setActiveOrder(order);
       setOrders((prev) => [order, ...prev]);
-      if (order.payUrl) window.open(order.payUrl, '_blank', 'noopener');
+      if (order.payUrl && popup) {
+        popup.location.href = order.payUrl;
+        popup.opener = null; // detach — the payment window owes us nothing
+      } else if (popup) {
+        popup.close();
+      }
+      // The balance must reflect the flow — refresh after every topup step.
+      await refresh();
     } catch (err) {
+      popup?.close();
       setError(err instanceof ApiError ? err.message : 'Could not create the topup.');
     } finally {
       setBusy(false);
@@ -116,6 +128,7 @@ export function BillingView() {
       const { order } = await nuraeApi.billingTopupCrypto(asset, 2_000_000);
       setActiveOrder(order);
       setOrders((prev) => [order, ...prev]);
+      await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create the topup.');
     } finally {
@@ -132,6 +145,7 @@ export function BillingView() {
       setActiveOrder(order);
       setOrders((prev) => prev.map((o) => (o.id === order.id ? order : o)));
       setTxHash('');
+      await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not submit the transaction.');
     } finally {
@@ -166,6 +180,7 @@ export function BillingView() {
     <div className="min-h-svh bg-background">
       <SiteHeader user={user} />
       <main className="mx-auto max-w-3xl px-5 pb-24 pt-8">
+        <PageFade>
         {/* --- Balance ------------------------------------------------- */}
         <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Billing — pay as you use</p>
         <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -260,25 +275,34 @@ export function BillingView() {
                 </Button>
               ))}
               {summary?.topup.starsAvailable && (
-                <form
-                  className="flex items-center gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const n = Number(customStars);
-                    if (Number.isFinite(n) && n >= 25) void topupStars(Math.round(n));
-                  }}
-                >
-                  <Input
-                    value={customStars}
-                    onChange={(e) => setCustomStars(e.target.value)}
-                    placeholder="custom ★"
-                    inputMode="numeric"
-                    className="h-8 w-28 border-border/60 text-xs"
-                  />
-                  <Button variant="outline" size="sm" disabled={busy} className="h-8 border-border/60 text-xs">
-                    Buy
-                  </Button>
-                </form>
+                <div>
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const n = Number(customStars);
+                      if (Number.isFinite(n) && n >= 25) void topupStars(Math.round(n));
+                    }}
+                  >
+                    <Input
+                      value={customStars}
+                      onChange={(e) => setCustomStars(e.target.value)}
+                      placeholder="custom ★"
+                      inputMode="numeric"
+                      className="h-8 w-28 border-border/60 text-xs"
+                      aria-label="Custom Stars amount"
+                    />
+                    <Button variant="outline" size="sm" disabled={busy} className="h-8 border-border/60 text-xs" type="submit">
+                      Buy
+                    </Button>
+                  </form>
+                  {/* Silent no-ops are dead ends — say why the form refuses. */}
+                  {customStars.trim() !== '' && (!Number.isFinite(Number(customStars)) || Number(customStars) < 25) && (
+                    <p className="mt-1 text-xs text-destructive" role="alert">
+                      Minimum Stars top-up is 25.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -472,6 +496,7 @@ export function BillingView() {
             ))}
           </ul>
         </section>
+        </PageFade>
       </main>
     </div>
   );

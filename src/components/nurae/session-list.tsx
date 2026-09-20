@@ -103,12 +103,17 @@ export function SessionList({
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-xs text-destructive focus:text-destructive"
-                onClick={() => {
-                  if (confirmingId === s.id) {
-                    onDelete(s.id);
-                  } else {
+                /* Radix closes the menu on every item select by default — the
+                 * two-click confirm would never be seen. preventDefault keeps
+                 * the menu open for the 3s confirm window; the actual delete
+                 * (second click) lets the menu close as usual. */
+                onSelect={(e) => {
+                  if (confirmingId !== s.id) {
+                    e.preventDefault();
                     setConfirmingId(s.id);
                     setTimeout(() => setConfirmingId((c) => (c === s.id ? null : c)), 3000);
+                  } else {
+                    onDelete(s.id);
                   }
                 }}
               >

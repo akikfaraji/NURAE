@@ -19,8 +19,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
-import { LoadingRow } from '@/components/nurae/bits';
+import { LoadingRow, PageFade } from '@/components/nurae/bits';
 import { SessionList } from '@/components/nurae/session-list';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import {
   ApiError,
   EntryDTO,
@@ -68,15 +69,36 @@ export function ChatsView() {
     })();
   }, [user, refreshSessions]);
 
+  // Featured-page handoff: a picked question arrives as a "Continue:" chip.
+  // Read ONCE, here — not inside EmptyChat — so the auto-open effect can see
+  // it and stand down instead of yanking the user to their latest chat and
+  // silently consuming the question.
+  const [prefill, setPrefill] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = sessionStorage.getItem('nurae:prefill');
+        if (stored) {
+          sessionStorage.removeItem('nurae:prefill');
+          setPrefill(stored);
+        }
+      } catch {
+        /* private mode — the chip is a convenience, never a requirement */
+      }
+    })();
+  }, []);
+
   // Landing on /chats with no chat selected opens the most recent conversation
   // directly — the empty "new chat" state is for users who have no history yet
   // (or who explicitly pressed "+ New chat"). Runs once per signed-in user.
+  // A featured-question prefill pins the empty state: the user came here to
+  // start THAT conversation, not to resume an old one.
   useEffect(() => {
-    if (!user || activeId || !sessions.length) return;
+    if (!user || activeId || prefill || !sessions.length) return;
     if (autoOpenedRef.current === user.id) return;
     autoOpenedRef.current = user.id;
     router.replace(`/chats?c=${sessions[0].id}`);
-  }, [user, activeId, sessions, router]);
+  }, [user, activeId, prefill, sessions, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,6 +185,9 @@ export function ChatsView() {
       // matches the server (same rule as the agent view).
       setEntries((e) => e.filter((x) => x.id !== localId));
       setError(err instanceof Error ? err.message : 'The assistant could not reply.');
+      // The draft was cleared before the send — give it back unless the user
+      // has already started typing something new.
+      setDraft((d) => (d ? d : text));
     } finally {
       setSending(false);
       textareaRef.current?.focus();
@@ -208,6 +233,8 @@ export function ChatsView() {
       void refreshSessions();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the chat.');
+      // The first message was the composer's draft — hand it back for a retry.
+      setDraft(text);
     } finally {
       setSending(false);
     }
@@ -376,6 +403,7 @@ export function ChatsView() {
     <div className="flex h-dvh flex-col bg-background">
       <SiteHeader user={user} onSignOut={signOut} hideMobileMenu />
 
+      <PageFade className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
         {/* Sidebar — desktop */}
         <aside className="hidden w-64 shrink-0 flex-col border-r border-border/60 md:flex">
@@ -399,56 +427,54 @@ export function ChatsView() {
           />
         </aside>
 
-        {/* Sidebar — mobile drawer */}
-        {drawerOpen && (
-          <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setDrawerOpen(false)} />
-            <div className="absolute inset-y-0 left-0 flex w-72 flex-col border-r border-border bg-background">
-              <div className="flex items-center justify-between p-3">
-                <span className="text-xs uppercase tracking-widest text-muted-foreground">Chats</span>
-                <button type="button" onClick={() => setDrawerOpen(false)} className="text-xs text-muted-foreground hover:text-foreground">
-                  Close
-                </button>
-              </div>
-              <div className="px-3 pb-3">
-                <button
-                  type="button"
-                  onClick={() => openSession(null)}
-                  className="w-full rounded-md border border-border px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60"
-                >
-                  + New chat
-                </button>
-              </div>
-              <SessionList
-                sessions={sessions}
-                activeId={activeId}
-                emptyText="No conversations yet. Start one — it stays here."
-                onOpen={openSession}
-                onRename={renameSession}
-                onDelete={deleteSession}
-                onArchive={archiveSession}
-              />
-              <nav className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border/60 p-3" aria-label="Site">
-                {[
-                  { href: '/chats/agents', label: 'Agents' },
-                  { href: '/bots', label: 'Bots' },
-                  { href: '/featured', label: 'Featured' },
-                  { href: '/billing', label: 'Billing' },
-                  { href: '/help', label: 'Help' },
-                ].map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setDrawerOpen(false)}
-                    className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
+        {/* Sidebar — mobile drawer (Sheet: slide animation, focus trap, Esc,
+            scroll lock — all from the Radix primitive). */}
+        <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <SheetContent
+            side="left"
+            className="flex w-72 flex-col border-border bg-background p-0 md:hidden [&>button]:hidden"
+          >
+            <SheetTitle className="flex items-center justify-between px-3 pt-3 text-xs uppercase tracking-widest text-muted-foreground">
+              Chats
+            </SheetTitle>
+            <div className="px-3 pb-3 pt-3">
+              <button
+                type="button"
+                onClick={() => openSession(null)}
+                className="flex min-h-11 w-full items-center rounded-md border border-border px-3 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
+              >
+                + New chat
+              </button>
             </div>
-          </div>
-        )}
+            <SessionList
+              sessions={sessions}
+              activeId={activeId}
+              emptyText="No conversations yet. Start one — it stays here."
+              onOpen={openSession}
+              onRename={renameSession}
+              onDelete={deleteSession}
+              onArchive={archiveSession}
+            />
+            <nav className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border/60 p-3" aria-label="Site">
+              {[
+                { href: '/chats/agents', label: 'Agents' },
+                { href: '/bots', label: 'Bots' },
+                { href: '/featured', label: 'Featured' },
+                { href: '/billing', label: 'Billing' },
+                { href: '/help', label: 'Help' },
+              ].map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setDrawerOpen(false)}
+                  className="min-h-11 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </SheetContent>
+        </Sheet>
 
         {/* Conversation */}
         <main className="flex min-w-0 flex-1 flex-col">
@@ -459,6 +485,7 @@ export function ChatsView() {
                 userName={user.name}
                 onPick={(text) => void startNewChatAndSend(text)}
                 busy={sending}
+                prefill={prefill}
               />
               <div className="shrink-0 border-t border-border/60 bg-background">
                 <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6">
@@ -469,20 +496,33 @@ export function ChatsView() {
             </>
           ) : (
             <>
-              <div className="min-h-0 flex-1 overflow-y-auto" onClick={() => setError(null)}>
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
                   {loadingSession && <LoadingRow label="Loading conversation…" />}
                   {entries.map((m) => (
                     <Message key={m.id} entry={m} />
                   ))}
                   {sending && (
-                    <p className="text-xs text-muted-foreground" aria-label="Assistant is typing">
+                    <p className="text-xs text-muted-foreground" aria-label="Assistant is typing" role="status" aria-live="polite">
                       <span className="animate-pulse">●</span> thinking
                     </p>
                   )}
                   {error && (
-                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
-                      {error}
+                    <div
+                      className="flex items-start justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                      role="alert"
+                    >
+                      <span>{error}</span>
+                      {/* Dismissal lives ON the error — clicking the conversation
+                          must never silently eat a failure message. */}
+                      <button
+                        type="button"
+                        aria-label="Dismiss error"
+                        onClick={() => setError(null)}
+                        className="shrink-0 px-1 text-destructive/70 transition-colors hover:text-destructive"
+                      >
+                        ×
+                      </button>
                     </div>
                   )}
                   <div ref={bottomRef} />
@@ -503,6 +543,7 @@ export function ChatsView() {
           )}
         </main>
       </div>
+      </PageFade>
     </div>
   );
 }
@@ -556,27 +597,22 @@ function Message({ entry }: { entry: EntryDTO }) {
 // Empty state — human, quiet, no marketing
 // ---------------------------------------------------------------------------
 
-function EmptyChat({ userName, onPick, busy }: { userName: string; onPick: (text: string) => void; busy: boolean }) {
+function EmptyChat({
+  userName,
+  onPick,
+  busy,
+  prefill,
+}: {
+  userName: string;
+  onPick: (text: string) => void;
+  busy: boolean;
+  prefill: string | null;
+}) {
   const examples = [
     'What can NURAE do?',
     'Explain Telegram inline keyboards.',
     'Build me a Telegram bot for my clothing store.',
   ];
-  // Featured page handoff: a picked question lands here as a prefill.
-  const [prefill, setPrefill] = useState<string | null>(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const stored = sessionStorage.getItem('nurae:prefill');
-        if (stored) {
-          sessionStorage.removeItem('nurae:prefill');
-          setPrefill(stored);
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-  }, []);
   const firstName = userName ? userName.split(' ')[0] : '';
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6">

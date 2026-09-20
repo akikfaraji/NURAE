@@ -7,7 +7,8 @@
  */
 
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { motion, MotionConfig } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 const STATUS_STYLES: Record<string, { label: string; className: string }> = {
@@ -65,32 +66,6 @@ export function StatLine({
   );
 }
 
-export function StatCard({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: number | string;
-  accent?: 'zinc' | 'red';
-}) {
-  return (
-    <Card className="border-border shadow-sm">
-      <CardContent className="p-4 sm:p-6">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p
-          className={cn(
-            'mt-1 text-2xl font-semibold tabular-nums sm:text-3xl',
-            accent === 'red' ? 'text-destructive' : 'text-foreground',
-          )}
-        >
-          {value}
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
 /** Small all-caps label chip — one shared shape for official/category/
  *  transport/verified markers (was hand-rolled at three sizes). */
 export function Pill({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -114,6 +89,94 @@ export function LoadingRow({ label = 'Loading…' }: { label?: string }) {
       <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" aria-hidden />
       {label}
     </p>
+  );
+}
+
+/** Quiet failure panel — one honest idiom for "the data did not arrive",
+ *  visually distinct from the dashed EmptyState so a broken load can never
+ *  masquerade as "nothing here yet". */
+export function ErrorPanel({
+  message,
+  onRetry,
+  className,
+}: {
+  message: string;
+  onRetry?: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className={cn(
+        'flex flex-col items-center justify-center rounded-lg border border-border px-6 py-10 text-center',
+        className,
+      )}
+    >
+      <p className="max-w-sm text-sm leading-relaxed text-foreground">{message}</p>
+      {onRetry && (
+        <Button variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+          Retry
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** One primitive for the three data states — loading, failed, empty, then the
+ *  real content. Stops every view from inventing its own loading/error idiom. */
+export function LoadState({
+  loading,
+  error,
+  onRetry,
+  isEmpty,
+  empty,
+  loadingLabel,
+  children,
+  className,
+}: {
+  loading: boolean;
+  error: string | null;
+  onRetry?: () => void;
+  isEmpty: boolean;
+  empty?: React.ReactNode;
+  loadingLabel?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  if (loading) {
+    return (
+      <div className={cn('px-4 py-10 text-center sm:px-6', className)}>
+        <LoadingRow label={loadingLabel ?? 'Loading…'} />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className={cn('px-4 py-6 sm:px-6', className)}>
+        <ErrorPanel message={error} onRetry={onRetry} />
+      </div>
+    );
+  }
+  if (isEmpty) {
+    return <div className={className}>{empty}</div>;
+  }
+  return <div className={className}>{children}</div>;
+}
+
+/** Route-level fade — restrained by design: 6px rise, 240ms, out like a
+ *  breath. Respects prefers-reduced-motion via MotionConfig. */
+export function PageFade({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <MotionConfig reducedMotion="user">
+      <motion.div
+        className={className}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.24, ease: 'easeOut' }}
+      >
+        {children}
+      </motion.div>
+    </MotionConfig>
   );
 }
 

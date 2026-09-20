@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -117,6 +118,18 @@ function NavLink({ href, label, active, onClick }: { href: string; label: string
   );
 }
 
+/** Active-area rule: EXACT match first, then the LONGEST href prefix — so
+ *  `/` never swallows every route and `/chats/agents` highlights Agents
+ *  without also lighting up Chats. */
+function activeHref(pathname: string, items: ReadonlyArray<{ href: string; label: string }>): string | null {
+  const exact = items.find((i) => i.href === pathname);
+  if (exact) return exact.href;
+  const prefixed = items
+    .filter((i) => i.href !== '/' && pathname.startsWith(i.href + '/'))
+    .sort((a, b) => b.href.length - a.href.length);
+  return prefixed[0]?.href ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Account menu — the intentional interaction behind sign out
 // ---------------------------------------------------------------------------
@@ -183,6 +196,37 @@ export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   const link = data ? `${typeof window !== 'undefined' ? window.location.origin : ''}/?ref=${data.code}` : '';
 
+  /** Copy that tells the truth: Clipboard API first, hidden-textarea
+   *  fallback second, and an honest error (with the code visible for manual
+   *  copy) when the browser refuses both. */
+  const copyLink = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+        setCopied(true);
+        return;
+      }
+      throw new Error('clipboard unavailable');
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = link;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (!ok) throw new Error('copy rejected');
+        setCopied(true);
+      } catch {
+        setCopied(false);
+        toast.error('Could not copy automatically — select the link below and copy it manually.');
+      }
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={(v) => (!v ? onClose() : undefined)}>
       <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-lg border-border bg-background p-6 sm:p-6">
@@ -195,12 +239,10 @@ export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => 
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
         {data && (
           <>
+            {/* The link itself stays selectable — manual copy is always possible. */}
             <button
               type="button"
-              onClick={() => {
-                void navigator.clipboard?.writeText(link);
-                setCopied(true);
-              }}
+              onClick={() => void copyLink()}
               className="mt-4 w-full truncate rounded-md border border-border px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:bg-muted/50"
             >
               {copied ? 'Copied to clipboard' : link}
@@ -240,6 +282,21 @@ export function SiteHeader({
   const nav = variant === 'public' ? PUBLIC_NAV : NAV;
   const extraNav = variant === 'public' ? [] : ([{ href: '/help', label: 'Help' }] as const);
 
+  // PUBLIC_NAV already carries Home and About — blanket-appending them again
+  // produced duplicate hrefs and duplicate React keys. Dedupe, keeping the
+  // first occurrence's label.
+  const mobileNavItems = (() => {
+    const merged = [...nav, ...extraNav, { href: '/', label: 'Home' as const }, { href: '/about', label: 'About' as const }];
+    const seen = new Set<string>();
+    return merged.filter((item) => {
+      if (seen.has(item.href)) return false;
+      seen.add(item.href);
+      return true;
+    });
+  })();
+
+  const currentHref = activeHref(pathname, [...nav, ...extraNav]);
+
   return (
     <header className="sticky top-0 z-30 shrink-0 border-b border-border/60 bg-background/85 backdrop-blur">
       <div className="mx-auto flex h-12 max-w-6xl items-center gap-4 px-4 sm:px-6">
@@ -258,14 +315,14 @@ export function SiteHeader({
           <SheetContent side="left" className="w-64 border-border bg-background p-5">
             <SheetTitle className="text-xs uppercase tracking-widest text-muted-foreground">NURAE</SheetTitle>
             <nav className="mt-4 flex flex-col gap-1" aria-label="Site">
-              {[...nav, ...extraNav, { href: '/', label: 'Home' }, { href: '/about', label: 'About' }].map((item) => (
+              {mobileNavItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={
                     'rounded-sm px-2 py-1.5 text-sm ' +
-                    (pathname === item.href ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')
+                    (item.href === currentHref ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')
                   }
                 >
                   {item.label}
@@ -279,18 +336,16 @@ export function SiteHeader({
         {/* Desktop nav — the wordmark IS the nav's first item, kept small */}
         <nav className="hidden items-center gap-5 sm:flex" aria-label="Site">
           {user ? (
-            nav.map((item) => (
-              <NavLink key={item.href} {...item} active={pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href + '/'))} />
-            ))
+            nav.map((item) => <NavLink key={item.href} {...item} active={item.href === currentHref} />)
           ) : (
-            PUBLIC_NAV.map((item) => <NavLink key={item.href} {...item} active={pathname === item.href} />)
+            PUBLIC_NAV.map((item) => <NavLink key={item.href} {...item} active={item.href === currentHref} />)
           )}
-          {user && extraNav.map((item) => <NavLink key={item.href} {...item} active={pathname === item.href} />)}
+          {user && extraNav.map((item) => <NavLink key={item.href} {...item} active={item.href === currentHref} />)}
         </nav>
 
-        {/* Mobile: current area label */}
+        {/* Mobile: current area label — exact match first, then longest prefix */}
         <span className={"truncate text-xs font-medium text-foreground sm:hidden " + (hideMobileMenu ? "pl-0" : "")}>
-          {nav.find((n) => pathname.startsWith(n.href))?.label ?? 'NURAE'}
+          {[...nav, ...extraNav].find((n) => n.href === currentHref)?.label ?? 'NURAE'}
         </span>
 
         <div className="ml-auto flex items-center gap-3">
