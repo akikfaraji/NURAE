@@ -57,6 +57,9 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
       activity: result.activity,
       needsConfirm: result.needsConfirm,
       draftBotId: result.draftBotId ?? null,
+      // Honest technical cause for the UI error banner (the reply itself
+      // carries the human-facing message). null on a clean turn.
+      error: result.error ?? null,
     });
   } catch (err) {
     return internalError(err, 'agents.messages');

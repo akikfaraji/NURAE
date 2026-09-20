@@ -329,6 +329,28 @@ export function toolDataPreview(data: unknown, max = 700): string | undefined {
   }
 }
 
+/**
+ * Honest, actionable failure text for a mid-turn crash. The generic
+ * "internal error" wording used to hide credential failures — a dead
+ * provider key made EVERY tool turn look silently broken with no hint
+ * that the fix belongs to the site owner, not the user.
+ */
+export function agentFailureMessage(detail: string): string {
+  if (/credentials|401|403/i.test(detail)) {
+    return 'I could not do any work this turn: the AI layer rejected its credentials (the provider key is missing, invalid or expired). Nothing was changed — the site owner needs to set a valid provider key, then this task will run.';
+  }
+  if (/429|rate.?limit/i.test(detail)) {
+    return 'The AI layer is rate-limited right now. Nothing was changed — give it a moment and send the task again.';
+  }
+  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|fetch failed|network/i.test(detail)) {
+    return 'I could not reach the AI layer (network error). Nothing was changed — check the deployment\u2019s connection and send the task again.';
+  }
+  if (/insufficient|credit|billing/i.test(detail)) {
+    return 'This turn stopped at the billing gate. Nothing was changed — top up in Billing and send the task again.';
+  }
+  return 'Something went wrong inside the agent mid-turn. Nothing was published; send the task again — if it keeps failing, the site owner can find the cause in the logs (AGENT_TURN_FAILED).';
+}
+
 // ---------------------------------------------------------------------------
 // The turn
 // ---------------------------------------------------------------------------
@@ -631,10 +653,49 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
         },
       })
       .catch(() => undefined);
+    // BR-03x: a failed turn used to return WITHOUT persisting anything — the
+    // user bubble stayed, the assistant side vanished on reload, and the
+    // generic "internal error" text hid actionable causes (a dead provider
+    // key made EVERY tool turn look silently broken). Persist the failed
+    // turn like any other and say what actually happened.
+    const reply = finalMessage.trim() || agentFailureMessage(detail);
+    try {
+      await db.chatSession.update({
+        where: { id: session.id },
+        data: {
+          lastMessageAt: new Date(),
+          state: JSON.stringify({
+            draftBotId,
+            pendingApproval: pendingApproval,
+            lastSummary: reply.slice(0, 500) || null,
+            fileRefs: state.fileRefs ?? [],
+          } satisfies AgentState),
+        },
+      });
+      await db.chatEntry.create({
+        data: {
+          sessionId: session.id,
+          role: 'assistant',
+          content: reply,
+          meta: JSON.stringify({
+            activity: activity.map((a) => ({
+              seq: a.seq,
+              tool: a.tool,
+              label: a.label,
+              status: a.status,
+              detail: a.detail,
+              dataPreview: toolDataPreview(a.data),
+            })),
+            needsConfirm: Boolean(pendingApproval),
+            draftBotId,
+          }),
+        },
+      });
+    } catch {
+      /* failure persistence is best-effort; the response still carries the error */
+    }
     return {
-      reply:
-        finalMessage ||
-        'The builder agent hit an internal error mid-turn. Nothing was published; try again.',
+      reply,
       activity,
       needsConfirm: Boolean(pendingApproval),
       draftBotId,

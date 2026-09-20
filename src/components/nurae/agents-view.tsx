@@ -52,6 +52,17 @@ export function AgentsView() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoOpenedRef = useRef<string | null>(null);
+  // BR-03x: stale session loads used to wipe a LIVE turn. loadSession fired on
+  // session open AND again whenever the router object changed; a fetch that
+  // started before the turn persisted its entries could resolve AFTER the
+  // optimistic user message + assistant reply were appended — replacing both
+  // with the empty pre-turn list. The transcript looked silently broken: the
+  // user's task was sent, the agent "said nothing". Two guards: a monotonically
+  // increasing request seq (only the newest load may apply) and busyRef
+  // (no load result may apply while a turn is in flight — the turn owns the
+  // transcript until it finishes).
+  const loadSeqRef = useRef(0);
+  const busyRef = useRef(false);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -80,9 +91,11 @@ export function AgentsView() {
   }, [user, taskParam, activeId, sessions, router]);
 
   const loadSession = useCallback(async (id: string) => {
+    const reqSeq = ++loadSeqRef.current;
     setError(null);
     try {
       const r = await nuraeApi.getSession(id);
+      if (reqSeq !== loadSeqRef.current || busyRef.current) return; // superseded or a live turn owns the transcript
       if (r.session.kind !== 'agent') {
         router.replace(`/chats?c=${id}`);
         return;
@@ -93,6 +106,7 @@ export function AgentsView() {
       setNeedsConfirm(Boolean(lastAssistant?.needsConfirm));
       setDraftBotId(lastAssistant?.draftBotId ?? null);
     } catch (e) {
+      if (reqSeq !== loadSeqRef.current || busyRef.current) return;
       setError(e instanceof ApiError && e.status === 404 ? 'This agent session does not exist.' : (e as Error).message);
     }
   }, [router]);
@@ -169,6 +183,8 @@ export function AgentsView() {
 
   const runTurn = async (sessionId: string, text: string, approve: boolean, attachmentIds?: string[]) => {
     setBusy(true);
+    busyRef.current = true;
+    loadSeqRef.current++; // invalidate any in-flight load — the turn owns the transcript now
     setError(null);
     setPendingSteps([]);
     let localId: string | null = null;
@@ -200,6 +216,7 @@ export function AgentsView() {
       setPendingSteps([]);
       setNeedsConfirm(r.needsConfirm);
       setDraftBotId(r.draftBotId);
+      if (r.error) setError(r.error); // technical cause; the reply bubble carries the human message
       void refreshSessions();
     } catch (err) {
       // The optimistic user entry was never persisted — remove it (same rule
@@ -207,6 +224,7 @@ export function AgentsView() {
       if (localId) setEntries((e) => e.filter((x) => x.id !== localId));
       setError(err instanceof Error ? err.message : 'The agent could not continue.');
     } finally {
+      busyRef.current = false;
       setBusy(false);
       textareaRef.current?.focus();
     }
@@ -214,6 +232,7 @@ export function AgentsView() {
 
   const createAndRun = async (task: string) => {
     setBusy(true);
+    busyRef.current = true; // mirrored — runTurn resets it in its finally
     setError(null);
     try {
       const { session } = await nuraeApi.createAgentSession(task.slice(0, 60) || 'Bot build');
@@ -225,6 +244,7 @@ export function AgentsView() {
       await runTurn(session.id, task, false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the agent.');
+      busyRef.current = false;
       setBusy(false);
     }
   };
