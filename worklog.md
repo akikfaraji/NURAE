@@ -926,3 +926,25 @@ Work Log:
 Stage Summary:
 - Windows data home is live: db, secret key and uploads live under %APPDATA%\FRAZIYM\NURAE; the project folder can be wiped/rebuilt without touching data. Linux deployments keep byte-identical behavior. NURAE_DATA_DIR overrides anywhere.
 - The user's Windows build errors were environmental (absolute /root path from the committed .env) — fixed portably; existing local test data in <project>/db does NOT migrate automatically (smoke data; NURAE_DATA_DIR can point back if ever needed).
+
+---
+Task ID: 17
+Agent: main (Super Z)
+Task: Follow-up to the %APPDATA%/FRAZIYM/NURAE migration — kill the build-time "Failed to connect to database" prisma errors on fresh Windows installs and unify the db:* CLI with the data home (user's build/db:push logs from their Windows machine)
+
+Work Log:
+- DIAGNOSIS from user's logs: (1) build "Collecting page data" spammed prisma:error with the NEW APPDATA path — migration was live but the db/ DIRECTORY didn't exist yet (schema-sync pre-creates it only at server boot, not during build; libSQL can't create a file through a missing parent — probe confirmed the exact error string). (2) npm run db:push created the DB at prisma/db/nurae.db — the plain prisma CLI resolves RELATIVE file: URLs against prisma/schema.prisma, not the app's data home (split-brain: CLI db ≠ app db).
+- PROBE (scripts/probe-libsql.mts, removed after): dir missing → "Failed to connect to database: `path`" (user's exact error); dir exists + file missing → PRAGMA OK and libSQL AUTO-CREATES the 0-byte file (valid empty SQLite db). So one mkdirSync before client creation fixes every code path.
+- db.ts: ensureSqliteDir() pre-creates the parent dir for file: URLs in createClient() (all phases, mirrors schema-sync's pre-create); eager busy_timeout PRAGMA skipped when NEXT_PHASE=phase-production-build is visible (best-effort — Next 16 sets it in the main build process but it may not reach page-data workers; the mkdir is the real guarantee).
+- scripts/db.mjs (NEW): CLI wrapper for db:push/db:migrate/db:reset — loads .env without overriding real env vars, mirrors dataRoot chain (NURAE_DATA_DIR → %APPDATA%/FRAZIYM/NURAE on win32 → project root/NURAE_APP_ROOT), pre-creates the db dir, hands the CLI an absolute FORWARD-SLASH file: URL (canonical Windows form; backslashes break prisma URL parsing), spawns prisma with stdio inherit.
+- schema-sync.ts: CLI child env now also forward-slash-normalized (was raw backslash-capable).
+- scripts/dev.mjs (NEW): Windows-safe dev launcher (spawn next dev + in-process tee to dev.log + stdin passthrough for r/o shortcuts) — removes the last shell-fragile script (2>&1 | tee breaks on cmd.exe).
+- package.json: dev→scripts/dev.mjs; db:push/migrate/reset→scripts/db.mjs; db:generate stays plain (no DB needed).
+- start-prod.mjs: boot banner now prints the real data home (was always the project root).
+- .gitignore: /prisma/db/ (pre-wrapper stray DBs, e.g. the one already on the user's machine — safe to delete).
+- VERIFIED: syntax checks on all launcher scripts; fresh-machine build simulation (NURAE_DATA_DIR=/tmp/nurae-build-test, relative DATABASE_URL) → prisma:error count 0, data dir + empty db materialized, postbuild OK; wrapper test → schema (25 tables) landed in NURAE_DATA_DIR/db/nurae.db, no prisma/db stray; boot smoke (fresh data home, port 3111) → health 200, pricing 200, "schema sync: in sync (30ms)", 25 tables, zero connect errors; tsc 71 (= baseline, zero new); vitest 393/393 across 26 files.
+
+Stage Summary:
+- Pushed a90446a..007bc29. Fresh Windows machine flow is now error-free end-to-end: npm run build (silent, pre-creates %APPDATA%/FRAZIYM/NURAE/db) → npm run db:push (optional — schema lands in the data home, no more prisma/db split-brain) → npm start (schema-sync idempotent).
+- Single source of truth for "where is the database": src/lib/paths.ts dataRoot() mirrored by start-prod.mjs and scripts/db.mjs (documented cross-references).
+- User machine note: leftover prisma/db/nurae.db from the old db:push can be deleted; the real DB lives in %APPDATA%/FRAZIYM/NURAE/db/.
