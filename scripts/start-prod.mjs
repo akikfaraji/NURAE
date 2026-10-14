@@ -54,15 +54,21 @@ if (existsSync(envPath)) {
   }
 }
 
-// --- 2. Pin the application root (chdir-immune anchor for data paths) ------
+// --- 2. Pin the application root + data home (chdir-immune anchors) -------
 process.env.NURAE_APP_ROOT = root;
+// Mirror the app's dataRoot() chain (src/lib/paths.ts) so the launcher and
+// the server agree on where the database lives BEFORE any app code runs.
+if (!process.env.NURAE_DATA_DIR?.trim() && process.platform === 'win32' && process.env.APPDATA?.trim()) {
+  process.env.NURAE_DATA_DIR = resolve(process.env.APPDATA.trim(), 'FRAZIYM', 'NURAE');
+}
+const dataHome = process.env.NURAE_DATA_DIR?.trim() || root;
 
 // --- 3. Make the database URL absolute so it cannot fork on chdir ----------
 const dbUrl = process.env.DATABASE_URL?.trim();
 if (dbUrl && dbUrl.startsWith('file:')) {
   const path = dbUrl.slice('file:'.length);
   if (path && !path.startsWith(':') && !isAbsolute(path)) {
-    process.env.DATABASE_URL = 'file:' + resolve(root, path);
+    process.env.DATABASE_URL = 'file:' + resolve(dataHome, path);
   }
 }
 

@@ -909,3 +909,20 @@ Stage Summary:
 - Answer: YES on web chat (metered after 25 free turns/day, $0.002/turn, hard-gated; 7-day trial free), NO on Telegram (free for everyone, platform eats cost) — asymmetry is by design (Telegram chatters have no NURAE account to bill).
 - Repo is Windows-safe end-to-end now: npm run build && npm start work on PowerShell/cmd; standalone bundle self-heals its sqlite schema on boot.
 - Local repo recovered from the ancient-git incident; remote was never affected. Insurance artifacts: /tmp/worktree-insurance.patch, /tmp/untracked-insurance.tar.gz.
+
+---
+Task ID: 16
+Agent: main (Super Z)
+Task: "move the nurae db to %APPDATA%/FRAZIYM/NURAE — will be the main dir of NURAE" (Windows data home) + diagnose the /root/NURAE/db/nurae.db prisma errors in the user's Windows build
+
+Work Log:
+- DIAGNOSIS: the committed .env carried DATABASE_URL=file:/root/NURAE/db/nurae.db (the original Linux deployment box) — an absolute path that is nonsense on Windows, so build-time page-data collection logged prisma connect failures (non-fatal; build still produced 63/63 pages).
+- NEW dataRoot() in src/lib/paths.ts: (1) NURAE_DATA_DIR env override, (2) Windows → %APPDATA%\FRAZIYM\NURAE, (3) everything else → appRoot() (Linux server + dev unchanged). resolveDataPath now anchors to dataRoot — db, secret key (.nurae-secret-key beside the db) and uploads (files.ts uploadsDir → dataRoot/db/uploads) all follow the data home.
+- .env: DATABASE_URL is now portable `file:./db/nurae.db` — on the Linux box appRoot still resolves it to /root/NURAE/db/nurae.db (same file as before); on Windows it lands in %APPDATA%\FRAZIYM\NURAE\db\nurae.db. .env.example documents the data home + NURAE_DATA_DIR.
+- start-prod.mjs: mirrors the dataRoot chain and exports NURAE_DATA_DIR so launcher and server agree BEFORE boot; relative file: URLs resolve against the data home.
+- schema-sync.ts: hands the prisma CLI child the app-resolved ABSOLUTE database URL (the CLI cannot apply dataRoot logic) and pre-creates the db directory (a fresh %APPDATA% install has no db/ folder yet).
+- VERIFIED: tsc 71 (= baseline, zero new); FULL suite 393/393 across 26 files; build clean; boot smoke with a fresh NURAE_DATA_DIR=/tmp/nurae-data-test → db + schema created THERE ("in sync, 18ms"), health/home 200. Container quirk documented: this env pre-exports DATABASE_URL=<project>/db/custom.db which correctly outranks .env — the user's Windows machine has no such global, so .env's relative URL flows through the data home.
+
+Stage Summary:
+- Windows data home is live: db, secret key and uploads live under %APPDATA%\FRAZIYM\NURAE; the project folder can be wiped/rebuilt without touching data. Linux deployments keep byte-identical behavior. NURAE_DATA_DIR overrides anywhere.
+- The user's Windows build errors were environmental (absolute /root path from the committed .env) — fixed portably; existing local test data in <project>/db does NOT migrate automatically (smoke data; NURAE_DATA_DIR can point back if ever needed).

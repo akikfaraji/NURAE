@@ -13,8 +13,9 @@
  * loud warning. NURAE_AUTO_MIGRATE=0 opts out.
  */
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { databaseUrl } from '@/lib/paths';
 
 export async function syncSqliteSchema(): Promise<boolean> {
   if (process.env.NURAE_AUTO_MIGRATE === '0') return false;
@@ -22,8 +23,10 @@ export async function syncSqliteSchema(): Promise<boolean> {
   if (!url.startsWith('file:')) return false; // managed databases: real migrations only
 
   // The standalone server chdirs into .next/standalone, where neither the
-  // prisma schema nor the project node_modules live. Anchor everything to
-  // NURAE_APP_ROOT (pinned by scripts/start-prod.mjs) — dev falls back to cwd.
+  // prisma schema nor the project node_modules live. Anchor the CLI + schema
+  // to NURAE_APP_ROOT (pinned by scripts/start-prod.mjs); the DATABASE is
+  // anchored to the data root (project root on Linux, %APPDATA%\FRAZIYM\NURAE
+  // on Windows). Dev falls back to cwd.
   const appRoot = process.env.NURAE_APP_ROOT || process.cwd();
   const cliPath = join(appRoot, 'node_modules', 'prisma', 'build', 'index.js');
   const schemaPath = join(appRoot, 'prisma', 'schema.prisma');
@@ -32,6 +35,13 @@ export async function syncSqliteSchema(): Promise<boolean> {
     return false;
   }
 
+  // The prisma CLI is a child process — it cannot apply the app's dataRoot()
+  // logic, so hand it the already-absolute database URL, and pre-create the
+  // directory (a fresh %APPDATA% install has no db/ folder yet).
+  const absoluteUrl = databaseUrl();
+  const dbFile = absoluteUrl.startsWith('file:') ? absoluteUrl.slice('file:'.length) : null;
+  if (dbFile) mkdirSync(dirname(dbFile), { recursive: true });
+
   try {
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
@@ -39,7 +49,7 @@ export async function syncSqliteSchema(): Promise<boolean> {
     const { stdout } = await run(
       process.execPath,
       [cliPath, 'db', 'push', '--skip-generate', '--schema', schemaPath],
-      { timeout: 60_000, env: process.env },
+      { timeout: 60_000, env: { ...process.env, DATABASE_URL: absoluteUrl } },
     );
     const line = stdout.split('\n').find((l) => l.includes('sync') || l.includes('up to date'))?.trim();
     console.log(`[NURAE] schema sync: ${line ?? 'prisma db push completed'}`);
