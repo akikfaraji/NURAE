@@ -37,10 +37,13 @@ export async function syncSqliteSchema(): Promise<boolean> {
 
   // The prisma CLI is a child process — it cannot apply the app's dataRoot()
   // logic, so hand it the already-absolute database URL, and pre-create the
-  // directory (a fresh %APPDATA% install has no db/ folder yet).
+  // directory (a fresh %APPDATA% install has no db/ folder yet). The CLI
+  // gets forward slashes: file:C:/… is the canonical Windows form for prisma
+  // file: URLs (raw backslashes break its URL parsing).
   const absoluteUrl = databaseUrl();
   const dbFile = absoluteUrl.startsWith('file:') ? absoluteUrl.slice('file:'.length) : null;
   if (dbFile) mkdirSync(dirname(dbFile), { recursive: true });
+  const cliUrl = absoluteUrl.replace(/\\/g, '/');
 
   try {
     const { execFile } = await import('node:child_process');
@@ -49,7 +52,7 @@ export async function syncSqliteSchema(): Promise<boolean> {
     const { stdout } = await run(
       process.execPath,
       [cliPath, 'db', 'push', '--skip-generate', '--schema', schemaPath],
-      { timeout: 60_000, env: { ...process.env, DATABASE_URL: absoluteUrl } },
+      { timeout: 60_000, env: { ...process.env, DATABASE_URL: cliUrl } },
     );
     const line = stdout.split('\n').find((l) => l.includes('sync') || l.includes('up to date'))?.trim();
     console.log(`[NURAE] schema sync: ${line ?? 'prisma db push completed'}`);

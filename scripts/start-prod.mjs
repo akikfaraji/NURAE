@@ -77,7 +77,7 @@ process.env.NODE_ENV = 'production';
 process.env.PORT = process.env.PORT || '3000';
 process.env.HOSTNAME = process.env.HOSTNAME || '0.0.0.0';
 
-console.log(`[NURAE] starting production server (data root: ${root}, port: ${process.env.PORT})`);
+console.log(`[NURAE] starting production server (data root: ${dataHome}, port: ${process.env.PORT})`);
 
 const child = spawn(process.execPath, [serverJs], {
   cwd: root,

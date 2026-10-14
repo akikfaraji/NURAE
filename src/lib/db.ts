@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { PrismaLibSQL } from '@prisma/adapter-libsql'
 import { databaseUrl } from '@/lib/paths'
@@ -22,11 +24,13 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 function createClient(): PrismaClient {
-  // databaseUrl() makes relative file: paths absolute against the PROJECT
-  // root — the standalone production server chdirs into .next/standalone, and
-  // without this the production server would silently open a DIFFERENT
-  // (build-time snapshot) database. See src/lib/paths.ts.
+  // databaseUrl() makes relative file: paths absolute against the DATA
+  // ROOT (project root on Linux; %APPDATA%\FRAZIYM\NURAE on Windows) — the
+  // standalone production server chdirs into .next/standalone, and without
+  // this the production server would silently open a DIFFERENT (build-time
+  // snapshot) database. See src/lib/paths.ts.
   const url = databaseUrl()
+  ensureSqliteDir(url)
   // PrismaLibSQL is a driver-adapter FACTORY: it accepts the libSQL config
   // ({ url, authToken }) and manages the underlying @libsql/client itself.
   // It supports file: (embedded, local dev) and libsql:// (Turso, Vercel) URLs.
@@ -39,8 +43,31 @@ function createClient(): PrismaClient {
   return client
 }
 
+/**
+ * A fresh data home has no db/ folder yet — libSQL cannot create the file
+ * through a missing directory and answers "Failed to connect to database"
+ * on the very first touch (build page-data collection, dev boot). The
+ * schema itself is pushed later by the boot-time schema sync; the empty
+ * file libSQL auto-creates is a valid empty SQLite database.
+ */
+function ensureSqliteDir(url: string) {
+  if (!url.startsWith('file:')) return
+  const path = url.slice('file:'.length)
+  if (!path || path.startsWith(':')) return // ":memory:" and friends
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+  } catch {
+    // read-only filesystem etc. — let the query surface the real error
+  }
+}
+
 function configureLocalSqlite(client: PrismaClient, url: string) {
   // PRAGMA statements return rows — they must use $queryRawUnsafe (not executeRaw).
+  // Best-effort: when a build phase is visible (NEXT_PHASE), skip the eager
+  // PRAGMA so module imports don't open the database at all. Where the phase
+  // is not propagated to build workers, the touch still succeeds silently
+  // (empty db file in the data home) thanks to ensureSqliteDir above.
+  if (process.env.NEXT_PHASE === 'phase-production-build') return
   if (url.startsWith('file:')) {
     void client.$queryRawUnsafe('PRAGMA busy_timeout=5000;').catch(() => undefined)
   }

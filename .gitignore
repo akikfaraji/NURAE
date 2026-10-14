@@ -42,6 +42,10 @@ yarn-error.log*
 /db/.nurae-secret-key
 /db/uploads/
 /db/.nurae-runtime-token
+# stray DBs from pre-wrapper prisma CLI runs (relative file: URLs used to
+# resolve against prisma/schema.prisma — the CLI wrapper now targets the
+# data home; safe to delete these leftovers)
+/prisma/db/
 
 # vercel
 .vercel
