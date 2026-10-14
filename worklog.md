@@ -889,3 +889,23 @@ Stage Summary:
 - The tool-usage UI works end-to-end when the AI layer works (verified with mock AI), and it now fails HONESTLY when it doesn't: failed turns persist, the real cause (dead provider key vs network vs billing) is shown to both user and operator instead of a silent empty transcript.
 - Blocking operator action: the OPENROUTER_API_KEY in .env is invalid ("User not found") — set a valid provider key and agent turns will run for real. Boot blocker fixed (proxy-only), BR-029 regression re-fixed (customer delete route removed again).
 - Files: src/middleware.ts (D), src/app/api/admin/customers/[id]/route.ts (D again), src/lib/nurae/agents/bot-builder.ts (M), src/app/api/agents/sessions/[id]/messages/route.ts (M), src/lib/nurae-client/api.ts (M), src/components/nurae/agents-view.tsx (M), scripts/unwire-mock-ai.ts + scripts/cleanup-agent-smoke.mjs + scripts/check-agent-log.mjs (new dev tooling).
+
+---
+Task ID: 15
+Agent: main (Super Z)
+Task: "are we asking a nurae user to pay for the use of Nurae CS bot AI in chat and telegram?" + Windows build/start breakage from the user's paste (cp, NODE_ENV, Turbopack tracing warnings)
+
+Work Log:
+- BILLING AUDIT (question answered with code evidence): web support chat CHARGES the signed-in user ai_assistant (official-bot.ts supportChatTurn -> chargeFeature, hard-gated 402 "Out of credits"); catalog: $0.002/turn, 25 free/day (Plus x3, Pro x10), 7-day signup trial rides free; Telegram CS bot charges NOBODY — the gateway bills bot OWNERS (meterPlatformAiCall) but the official bot is seeded ownerId=null so the gate short-circuits free; the platform absorbs the provider cost on Telegram only.
+- INCIDENT (found en route): the local .git was rolled back to an ancient snapshot (HEAD=origin/main=105c23f, reflog pre-beta-03) while the worktree carried newer files — a stash-pop from the previous session's tsc check had restored an old stash. GitHub was verified INTACT (ls-remote: bda76be). Recovery: insurance patch+tar saved, git reset --hard origin/main, junk removed (resurrected src/middleware.ts boot-blocker gone with the reset, orphaned chat-page.tsx deleted).
+- FIXED Windows build: scripts/postbuild.mjs (node:fs cpSync/rmSync) replaces the Unix-only `cp -r … && rm -rf …` tail; package.json build now `next build && node scripts/postbuild.mjs`.
+- FIXED Windows start: `npm start` dropped the `NODE_ENV=production` env-prefix and `| tee` (both Unix-shell-only); the launcher already pins NODE_ENV and now tees stdout/stderr to server.log in-process (createWriteStream + pipe).
+- FIXED repo hole: scripts/start-prod.mjs was NEVER COMMITTED (package.json referenced it — fresh clones got "Cannot find module"); now tracked.
+- FIXED Turbopack whole-project tracing: /*turbopackIgnore: true*/ on secrets.ts existsSync/readFileSync (runtime-dynamic key path is intentional) — build now emits 0 warnings.
+- FIXED prod schema sync (BR-031 follow-up): the standalone server chdirs into .next/standalone so `prisma db push` looked for the schema there and failed; schema-sync.ts now anchors CLI+schema to NURAE_APP_ROOT (pinned by the launcher), dev falls back to cwd; passes --schema explicitly.
+- VERIFIED: node --check both scripts; full build green (0 warnings, static+public copied, db/.env excluded); prod boot smoke on :3100 — home/health/pricing 200, server.log written, "schema sync: database is now in sync (22ms)"; vitest schema-sync + agent-api 28/28.
+
+Stage Summary:
+- Answer: YES on web chat (metered after 25 free turns/day, $0.002/turn, hard-gated; 7-day trial free), NO on Telegram (free for everyone, platform eats cost) — asymmetry is by design (Telegram chatters have no NURAE account to bill).
+- Repo is Windows-safe end-to-end now: npm run build && npm start work on PowerShell/cmd; standalone bundle self-heals its sqlite schema on boot.
+- Local repo recovered from the ancient-git incident; remote was never affected. Insurance artifacts: /tmp/worktree-insurance.patch, /tmp/untracked-insurance.tar.gz.

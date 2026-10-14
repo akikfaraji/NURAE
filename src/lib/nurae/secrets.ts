@@ -44,8 +44,11 @@ function loadKey(): Buffer {
   }
 
   const path = keyFilePath();
-  if (existsSync(path)) {
-    const raw = readFileSync(path, 'utf8').trim();
+  // turbopackIgnore: the key path is intentionally runtime-dynamic (data dir
+  // beside the DB); opting out stops Turbopack from tracing the whole project
+  // into the standalone bundle over these two calls.
+  if (existsSync(/*turbopackIgnore: true*/ path)) {
+    const raw = readFileSync(/*turbopackIgnore: true*/ path, 'utf8').trim();
     if (raw.length < 32) {
       throw new Error('NURAE secret key file is corrupted (too short).');
     }

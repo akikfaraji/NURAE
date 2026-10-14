@@ -14,15 +14,21 @@
  */
 
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export async function syncSqliteSchema(): Promise<boolean> {
   if (process.env.NURAE_AUTO_MIGRATE === '0') return false;
   const url = process.env.DATABASE_URL ?? '';
   if (!url.startsWith('file:')) return false; // managed databases: real migrations only
 
-  const cliPath = `${process.cwd()}/node_modules/prisma/build/index.js`;
-  if (!existsSync(cliPath)) {
-    console.warn('[NURAE] schema sync skipped — prisma CLI not installed in this deployment');
+  // The standalone server chdirs into .next/standalone, where neither the
+  // prisma schema nor the project node_modules live. Anchor everything to
+  // NURAE_APP_ROOT (pinned by scripts/start-prod.mjs) — dev falls back to cwd.
+  const appRoot = process.env.NURAE_APP_ROOT || process.cwd();
+  const cliPath = join(appRoot, 'node_modules', 'prisma', 'build', 'index.js');
+  const schemaPath = join(appRoot, 'prisma', 'schema.prisma');
+  if (!existsSync(cliPath) || !existsSync(schemaPath)) {
+    console.warn('[NURAE] schema sync skipped — prisma CLI or schema not found in this deployment');
     return false;
   }
 
@@ -30,10 +36,11 @@ export async function syncSqliteSchema(): Promise<boolean> {
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
     const run = promisify(execFile);
-    const { stdout } = await run(process.execPath, [cliPath, 'db', 'push', '--skip-generate'], {
-      timeout: 60_000,
-      env: process.env,
-    });
+    const { stdout } = await run(
+      process.execPath,
+      [cliPath, 'db', 'push', '--skip-generate', '--schema', schemaPath],
+      { timeout: 60_000, env: process.env },
+    );
     const line = stdout.split('\n').find((l) => l.includes('sync') || l.includes('up to date'))?.trim();
     console.log(`[NURAE] schema sync: ${line ?? 'prisma db push completed'}`);
     return true;

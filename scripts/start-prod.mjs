@@ -22,7 +22,7 @@
  * Env: PORT (default 3000), HOSTNAME (default 0.0.0.0).
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -76,10 +76,24 @@ console.log(`[NURAE] starting production server (data root: ${root}, port: ${pro
 const child = spawn(process.execPath, [serverJs], {
   cwd: root,
   env: process.env,
-  stdio: 'inherit',
 });
+
+// Log to console AND server.log in-process (the old `| tee server.log` shell
+// tail only worked on Unix shells — PowerShell/cmd broke `npm start`).
+const logStream = createWriteStream(resolve(root, 'server.log'), { flags: 'a' });
+logStream.write(`\n[NURAE] ---- server start ${new Date().toISOString()} ----\n`);
+const tee = (src) =>
+  src.on('data', (chunk) => {
+    process.stdout.write(chunk);
+    logStream.write(chunk);
+  });
+if (child.stdout) tee(child.stdout);
+if (child.stderr) tee(child.stderr);
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => child.kill(signal));
 }
-child.on('exit', (code) => process.exit(code ?? 0));
+child.on('exit', (code) => {
+  logStream.end(`[NURAE] ---- server exit (code ${code ?? 0}) ----\n`);
+  process.exit(code ?? 0);
+});
