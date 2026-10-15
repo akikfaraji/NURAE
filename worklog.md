@@ -1068,3 +1068,21 @@ Stage Summary:
 - Platform is at defense-in-depth: fail-closed defaults everywhere, SSRF guard now covers redirects + DNS failures, money paths atomic, CSRF allowlist explicit
 - Documented residuals (accepted): theoretical DNS-rebind TOCTOU window between guard-resolve and fetch-resolve (fix path: undici dispatcher pinning — undici only transitively present, not guaranteed; revisit if threat model grows); admin cookie not server-side revocable (rotation of NURAE_SECRET_KEY/admin token invalidates all)
 - User reminders standing: rotate OpenRouter key + Gmail app password + NURAE_ADMIN_TOKEN (akik1616 burned in git history, 8 chars) + set NURAE_SECRET_KEY ≥ 32 chars
+
+---
+Task ID: 23
+Agent: main (Super Z)
+Task: User incident — Windows npm start: every query fails URL_INVALID: URL component has invalid percent encoding (URIError: URI malformed)
+
+Work Log:
+- Root cause CONFIRMED by reproduction: user's .env (restored from burned 64525cd per earlier handoff instructions — the "delete the DATABASE_URL line" step was skipped) carries DATABASE_URL=file:%APPDATA%/... ; libsql createClient with that URL reproduces the exact error byte-for-byte
+- Secondary damage explained: relative-path resolution treated %APPDATA%/... as relative → scripts/db.mjs + boot schema-sync created a junk DB in a literally-named "%APPDATA%" folder under the data home → schema sync "already in sync" was pushing into the JUNK db; user's real DB at %LOCALAPPDATA%\FRAZIYM\NURAE\db\custom.db is untouched
+- Fix (4 layers): paths.ts assertNoWindowsEnvLiteral guard at databaseUrl() chokepoint (actionable error, %20 passes, backslash→forward-slash normalization); schema-sync gates on databaseUrl() (default path now syncs when DATABASE_URL unset); scripts/db.mjs + start-prod.mjs inline guards exit(1) with the fix BEFORE mkdir/spawn; .env.example NEVER-%VAR% warning
+- Tests: +4 regressions in paths.test.ts (%APPDATA% throws w/ fix text, bare-% message, legit %20 passes, forward-slash normalization); fixed self-introduced TS1501 (/s flag > es2018 target) with [\s\S]
+- Live drills: both launchers exit(1) printing the exact fix when fed the user's URL
+- Verification: vitest 436/436 (28 files), tsc 71 = exact baseline, pushed 2356f1c
+
+Stage Summary:
+- User fix (PowerShell): (Get-Content .env) | Where-Object { $_ -notmatch '^\s*DATABASE_URL\s*=' } | Set-Content .env ; then Remove-Item -Recurse -Force "$env:LOCALAPPDATA\FRAZIYM\NURAE\%APPDATA%" ; npm start
+- Class of mistake (%VAR% in .env for Node) is now structurally impossible to repeat silently — guard message names the fix verbatim
+- Reminder standing: rotate OpenRouter key + Gmail app password + NURAE_ADMIN_TOKEN (burned in 64525cd history)
