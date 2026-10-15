@@ -948,3 +948,17 @@ Stage Summary:
 - Pushed a90446a..007bc29. Fresh Windows machine flow is now error-free end-to-end: npm run build (silent, pre-creates %APPDATA%/FRAZIYM/NURAE/db) → npm run db:push (optional — schema lands in the data home, no more prisma/db split-brain) → npm start (schema-sync idempotent).
 - Single source of truth for "where is the database": src/lib/paths.ts dataRoot() mirrored by start-prod.mjs and scripts/db.mjs (documented cross-references).
 - User machine note: leftover prisma/db/nurae.db from the old db:push can be deleted; the real DB lives in %APPDATA%/FRAZIYM/NURAE/db/.
+
+---
+Task ID: 18
+Agent: main (Super Z)
+Task: User pushback on the data home location — "what the hell is %APPDATA%/roaming/FRAZIYM? I want it in local" + confirm db:generate/db:push really work against it
+
+Work Log:
+- ANSWERED: %APPDATA% IS the Windows Roaming folder (C:\Users\<user>\AppData\Roaming) — that's the standard name, not something NURAE invented. db:generate never touches a database (client generation only); db:push works against the data home via scripts/db.mjs (verified twice: schema lands in NURAE_DATA_DIR, "in sync").
+- CHANGED per user call: Windows data home switched from %APPDATA% (Roaming) to %LOCALAPPDATA% (AppData\Local) — the more correct convention anyway (machine-local db/cache must not follow a roaming profile).
+- paths.ts dataRoot(): win32 → LOCALAPPDATA env → join(homedir(),'AppData','Local') fallback → FRAZIYM/NURAE. Mirrors updated in start-prod.mjs + scripts/db.mjs (homedir import added). All comments/docs/.env.example re-pointed to %LOCALAPPDATA%; grep-verified no stray APPDATA refs outside worklog history.
+- VERIFIED: syntax checks OK; wrapper test → db created at NURAE_DATA_DIR/db/nurae.db, in sync (47ms); tsc 71 (= baseline); vitest 393/393; fresh-machine build simulation → prisma:error count 0.
+
+Stage Summary:
+- Pushed 007bc29..8126f9d. Windows data home is now C:\Users\<user>\AppData\Local\FRAZIYM\NURAE. User's machine cleanup: the Roaming\FRAZIYM folder (only an empty db from one build, if it exists) and prisma\db\ leftover are both safe to delete. Linux behavior unchanged (dataRoot = project root).
