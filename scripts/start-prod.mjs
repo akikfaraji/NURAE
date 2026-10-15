@@ -69,9 +69,29 @@ const dataHome = process.env.NURAE_DATA_DIR?.trim() || root;
 // --- 3. Make the database URL absolute so it cannot fork on chdir ----------
 const dbUrl = process.env.DATABASE_URL?.trim();
 if (dbUrl && dbUrl.startsWith('file:')) {
+  // Same guard as scripts/db.mjs + src/lib/paths.ts: a Windows %VAR% literal
+  // is never expanded by Node and its bare % breaks URL percent-decoding
+  // (URL_INVALID: URI malformed on every query). Fail the LAUNCHER with the
+  // fix instead of booting a server that cannot answer a single query.
+  if (/%(?![0-9A-Fa-f]{2})/.test(dbUrl)) {
+    const envRef = /%[A-Za-z_][A-Za-z0-9_]*%/.test(dbUrl);
+    console.error(
+      envRef
+        ? '[NURAE] DATABASE_URL uses a Windows env-var reference like %APPDATA% — Node and ' +
+          'libSQL cannot expand %VAR%. FIX: delete the DATABASE_URL line from .env — NURAE ' +
+          'then places the database in %LOCALAPPDATA%\\FRAZIYM\\NURAE\\db\\custom.db ' +
+          'automatically, or set an absolute path with forward slashes ' +
+          '(DATABASE_URL=file:C:/path/to/custom.db). Got: ' +
+          dbUrl
+        : `[NURAE] DATABASE_URL contains a bare % that is not a valid percent-escape (use %20 for spaces): ${dbUrl}`,
+    );
+    process.exit(1);
+  }
   const path = dbUrl.slice('file:'.length);
   if (path && !path.startsWith(':') && !isAbsolute(path)) {
-    process.env.DATABASE_URL = 'file:' + resolve(dataHome, path);
+    // Forward slashes: the canonical Windows form for file: URLs (the prisma
+    // CLI chokes on raw backslashes).
+    process.env.DATABASE_URL = 'file:' + resolve(dataHome, path).replace(/\\/g, '/');
   }
 }
 

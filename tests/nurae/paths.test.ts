@@ -103,3 +103,42 @@ describe('data home resolution (Windows → AppData\\Local)', () => {
     expect(resolveDataPath('db/uploads')).toBe('/custom/data/home/db/uploads');
   });
 });
+
+describe('DATABASE_URL guard (%VAR% Windows references fail with an actionable error)', () => {
+  test('a restored %APPDATA% DATABASE_URL fails LOUDLY instead of URL_INVALID spam', () => {
+    // The exact incident: .env restored from an old commit with
+    // DATABASE_URL=file:%APPDATA%/... — libSQL answered URL_INVALID: URI
+    // malformed on every query, and the resolution chain created a junk
+    // database in a literally-named "%APPDATA%" folder. This must throw
+    // BEFORE any socket/mkdir, telling the user exactly what to do.
+    fakePlatform('win32');
+    setEnv('NURAE_DATA_DIR', 'C:\\Users\\you\\AppData\\Local\\FRAZIYM\\NURAE');
+    setEnv('DATABASE_URL', 'file:%APPDATA%/FRAZIYM/NURAE/db/custom.db');
+    expect(() => databaseUrl()).toThrow(/%APPDATA%[\s\S]*delete the DATABASE_URL line/i);
+    setEnv('DATABASE_URL', 'file:%LOCALAPPDATA%\\FRAZIYM\\NURAE\\db\\custom.db');
+    expect(() => databaseUrl()).toThrow(/Windows env-var reference/);
+  });
+
+  test('a bare invalid % fails with the generic percent-escape message', () => {
+    setEnv('NURAE_DATA_DIR', '/mock/data/home');
+    setEnv('DATABASE_URL', 'file:./db/100%.db');
+    expect(() => databaseUrl()).toThrow(/bare % that is not a valid percent-escape/);
+  });
+
+  test('legit percent-escapes (%20 for spaces) still pass', () => {
+    setEnv('NURAE_DATA_DIR', '/mock/data/home');
+    setEnv('DATABASE_URL', 'file:/abs/My%20Files/nurae.db');
+    expect(databaseUrl()).toBe('file:/abs/My%20Files/nurae.db');
+    setEnv('DATABASE_URL', 'file:./db/nurae%20copy.db');
+    expect(databaseUrl()).toBe('file:/mock/data/home/db/nurae%20copy.db');
+  });
+
+  test('the returned URL is forward-slashed (canonical file: form for libSQL/prisma)', () => {
+    // The win32 path resolution itself cannot run on a posix runner (path
+    // module is bound at import), but the normalization is a plain string
+    // replace — a backslash anywhere in the resolved segment must become /.
+    setEnv('NURAE_DATA_DIR', '/mock/data/home');
+    setEnv('DATABASE_URL', 'file:db\\custom.db');
+    expect(databaseUrl()).toBe('file:/mock/data/home/db/custom.db');
+  });
+});

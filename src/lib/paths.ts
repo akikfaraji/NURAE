@@ -65,13 +65,49 @@ export function resolveDataPath(p: string): string {
 }
 
 /**
+ * Windows env-var references (%APPDATA%, %LOCALAPPDATA%, …) are cmd.exe
+ * syntax — Node NEVER expands them, and in a URL the bare '%' starts percent
+ * encoding, so libSQL dies with the cryptic
+ *   URL_INVALID: URL component has invalid percent encoding: URIError: URI malformed
+ * on every single query. Worse, the resolution chain treats the un-expanded
+ * path as RELATIVE and happily creates a junk database in a folder literally
+ * named "%APPDATA%" under the data home (scripts/db.mjs, boot schema sync).
+ *
+ * This guard turns all of that into ONE actionable error at the single place
+ * the database URL is built. Legit percent-escapes (%20 for spaces) pass.
+ */
+export function assertNoWindowsEnvLiteral(url: string): void {
+  if (!url.startsWith('file:') || !url.includes('%')) return;
+  if (!/%(?![0-9A-Fa-f]{2})/.test(url)) return; // every % starts a valid escape
+  const envRef = /%[A-Za-z_][A-Za-z0-9_]*%/.test(url);
+  throw new Error(
+    envRef
+      ? '[NURAE] DATABASE_URL uses a Windows env-var reference like %APPDATA% — Node and ' +
+        'libSQL cannot expand %VAR% (the bare % breaks URL percent-decoding, which surfaces ' +
+        'as "URL_INVALID: URI malformed" on every query). FIX: delete the DATABASE_URL line ' +
+        'from .env — NURAE then places the database in the Windows data home automatically ' +
+        '(%LOCALAPPDATA%\\FRAZIYM\\NURAE\\db\\custom.db), or set an absolute path with ' +
+        'forward slashes (DATABASE_URL=file:C:/path/to/custom.db). Got: ' +
+        url
+      : `[NURAE] DATABASE_URL contains a bare % that is not a valid percent-escape ` +
+          `(use %20 for spaces): ${url}`,
+  );
+}
+
+/**
  * The libSQL database URL with relative `file:` paths made absolute against
  * the project root. Non-file URLs (libsql://, :memory:) pass through.
+ *
+ * Guarded (assertNoWindowsEnvLiteral) and normalized to forward slashes —
+ * `file:C:/…` is the canonical Windows form for libSQL/prisma file: URLs
+ * (raw backslashes break the prisma CLI's URL parsing; scripts/db.mjs and
+ * the boot schema sync already spoke this dialect, now the app does too).
  */
 export function databaseUrl(): string {
   const url = process.env.DATABASE_URL?.trim() || 'file:./db/custom.db';
+  assertNoWindowsEnvLiteral(url);
   if (!url.startsWith('file:')) return url;
   const path = url.slice('file:'.length);
   if (!path || path.startsWith(':')) return url; // ":memory:" and friends
-  return 'file:' + resolveDataPath(path);
+  return 'file:' + resolveDataPath(path).replace(/\\/g, '/');
 }

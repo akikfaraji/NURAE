@@ -64,6 +64,24 @@ function dataRoot() {
 
 // --- 3. Make the database URL absolute + create its directory --------------
 let dbUrl = process.env.DATABASE_URL?.trim() || 'file:./db/custom.db';
+// Windows env-var references (%APPDATA%) are cmd syntax — Node never expands
+// them, and the bare % breaks libSQL/prisma percent-decoding (URL_INVALID:
+// URI malformed). Fail HERE, before the mkdir below silently creates a junk
+// database in a literally-named "%APPDATA%" folder under the data home.
+if (dbUrl.startsWith('file:') && /%(?![0-9A-Fa-f]{2})/.test(dbUrl)) {
+  const envRef = /%[A-Za-z_][A-Za-z0-9_]*%/.test(dbUrl);
+  console.error(
+    envRef
+      ? '[NURAE] DATABASE_URL uses a Windows env-var reference like %APPDATA% — Node and ' +
+        'libSQL cannot expand %VAR%. FIX: delete the DATABASE_URL line from .env — NURAE ' +
+        'then places the database in %LOCALAPPDATA%\\FRAZIYM\\NURAE\\db\\custom.db ' +
+        'automatically, or set an absolute path with forward slashes ' +
+        '(DATABASE_URL=file:C:/path/to/custom.db). Got: ' +
+        dbUrl
+      : `[NURAE] DATABASE_URL contains a bare % that is not a valid percent-escape (use %20 for spaces): ${dbUrl}`,
+  );
+  process.exit(1);
+}
 if (dbUrl.startsWith('file:')) {
   const path = dbUrl.slice('file:'.length);
   if (path && !path.startsWith(':')) {

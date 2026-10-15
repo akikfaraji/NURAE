@@ -19,7 +19,12 @@ import { databaseUrl } from '@/lib/paths';
 
 export async function syncSqliteSchema(): Promise<boolean> {
   if (process.env.NURAE_AUTO_MIGRATE === '0') return false;
-  const url = process.env.DATABASE_URL ?? '';
+  // databaseUrl() (not the raw env): the DEFAULT path must sync too when
+  // DATABASE_URL is simply unset, and a malformed URL (e.g. a Windows
+  // %APPDATA% reference restored from an old .env) fails HERE with the
+  // actionable guard message instead of pushing the schema into a junk
+  // database created under a literally-named "%APPDATA%" folder.
+  const url = databaseUrl();
   if (!url.startsWith('file:')) return false; // managed databases: real migrations only
 
   // The standalone server chdirs into .next/standalone, where neither the
