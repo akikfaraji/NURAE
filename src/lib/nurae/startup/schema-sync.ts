@@ -25,8 +25,8 @@ export async function syncSqliteSchema(): Promise<boolean> {
   // The standalone server chdirs into .next/standalone, where neither the
   // prisma schema nor the project node_modules live. Anchor the CLI + schema
   // to NURAE_APP_ROOT (pinned by scripts/start-prod.mjs); the DATABASE is
-  // anchored to the data root (project root on Linux, %APPDATA%\FRAZIYM\NURAE
-  // on Windows). Dev falls back to cwd.
+  // anchored to the data root (project root on Linux,
+  // %LOCALAPPDATA%\FRAZIYM\NURAE on Windows). Dev falls back to cwd.
   const appRoot = process.env.NURAE_APP_ROOT || process.cwd();
   const cliPath = join(appRoot, 'node_modules', 'prisma', 'build', 'index.js');
   const schemaPath = join(appRoot, 'prisma', 'schema.prisma');
@@ -37,7 +37,7 @@ export async function syncSqliteSchema(): Promise<boolean> {
 
   // The prisma CLI is a child process — it cannot apply the app's dataRoot()
   // logic, so hand it the already-absolute database URL, and pre-create the
-  // directory (a fresh %APPDATA% install has no db/ folder yet). The CLI
+  // directory (a fresh Windows install has no db/ folder yet). The CLI
   // gets forward slashes: file:C:/… is the canonical Windows form for prisma
   // file: URLs (raw backslashes break its URL parsing).
   const absoluteUrl = databaseUrl();

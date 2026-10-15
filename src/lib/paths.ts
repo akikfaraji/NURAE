@@ -22,12 +22,14 @@
  *
  * On Windows the DATA ROOT is deliberately NOT the project folder: installs
  * keep mutable state (database, secret key, uploads) under
- *   %APPDATA%\FRAZIYM\NURAE
- * — the per-user application-data home, like every native Windows app. A
- * project folder can be wiped by a fresh clone/build without losing data.
- * NURAE_DATA_DIR overrides the whole chain on any OS.
+ *   %LOCALAPPDATA%\FRAZIYM\NURAE
+ * — the per-user MACHINE-LOCAL application-data home (AppData\Local, not
+ * Roaming: a database/cache is machine-specific and must not follow a
+ * roaming profile). A project folder can be wiped by a fresh clone/build
+ * without losing data. NURAE_DATA_DIR overrides the whole chain on any OS.
  */
 
+import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 
 export function appRoot(): string {
@@ -42,15 +44,17 @@ export function appRoot(): string {
 /**
  * Where NURAE keeps MUTABLE data (db, secret key, uploads).
  *   1. NURAE_DATA_DIR — explicit override, wins on every OS.
- *   2. Windows: %APPDATA%\FRAZIYM\NURAE — the app's real data home.
+ *   2. Windows: %LOCALAPPDATA%\FRAZIYM\NURAE — the app's real data home
+ *      (machine-local AppData\Local, NOT Roaming).
  *   3. Everywhere else: the project root (Linux servers, dev, CI).
  */
 export function dataRoot(): string {
   const configured = process.env.NURAE_DATA_DIR?.trim();
   if (configured) return configured;
   if (process.platform === 'win32') {
-    const appData = process.env.APPDATA?.trim();
-    if (appData) return join(appData, 'FRAZIYM', 'NURAE');
+    const localAppData =
+      process.env.LOCALAPPDATA?.trim() || join(homedir(), 'AppData', 'Local');
+    return join(localAppData, 'FRAZIYM', 'NURAE');
   }
   return appRoot();
 }

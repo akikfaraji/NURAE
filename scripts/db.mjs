@@ -6,7 +6,7 @@
  *
  * Why this exists: the prisma CLI resolves RELATIVE `file:` URLs against the
  * schema file's directory (prisma/). With the Windows data home
- * (%APPDATA%\FRAZIYM\NURAE — src/lib/paths.ts dataRoot()), a plain
+ * (%LOCALAPPDATA%\FRAZIYM\NURAE — src/lib/paths.ts dataRoot()), a plain
  * `npm run db:push` silently created prisma\db\nurae.db while the app read
  * <data home>\db\nurae.db — two databases, zero errors.
  *
@@ -14,7 +14,7 @@
  * scripts/start-prod.mjs):
  *   1. load .env from the project root (real env vars always win),
  *   2. resolve a relative `file:` URL against the data root:
- *        NURAE_DATA_DIR  →  %APPDATA%\FRAZIYM\NURAE (win32)  →  project root,
+ *        NURAE_DATA_DIR  →  %LOCALAPPDATA%\FRAZIYM\NURAE (win32)  →  project root,
  *   3. pre-create the database directory,
  *   4. hand the CLI an absolute, forward-slash DATABASE_URL (file:C:/… is the
  *      canonical Windows form; raw backslashes break prisma's URL parsing)
@@ -25,6 +25,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,8 +56,8 @@ function dataRoot() {
   const configured = process.env.NURAE_DATA_DIR?.trim();
   if (configured) return configured;
   if (process.platform === 'win32') {
-    const appData = process.env.APPDATA?.trim();
-    if (appData) return join(appData, 'FRAZIYM', 'NURAE');
+    const localAppData = process.env.LOCALAPPDATA?.trim() || join(homedir(), 'AppData', 'Local');
+    return join(localAppData, 'FRAZIYM', 'NURAE');
   }
   return appRoot;
 }

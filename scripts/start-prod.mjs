@@ -24,6 +24,7 @@
 
 import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,8 +59,10 @@ if (existsSync(envPath)) {
 process.env.NURAE_APP_ROOT = root;
 // Mirror the app's dataRoot() chain (src/lib/paths.ts) so the launcher and
 // the server agree on where the database lives BEFORE any app code runs.
-if (!process.env.NURAE_DATA_DIR?.trim() && process.platform === 'win32' && process.env.APPDATA?.trim()) {
-  process.env.NURAE_DATA_DIR = resolve(process.env.APPDATA.trim(), 'FRAZIYM', 'NURAE');
+// Windows: %LOCALAPPDATA%\FRAZIYM\NURAE (machine-local, not Roaming).
+if (!process.env.NURAE_DATA_DIR?.trim() && process.platform === 'win32') {
+  const localAppData = process.env.LOCALAPPDATA?.trim() || resolve(homedir(), 'AppData', 'Local');
+  process.env.NURAE_DATA_DIR = resolve(localAppData, 'FRAZIYM', 'NURAE');
 }
 const dataHome = process.env.NURAE_DATA_DIR?.trim() || root;
 

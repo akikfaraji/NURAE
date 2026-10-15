@@ -9,7 +9,7 @@
  * stdin inherited so the interactive shortcuts (r / o / etc.) still work.
  *
  * Env: PORT (default 3000). The database resolves through src/lib/paths.ts
- * exactly like production — %APPDATA%\FRAZIYM\NURAE on Windows.
+ * exactly like production — %LOCALAPPDATA%\FRAZIYM\NURAE on Windows.
  */
 
 import { createWriteStream } from 'node:fs';

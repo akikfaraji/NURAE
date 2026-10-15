@@ -25,10 +25,10 @@ const globalForPrisma = globalThis as unknown as {
 
 function createClient(): PrismaClient {
   // databaseUrl() makes relative file: paths absolute against the DATA
-  // ROOT (project root on Linux; %APPDATA%\FRAZIYM\NURAE on Windows) — the
-  // standalone production server chdirs into .next/standalone, and without
-  // this the production server would silently open a DIFFERENT (build-time
-  // snapshot) database. See src/lib/paths.ts.
+  // ROOT (project root on Linux; %LOCALAPPDATA%\FRAZIYM\NURAE on Windows) —
+  // the standalone production server chdirs into .next/standalone, and
+  // without this the production server would silently open a DIFFERENT
+  // (build-time snapshot) database. See src/lib/paths.ts.
   const url = databaseUrl()
   ensureSqliteDir(url)
   // PrismaLibSQL is a driver-adapter FACTORY: it accepts the libSQL config
@@ -49,6 +49,7 @@ function createClient(): PrismaClient {
  * on the very first touch (build page-data collection, dev boot). The
  * schema itself is pushed later by the boot-time schema sync; the empty
  * file libSQL auto-creates is a valid empty SQLite database.
+ * Windows data home: %LOCALAPPDATA%\FRAZIYM\NURAE (see src/lib/paths.ts).
  */
 function ensureSqliteDir(url: string) {
   if (!url.startsWith('file:')) return

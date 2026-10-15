@@ -257,8 +257,8 @@ export function extractDocxText(buf: Buffer): string {
 // ---------------------------------------------------------------------------
 
 function uploadsDir(): string {
-  // Data-root anchored (project root on Linux, %APPDATA%\FRAZIYM\NURAE on
-  // Windows) — the standalone production server chdirs into
+  // Data-root anchored (project root on Linux, %LOCALAPPDATA%\FRAZIYM\NURAE
+  // on Windows) — the standalone production server chdirs into
   // .next/standalone; a bare cwd path would fork uploads onto the build
   // output (lost on every rebuild). See src/lib/paths.ts.
   return path.join(dataRoot(), 'db', 'uploads');
