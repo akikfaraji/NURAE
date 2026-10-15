@@ -1046,3 +1046,25 @@ Stage Summary:
 - Platform security posture: 2 criticals, 3 highs, 4 mediums fixed + regression-locked by 24 new tests; zero behavior change for localhost dev and same-origin browsers
 - New env knobs documented in .env.example: NURAE_ALLOW_PRIVATE_AI_URLS (LAN AI servers), NURAE_ALLOW_DEV_CODE (no-SMTP self-host); NURAE_ADMIN_TOKEN now REQUIRED in production
 - REMINDERS STILL STANDING: rotate OpenRouter key + Gmail app password + NURAE_ADMIN_TOKEN (akik1616 is burned in git history and is 8 chars — too weak); keys live in 64525cd history
+
+---
+Task ID: 22
+Agent: main (Super Z)
+Task: Answer "is it still hackable?" — verify first-pass hardening live in tree + second-pass audit + close residual gaps
+
+Work Log:
+- Verified commit cd61625 fixes are LIVE in the working tree (fail-closed admin guard, SSRF guard, CSRF proxy check, headers, signed admin cookies, session hashing) — all confirmed, gateway key purge confirmed absent from src/
+- Second-pass audit via Explore agent: full 77-route auth matrix, injection surfaces, crypto, client-side, cookies, race conditions → 0 CRITICAL, 0 HIGH, 3 MED (F1 redirect-SSRF, F2 DNS-rebind TOCTOU, F3 double-credit race), 2 LOW/MED (F4 free-quota race, F5 XFH spoof), 2 LOW (F6 admin-cookie revocability — accepted, rotation invalidates; F7 secret-key floor), 1 INFO (F8 notes)
+- Fixed F1: openai-compatible requestOnce follows redirects MANUALLY (redirect:'manual'), every hop re-validated by the guard, Authorization dropped on cross-origin hops (env-key fallback accounted via stripAuth flag, not config mutation), 301/302→GET, 307/308 keep POST, hops bounded 3, no-location/too-many → 3xx surfaced for classification
+- Fixed F2: url-guard DNS failure now FAILS CLOSED (was: cached as pass → fetch could resolve an unvalidated address); DNS-fail blocks short-cached 10s; provider gained guardImpl injection (mirrors fetchImpl) so HTTP-mock tests stub the guard while security tests use the real one
+- Fixed F3/F4: creditWallet + chargeFeature critical sections wrapped in db.$transaction (interactive transactions verified working with @prisma/adapter-libsql + Prisma 6.19); P2002 unique-violation arbitration for idempotency races; balanceAfter now read INSIDE the tx
+- Fixed F5: csrfCheck deployment hosts = Host + NURAE_PUBLIC_URL + NURAE_LINK_FRONTEND_URL + NURAE_TRUSTED_ORIGINS (comma list, new knob); client X-Forwarded-Host no longer trusted (browsers allow setting it → Origin+XFH spoof)
+- Fixed F7: production console.error when NURAE_SECRET_KEY < 32 chars (warn, not break — rotation invalidates stored secrets)
+- .env.example: NURAE_TRUSTED_ORIGINS documented; STALE hardcoded-gateway-key note removed (pre-dated C-1 fix)
+- Test fallout fixed honestly: ai-providers.test.ts stubs guardImpl (fake hostnames can't resolve by design); operator test baseUrl → 127.0.0.1 loopback literal (guard-real, DNS-free); DNS-failure pin flipped to fail-closed + recovery case on a fresh hostname
+- Verification: vitest 432/432 (28 files, +6 new redirect/CSRF/DNS regressions), tsc 71 = exact baseline, npm run build OK, pushed 0d6891a
+
+Stage Summary:
+- Platform is at defense-in-depth: fail-closed defaults everywhere, SSRF guard now covers redirects + DNS failures, money paths atomic, CSRF allowlist explicit
+- Documented residuals (accepted): theoretical DNS-rebind TOCTOU window between guard-resolve and fetch-resolve (fix path: undici dispatcher pinning — undici only transitively present, not guaranteed; revisit if threat model grows); admin cookie not server-side revocable (rotation of NURAE_SECRET_KEY/admin token invalidates all)
+- User reminders standing: rotate OpenRouter key + Gmail app password + NURAE_ADMIN_TOKEN (akik1616 burned in git history, 8 chars) + set NURAE_SECRET_KEY ≥ 32 chars
