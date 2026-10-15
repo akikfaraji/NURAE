@@ -21,6 +21,11 @@ function makeProvider(overrides?: Partial<ConstructorParameters<typeof OpenAICom
     apiKeyEnvVar: 'OPENAI_API_KEY',
     timeoutMs: 500,
     maxAttempts: 1,
+    // HTTP-semantics tests use fake hostnames (api.test) that real DNS cannot
+    // resolve; the SSRF guard now fails closed on unverifiable hosts, so stub
+    // it out here. The guard itself is exercised (with the REAL guard) in
+    // security-hardening.test.ts.
+    guardImpl: async (url: string) => url,
     fetchImpl: async () => {
       throw new Error('fetch not mocked');
     },

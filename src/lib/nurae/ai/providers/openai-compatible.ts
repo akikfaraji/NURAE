@@ -30,10 +30,17 @@ export interface OpenAICompatibleOptions {
   maxAttempts?: number;
   /** Injectable fetch for tests. */
   fetchImpl?: typeof fetch;
+  /**
+   * Injectable SSRF guard for tests (default: the real assertSafeAiUrl).
+   * Tests that mock HTTP with fake hostnames pass a pass-through; production
+   * always uses the real guard, which fails closed on unverifiable hosts.
+   */
+  guardImpl?: typeof assertSafeAiUrl;
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
 interface ChatCompletionResponse {
   choices?: Array<{ message?: { content?: string | null } }>;
@@ -47,6 +54,7 @@ export class OpenAICompatibleProvider implements AIProvider {
   private readonly timeoutMs: number;
   private readonly maxAttempts: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly guardImpl: typeof assertSafeAiUrl;
 
   constructor(opts: OpenAICompatibleOptions) {
     this.id = opts.id;
@@ -55,6 +63,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxAttempts = opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.guardImpl = opts.guardImpl ?? assertSafeAiUrl;
   }
 
   private endpoint(baseUrl: string | null | undefined, path: string): string {
@@ -83,28 +92,77 @@ export class OpenAICompatibleProvider implements AIProvider {
     // SSRF guard: baseUrl may be user-supplied (bot config). Block non-http(s)
     // schemes and private/reserved targets BEFORE any socket is opened. This
     // is the single fetch chokepoint for generate/stream/validate.
-    const safeUrl = await assertSafeAiUrl(url);
+    let currentUrl = await this.guardImpl(url);
+
+    // Redirects are followed MANUALLY so every hop passes the SSRF guard
+    // again. Native fetch follows 3xx transparently — a user-supplied
+    // baseUrl pointing at a public server that 302-redirects to
+    // http://169.254.169.254/… would otherwise bypass the guard entirely
+    // (the guard only ever saw the first URL).
+    const MAX_HOPS = 3;
+    let currentMethod = method;
+    // Set once a redirect crosses origins — every later hop goes out without
+    // credentials (browser behavior). Cannot be expressed via config.apiKey
+    // alone: headers() would fall back to the provider's env key.
+    let stripAuth = false;
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const onOuterAbort = () => controller.abort();
     config.signal?.addEventListener('abort', onOuterAbort, { once: true });
     try {
-      const res = await this.fetchImpl(safeUrl, {
-        method,
-        headers: this.headers(config),
-        body: method === 'POST' ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
-      const retryAfterMs = res.headers.get('retry-after')
-        ? Number(res.headers.get('retry-after')) * 1000
-        : undefined;
-      let json: ChatCompletionResponse | null = null;
-      try {
-        json = (await res.json()) as ChatCompletionResponse;
-      } catch {
-        json = null;
+      for (let hop = 0; hop <= MAX_HOPS; hop++) {
+        const headers = this.headers(config);
+        if (stripAuth) delete headers.Authorization;
+        const res = await this.fetchImpl(currentUrl, {
+          method: currentMethod,
+          headers,
+          body: currentMethod === 'POST' ? JSON.stringify(body) : undefined,
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+
+        if (REDIRECT_STATUS.has(res.status)) {
+          const location = res.headers.get('location');
+          // Drain the body so the socket can be reused / released.
+          try {
+            await res.arrayBuffer();
+          } catch {
+            /* body already consumed or unreadable — irrelevant for redirects */
+          }
+          if (!location || hop === MAX_HOPS) {
+            // No (or too many) redirects: surface the 3xx itself and let the
+            // caller classify it — never invent a synthetic failure here.
+            return { ok: false, status: res.status, json: null };
+          }
+          const nextUrl = new URL(location, currentUrl).toString();
+          const safeNext = await this.guardImpl(nextUrl); // throws policy_blocked → never retried
+          // Browser redirect semantics: 303 always becomes GET; 301/302
+          // downgrade POST to GET; 307/308 keep the method (and body).
+          if (res.status === 303 || ((res.status === 301 || res.status === 302) && currentMethod === 'POST')) {
+            currentMethod = 'GET';
+          }
+          // Never leak credentials across origins (mirrors browser behavior).
+          if (new URL(safeNext).origin !== new URL(currentUrl).origin) {
+            stripAuth = true;
+          }
+          currentUrl = safeNext;
+          continue;
+        }
+
+        const retryAfterMs = res.headers.get('retry-after')
+          ? Number(res.headers.get('retry-after')) * 1000
+          : undefined;
+        let json: ChatCompletionResponse | null = null;
+        try {
+          json = (await res.json()) as ChatCompletionResponse;
+        } catch {
+          json = null;
+        }
+        return { ok: res.ok, status: res.status, json, retryAfterMs };
       }
-      return { ok: res.ok, status: res.status, json, retryAfterMs };
+      /* istanbul ignore next — the loop always returns or throws */
+      throw new AIError('api_error', 'AI request failed (unreachable redirect loop)');
     } finally {
       clearTimeout(timer);
       config.signal?.removeEventListener('abort', onOuterAbort);

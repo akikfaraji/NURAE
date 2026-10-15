@@ -26,6 +26,15 @@ import {
 } from './catalog';
 import { activePlan, planMultiplier } from './plans';
 
+/**
+ * True when a Prisma error is a UNIQUE-constraint violation (P2002). Used to
+ * arbitrate idempotency-key races: the ledger's unique key is the final
+ * source of truth when two identical operations race past any read check.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
+}
+
 export type ChargeOutcome = 'trial' | 'premium' | 'free_quota' | 'charged' | 'skipped';
 
 export interface ChargeResult {
@@ -164,35 +173,58 @@ export async function creditWallet(params: CreditParams): Promise<CreditResult> 
   if (micros === 0) return { applied: false, balance: await getBalance(params.userId) };
   if (micros < 0) throw new Error('creditWallet refused a negative amount — use chargeFeature for debits');
 
-  if (params.idempotencyKey) {
-    const existing = await db.ledgerEntry.findUnique({
-      where: { idempotencyKey: params.idempotencyKey },
-      select: { id: true },
+  // Atomic: existence check → balance increment → ledger insert run in ONE
+  // transaction. Without it, two concurrent deliveries of the same webhook
+  // (e.g. Telegram retries a successful_payment) both pass the existence
+  // check, both increment, and the second ledger insert fails UNIQUE — after
+  // the balance was already credited twice (double-credit race).
+  try {
+    return await db.$transaction(async (tx) => {
+      if (params.idempotencyKey) {
+        const existing = await tx.ledgerEntry.findUnique({
+          where: { idempotencyKey: params.idempotencyKey },
+          select: { id: true },
+        });
+        if (existing) {
+          const user = await tx.user.findUnique({
+            where: { id: params.userId },
+            select: { balanceMicros: true },
+          });
+          return { applied: false, balance: user?.balanceMicros ?? 0 };
+        }
+      }
+
+      const user = await tx.user.update({
+        where: { id: params.userId },
+        data: { balanceMicros: { increment: micros } },
+        select: { balanceMicros: true },
+      });
+      await tx.ledgerEntry.create({
+        data: {
+          userId: params.userId,
+          kind: params.kind,
+          amountMicros: micros,
+          balanceAfter: user.balanceMicros,
+          refId: params.refId ?? null,
+          idempotencyKey: params.idempotencyKey ?? null,
+          note: params.note ?? null,
+          metaJson: params.meta ? JSON.stringify(params.meta) : null,
+        },
+      });
+      return { applied: true, balance: user.balanceMicros };
     });
-    if (existing) {
-      const user = await db.user.findUnique({ where: { id: params.userId }, select: { balanceMicros: true } });
+  } catch (err) {
+    // The unique ledger key is the final arbiter if two identical credits
+    // race past the in-transaction existence check (different connections).
+    if (params.idempotencyKey && isUniqueViolation(err)) {
+      const user = await db.user.findUnique({
+        where: { id: params.userId },
+        select: { balanceMicros: true },
+      });
       return { applied: false, balance: user?.balanceMicros ?? 0 };
     }
+    throw err;
   }
-
-  const user = await db.user.update({
-    where: { id: params.userId },
-    data: { balanceMicros: { increment: micros } },
-    select: { balanceMicros: true },
-  });
-  await db.ledgerEntry.create({
-    data: {
-      userId: params.userId,
-      kind: params.kind,
-      amountMicros: micros,
-      balanceAfter: user.balanceMicros,
-      refId: params.refId ?? null,
-      idempotencyKey: params.idempotencyKey ?? null,
-      note: params.note ?? null,
-      metaJson: params.meta ? JSON.stringify(params.meta) : null,
-    },
-  });
-  return { applied: true, balance: user.balanceMicros };
 }
 
 export async function getBalance(userId: string): Promise<number> {
@@ -263,38 +295,61 @@ export async function chargeFeature(
   }
 
   // Daily free quota: today's ledger rows for this feature (any outcome) count.
-  // Plans multiply the allowance, never the price.
+  // Plans multiply the allowance, never the price. The decision itself runs
+  // inside the transaction below (single consistent snapshot).
   const effectiveFreeDaily = freeDaily * planBoost;
-  let freeUnits = 0;
-  if (effectiveFreeDaily > 0) {
-    const used = await db.ledgerEntry.count({
-      where: { userId, feature, bucket },
-    });
-    freeUnits = Math.max(0, Math.min(effectiveFreeDaily - used, units));
-  }
-  const billable = units - freeUnits;
-  const cost = billable * unitPrice;
 
-  if (cost === 0) {
-    await db.ledgerEntry.create({
-      data: { ...base, amountMicros: 0, balanceAfter: await getBalance(userId), note: 'free_quota', ...idemData },
-    });
-    return { outcome: 'free_quota', chargedMicros: 0, units };
-  }
+  // Quota accounting, the debit decision and the ledger write run in ONE
+  // transaction. Serialized per user by the single-writer store, this closes
+  // the check-then-act gap where N concurrent calls all read the same `used`
+  // count and jointly over-consume the daily free allowance.
+  try {
+    return await db.$transaction(async (tx) => {
+      let freeUnits = 0;
+      if (effectiveFreeDaily > 0) {
+        const used = await tx.ledgerEntry.count({
+          where: { userId, feature, bucket },
+        });
+        freeUnits = Math.max(0, Math.min(effectiveFreeDaily - used, units));
+      }
+      const billable = units - freeUnits;
+      const cost = billable * unitPrice;
 
-  // Atomic debit: the UPDATE matches only when the balance covers the cost.
-  const updated = await db.user.updateMany({
-    where: { id: userId, balanceMicros: { gte: cost } },
-    data: { balanceMicros: { decrement: cost } },
-  });
-  if (updated.count === 0) {
-    return { outcome: 'skipped', chargedMicros: cost, units };
+      if (cost === 0) {
+        const bal = await tx.user.findUnique({ where: { id: userId }, select: { balanceMicros: true } });
+        await tx.ledgerEntry.create({
+          data: { ...base, amountMicros: 0, balanceAfter: bal?.balanceMicros ?? 0, note: 'free_quota', ...idemData },
+        });
+        return { outcome: 'free_quota' as const, chargedMicros: 0, units };
+      }
+
+      // Atomic debit: the UPDATE matches only when the balance covers the cost.
+      const updated = await tx.user.updateMany({
+        where: { id: userId, balanceMicros: { gte: cost } },
+        data: { balanceMicros: { decrement: cost } },
+      });
+      if (updated.count === 0) {
+        return { outcome: 'skipped' as const, chargedMicros: cost, units };
+      }
+      const bal = await tx.user.findUnique({ where: { id: userId }, select: { balanceMicros: true } });
+      await tx.ledgerEntry.create({
+        data: {
+          ...base,
+          amountMicros: -cost,
+          balanceAfter: bal?.balanceMicros ?? 0,
+          note: freeUnits > 0 ? `charged ${billable}/${units} (free ${freeUnits})` : null,
+          ...idemData,
+        },
+      });
+      return { outcome: 'charged' as const, chargedMicros: cost, units };
+    });
+  } catch (err) {
+    // Concurrent replay with the same idempotency key: the ledger key decides.
+    if (opts.idempotencyKey && isUniqueViolation(err)) {
+      return { outcome: 'charged', chargedMicros: 0, units };
+    }
+    throw err;
   }
-  const balanceAfter = await getBalance(userId);
-  await db.ledgerEntry.create({
-    data: { ...base, amountMicros: -cost, balanceAfter, note: freeUnits > 0 ? `charged ${billable}/${units} (free ${freeUnits})` : null, ...idemData },
-  });
-  return { outcome: 'charged', chargedMicros: cost, units };
 }
 
 // ---------------------------------------------------------------------------

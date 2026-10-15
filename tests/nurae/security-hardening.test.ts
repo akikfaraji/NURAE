@@ -184,7 +184,9 @@ describe('session token hashing at rest', () => {
 // ---------------------------------------------------------------------------
 
 describe('SSRF guard for AI endpoint URLs', () => {
+  // NXDOMAIN for unknown names; known test hostnames resolve to public IPs.
   const lookup = async (host: string) => {
+    if (host === 'openrouter.ai') return [{ address: '104.18.7.123', family: 4 }];
     throw Object.assign(new Error(`ENOTFOUND ${host}`), { code: 'ENOTFOUND' });
   };
 
@@ -230,8 +232,17 @@ describe('SSRF guard for AI endpoint URLs', () => {
     expect(await urlGuard.assertSafeAiUrl('https://clean.example/v1', { lookup: clean })).toBeTruthy();
   });
 
-  test('DNS failure falls through to the fetch (no policy exception on NXDOMAIN)', async () => {
-    expect(await urlGuard.assertSafeAiUrl('https://does-not-exist.example/v1', { lookup })).toBeTruthy();
+  test('DNS failure FAILS CLOSED (unverifiable host is never fetched)', async () => {
+    // The guard cannot judge an address it never saw. If DNS fails here but
+    // succeeds later at fetch time, fetch could connect to an unvalidated
+    // target — so an unresolvable host is refused, not waved through.
+    await expect(urlGuard.assertSafeAiUrl('https://does-not-exist.example/v1', { lookup })).rejects.toMatchObject({
+      code: 'policy_blocked',
+    });
+    // The block is short-cached; a recovered resolver is picked up quickly.
+    // (Different hostname — the failed one above stays cached for its TTL.)
+    const live = async (_h: string) => [{ address: '1.2.3.4', family: 4 }];
+    expect(await urlGuard.assertSafeAiUrl('https://dns-recovered.example/v1', { lookup: live })).toBeTruthy();
   });
 
   test('NURAE_ALLOW_PRIVATE_AI_URLS=1 re-enables private ranges (explicit opt-in)', async () => {
@@ -269,6 +280,95 @@ describe('SSRF guard for AI endpoint URLs', () => {
       ),
     ).rejects.toMatchObject({ code: 'policy_blocked' });
     expect(fetchCalled).toBe(0);
+  });
+
+  test('redirects are re-validated: 302 to the metadata IP is blocked before the second hop', async () => {
+    const seen: string[] = [];
+    const provider = new OpenAICompatibleProvider({
+      id: 'redir-ssrf',
+      defaultBaseUrl: 'http://127.0.0.1:8080/v1',
+      fetchImpl: (async (input: RequestInfo | URL) => {
+        seen.push(String(input));
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/' },
+        }) as unknown as Response;
+      }) as typeof fetch,
+      maxAttempts: 3,
+    });
+    await expect(
+      provider.generate([{ role: 'user', content: 'hi' }], { ...AI_CONFIG, baseUrl: 'http://127.0.0.1:8080/v1' }),
+    ).rejects.toMatchObject({ code: 'policy_blocked' });
+    // Exactly ONE socket was opened: the redirect target never got a fetch.
+    expect(seen).toHaveLength(1);
+  });
+
+  test('cross-origin redirects drop the Authorization header (browser semantics)', async () => {
+    const authSeen: (string | undefined)[] = [];
+    const provider = new OpenAICompatibleProvider({
+      id: 'redir-auth',
+      defaultBaseUrl: 'http://127.0.0.1:8080/v1',
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        authSeen.push((init?.headers as Record<string, string> | undefined)?.Authorization);
+        if (authSeen.length === 1) {
+          return new Response(null, { status: 307, headers: { location: 'http://8.8.8.8:9000/v1/chat/completions' } }) as unknown as Response;
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'pong' } }] }), { status: 200 }) as unknown as Response;
+      }) as typeof fetch,
+    });
+    const content = await provider.generate([{ role: 'user', content: 'hi' }], {
+      ...AI_CONFIG,
+      apiKey: 'sk-secret-do-not-leak',
+      baseUrl: 'http://127.0.0.1:8080/v1',
+    });
+    expect(content).toBe('pong');
+    expect(authSeen[0]).toBe('Bearer sk-secret-do-not-leak');
+    expect(authSeen[1]).toBeUndefined();
+  });
+
+  test('redirect loops terminate (bounded hops) and surface the 3xx for classification', async () => {
+    let calls = 0;
+    const provider = new OpenAICompatibleProvider({
+      id: 'redir-loop',
+      defaultBaseUrl: 'http://127.0.0.1:8080/v1',
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response(null, { status: 302, headers: { location: `http://127.0.0.1:8080/hop-${calls}` } }) as unknown as Response;
+      }) as typeof fetch,
+      maxAttempts: 2,
+    });
+    await expect(
+      provider.generate([{ role: 'user', content: 'hi' }], { ...AI_CONFIG, baseUrl: 'http://127.0.0.1:8080/v1' }),
+    ).rejects.toMatchObject({ code: 'api_error' });
+    expect(calls).toBe(4); // initial + MAX_HOPS (3) — bounded, no infinite loop
+  });
+
+  test('same-origin 307 keeps the method, body and credentials', async () => {
+    const seen: { url: string; method?: string; auth?: string; body?: unknown }[] = [];
+    const provider = new OpenAICompatibleProvider({
+      id: 'redir-307',
+      defaultBaseUrl: 'http://127.0.0.1:8080/v1',
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        seen.push({
+          url: String(input),
+          method: init?.method,
+          auth: (init?.headers as Record<string, string>)?.Authorization,
+          body: init?.body,
+        });
+        if (seen.length === 1) {
+          return new Response(null, { status: 307, headers: { location: '/v1/chat/completions?moved=1' } }) as unknown as Response;
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 }) as unknown as Response;
+      }) as typeof fetch,
+    });
+    const content = await provider.generate([{ role: 'user', content: 'hi' }], {
+      ...AI_CONFIG,
+      apiKey: 'sk-keep',
+      baseUrl: 'http://127.0.0.1:8080/v1',
+    });
+    expect(content).toBe('ok');
+    expect(seen[1]).toMatchObject({ method: 'POST', auth: 'Bearer sk-keep' });
+    expect(String(seen[1].body)).toContain('"messages"');
   });
 });
 
@@ -315,12 +415,49 @@ describe('proxy CSRF origin check', () => {
 
   test('same-origin mutating request passes', () => {
     expect(proxyMod.csrfCheck(nx('/api/projects', 'POST', { Origin: BASE, Host: 'localhost:3000' }))).toBeNull();
-    // Behind a proxy that forwards the public host.
-    expect(
-      proxyMod.csrfCheck(
-        nx('/api/projects', 'POST', { Origin: 'https://nurae.app', Host: 'internal', 'X-Forwarded-Host': 'nurae.app' }),
-      ),
-    ).toBeNull();
+    // Behind a proxy that rewrites Host, the operator pins the public origin.
+    const saved = process.env.NURAE_PUBLIC_URL;
+    try {
+      process.env.NURAE_PUBLIC_URL = 'https://nurae.app';
+      expect(proxyMod.csrfCheck(nx('/api/projects', 'POST', { Origin: 'https://nurae.app', Host: 'internal' }))).toBeNull();
+    } finally {
+      if (saved !== undefined) process.env.NURAE_PUBLIC_URL = saved;
+      else delete process.env.NURAE_PUBLIC_URL;
+    }
+  });
+
+  test('client-supplied X-Forwarded-Host is NOT trusted (spoof regression)', () => {
+    // Browsers do not forbid setting X-Forwarded-Host from JS, so an attacker
+    // must not be able to align it with their own Origin.
+    const res = proxyMod.csrfCheck(
+      nx('/api/projects', 'POST', { Origin: 'https://evil.example', Host: 'localhost:3000', 'X-Forwarded-Host': 'evil.example' }),
+    );
+    expect(res?.status).toBe(403);
+  });
+
+  test('NURAE_TRUSTED_ORIGINS and gateway frontend URL are accepted origins', () => {
+    const saved = {
+      trusted: process.env.NURAE_TRUSTED_ORIGINS,
+      frontend: process.env.NURAE_LINK_FRONTEND_URL,
+    };
+    try {
+      process.env.NURAE_TRUSTED_ORIGINS = 'https://panel.example, https://mirror.example';
+      process.env.NURAE_LINK_FRONTEND_URL = 'https://nurae.vercel.app';
+      expect(
+        proxyMod.csrfCheck(nx('/api/projects', 'POST', { Origin: 'https://panel.example', Host: 'internal' })),
+      ).toBeNull();
+      expect(
+        proxyMod.csrfCheck(nx('/api/projects', 'POST', { Origin: 'https://nurae.vercel.app', Host: 'internal' })),
+      ).toBeNull();
+      expect(
+        proxyMod.csrfCheck(nx('/api/projects', 'POST', { Origin: 'https://other.example', Host: 'internal' }))?.status,
+      ).toBe(403);
+    } finally {
+      if (saved.trusted !== undefined) process.env.NURAE_TRUSTED_ORIGINS = saved.trusted;
+      else delete process.env.NURAE_TRUSTED_ORIGINS;
+      if (saved.frontend !== undefined) process.env.NURAE_LINK_FRONTEND_URL = saved.frontend;
+      else delete process.env.NURAE_LINK_FRONTEND_URL;
+    }
   });
 
   test('no Origin (curl/webhooks/Bearer agents) passes; GET passes even cross-origin', () => {

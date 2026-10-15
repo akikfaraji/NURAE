@@ -332,7 +332,9 @@ describe('operator agent loop', () => {
     expect(official).toBeTruthy();
     await db.bot.update({
       where: { id: official!.id },
-      data: { provider: 'custom', model: 'stub', baseUrl: 'http://stub/v1' },
+      // Loopback literal: always allowed by the SSRF guard without DNS (the
+      // real fetch is stubbed below — the guard still runs for realism).
+      data: { provider: 'custom', model: 'stub', baseUrl: 'http://127.0.0.1:9/v1' },
     });
     const restoreKey = scopedEnv({ CUSTOM_API_KEY: 'stub-key' });
 

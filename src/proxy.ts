@@ -54,10 +54,41 @@ export function csrfCheck(req: NextRequest): NextResponse | null {
   } catch {
     return reject();
   }
-  const forwardedHost = req.headers.get('x-forwarded-host');
-  const host = (forwardedHost ? forwardedHost.split(',')[0].trim() : req.headers.get('host')) ?? '';
-  if (originHost && originHost === host.toLowerCase()) return null;
+  const allowed = deploymentHosts(req);
+  if (originHost && allowed.has(originHost)) return null;
   return reject();
+}
+
+/**
+ * Hosts a browser Origin may claim to be same-origin with:
+ *  - the request's own Host header (the deployment identity), plus
+ *  - NURAE_PUBLIC_URL / NURAE_LINK_FRONTEND_URL / NURAE_TRUSTED_ORIGINS for
+ *    deployments where Host is rewritten by an edge, or a gateway backend
+ *    must accept its frontend's origin.
+ *
+ * Client-supplied X-Forwarded-Host is deliberately NOT trusted here: browsers
+ * do not forbid setting it, so on an edge that does not sanitize it an
+ * attacker could present Origin: https://evil.example together with
+ * X-Forwarded-Host: evil.example and slip past the check. Operators whose
+ * edge rewrites Host must set NURAE_PUBLIC_URL (or NURAE_TRUSTED_ORIGINS).
+ */
+function deploymentHosts(req: NextRequest): Set<string> {
+  const hosts = new Set<string>();
+  const add = (value: string | null | undefined): void => {
+    if (!value) return;
+    try {
+      hosts.add(new URL(value.includes('://') ? value : `https://${value}`).host.toLowerCase());
+    } catch {
+      /* ignore malformed entries */
+    }
+  };
+  add(req.headers.get('host')); // the deployment's own identity
+  add(process.env.NURAE_PUBLIC_URL);
+  add(process.env.NURAE_LINK_FRONTEND_URL);
+  for (const entry of (process.env.NURAE_TRUSTED_ORIGINS ?? '').split(',')) {
+    add(entry.trim());
+  }
+  return hosts;
 }
 
 function reject(): NextResponse {

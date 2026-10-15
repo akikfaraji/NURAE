@@ -18,9 +18,10 @@
  *    explicitly with NURAE_ALLOW_PRIVATE_AI_URLS=1.
  *  - Hostnames are resolved (all addresses) and EVERY resolved address must
  *    pass — a name that resolves to both a public and a private IP is
- *    rejected. If resolution itself fails, the fetch is allowed to proceed
- *    and fail with its own (existing, classified) network error — the guard
- *    never turns a DNS hiccup into a policy exception.
+ *    rejected. If resolution itself fails, the guard FAILS CLOSED: a host it
+ *    could not verify must not be fetched, because the fetch would resolve
+ *    DNS itself and might land on an address the guard never saw. DNS-fail
+ *    verdicts use a short TTL so a recovered resolver is picked up quickly.
  *
  * Injection point: OpenAICompatibleProvider.requestOnce() — the single fetch
  * chokepoint used by generate(), stream() and validateCredentials().
@@ -37,16 +38,20 @@ const DEFAULT_LOOKUP: LookupFn = (hostname) => dns.lookup(hostname, { all: true 
 /**
  * Small TTL cache for guard verdicts. Bot conversations trigger an AI fetch
  * per message; without a cache every message pays a DNS round-trip. Verdicts
- * are per-hostname (not per-URL) and short-lived; a failed lookup is cached
- * too (negative caching) so an offline host does not slow the pipeline.
+ * are per-hostname (not per-URL) and short-lived. DNS-failure verdicts are
+ * cached too (an offline host would otherwise pay a resolver timeout on every
+ * message) — but with a much shorter TTL, so the block never outlives the
+ * outage by long.
  */
 const VERDICT_TTL_MS = 60_000;
+const DNS_FAIL_TTL_MS = 10_000;
 const verdictCache = new Map<string, { verdict: 'pass' | 'block'; reason?: string; at: number }>();
 
 function cachedVerdict(host: string): { verdict: 'pass' | 'block'; reason?: string } | null {
   const hit = verdictCache.get(host);
   if (!hit) return null;
-  if (Date.now() - hit.at > VERDICT_TTL_MS) {
+  const ttl = hit.verdict === 'block' ? DNS_FAIL_TTL_MS : VERDICT_TTL_MS;
+  if (Date.now() - hit.at > ttl) {
     verdictCache.delete(host);
     return null;
   }
@@ -196,14 +201,20 @@ export async function assertSafeAiUrl(rawUrl: string, opts: GuardOptions = {}): 
   let addresses: { address: string; family: number }[];
   try {
     addresses = await lookup(host);
-  } catch {
-    // DNS failure: let the fetch produce its own (classified) network error.
-    verdictCache.set(host, { verdict: 'pass', at: Date.now() });
-    return url.toString();
+  } catch (err) {
+    // Fail CLOSED: if the guard cannot resolve the host, the fetch would
+    // resolve DNS itself and could connect to an address the guard never
+    // judged. Surface as policy (fetch would fail anyway during a real DNS
+    // outage); short-cached so recovery is picked up within seconds.
+    const detail = err instanceof Error ? err.message : String(err);
+    const reason = `AI endpoint host "${host}" could not be resolved, so its addresses cannot be safety-verified (${detail})`;
+    verdictCache.set(host, { verdict: 'block', reason, at: Date.now() });
+    throw new AIError('policy_blocked', reason);
   }
   if (!addresses || addresses.length === 0) {
-    verdictCache.set(host, { verdict: 'pass', at: Date.now() });
-    return url.toString();
+    const reason = `AI endpoint host "${host}" did not resolve to any address, so it cannot be safety-verified`;
+    verdictCache.set(host, { verdict: 'block', reason, at: Date.now() });
+    throw new AIError('policy_blocked', reason);
   }
   try {
     for (const { address } of addresses) check(address);

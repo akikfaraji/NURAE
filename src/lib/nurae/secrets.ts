@@ -39,6 +39,18 @@ function loadKey(): Buffer {
 
   const envKey = process.env.NURAE_SECRET_KEY;
   if (envKey && envKey.length >= 16) {
+    // 16 chars is the functional floor, but the AES master key inherits the
+    // env value's entropy — below 32 chars a brute-force/dictionary attack on
+    // the KDF input becomes plausible for high-value deployments. Warn loudly
+    // in production; do NOT break existing deployments mid-flight.
+    if (envKey.length < 32 && process.env.NODE_ENV === 'production') {
+      console.error(
+        '[NURAE][security] NURAE_SECRET_KEY is shorter than the recommended 32 characters. ' +
+          'Stored secrets (bot tokens, AI keys) are only as strong as this value — rotate it ' +
+          'to a long random string (e.g. `openssl rand -base64 32`). Note: rotating invalidates ' +
+          'every stored secret and admin session; re-enter bot credentials afterwards.',
+      );
+    }
     cachedKey = scryptSync(envKey, 'nurae-secret-salt-v1', KEY_BYTES);
     return cachedKey;
   }
