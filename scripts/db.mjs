@@ -90,6 +90,18 @@ if (!existsSync(cli)) {
   process.exit(1);
 }
 
+// --- Stray-database note (pre-wrapper CLI runs) ----------------------------
+// Before this wrapper existed, a raw `npx prisma db push` resolved the
+// relative file: URL against prisma/schema.prisma and created prisma/db/.
+// Nothing ever reads that file — point it out loudly when it's still there.
+const stray = resolve(root, 'prisma', 'db', 'nurae.db');
+if (existsSync(stray)) {
+  console.warn(
+    `[NURAE] note: ${stray} is a leftover from a pre-wrapper prisma run — ` +
+      `the app does NOT read it, safe to delete. The real database: ${dbUrl}`,
+  );
+}
+
 console.log(`[NURAE] prisma ${args.join(' ')}`);
 console.log(`[NURAE] database: ${dbUrl}`);
 
