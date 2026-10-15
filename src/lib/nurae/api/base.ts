@@ -3,9 +3,12 @@
  *
  * Security model (spec §18):
  *  - If NURAE_ADMIN_TOKEN is set, every administrative endpoint requires it
- *    (HttpOnly cookie after login, or Authorization: Bearer).
- *  - If unset (localhost development mode), admin endpoints are open — and the
- *    dashboard shows a warning banner. Never treat this as production-ready.
+ *    (HttpOnly signed cookie after login, or Authorization: Bearer).
+ *  - If unset, admin endpoints are open ONLY outside production (localhost
+ *    dev, CI). In production the platform FAILS CLOSED with 503 — an
+ *    operator who forgot the env var gets a loud, actionable error instead
+ *    of a silently unprotected dashboard.
+ *  - The placeholder from .env.example is treated as unset (fail-closed).
  *  - Secrets are never selected into API responses (see toBotDTO).
  */
 
@@ -13,12 +16,39 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { formatZodError } from '../validation';
+import { verifyAdminSession } from '../auth/admin-session';
 
 export const ADMIN_COOKIE = 'nurae_admin';
 
+/** The shipped example value — an operator who kept it has no protection. */
+const PLACEHOLDER_TOKENS = new Set(['change-me-if-exposed', 'changeme', 'change-me']);
+
 export function adminToken(): string | null {
   const t = process.env.NURAE_ADMIN_TOKEN;
-  return t && t.trim().length > 0 ? t.trim() : null;
+  const trimmed = t?.trim();
+  if (!trimmed) return null;
+  if (PLACEHOLDER_TOKENS.has(trimmed.toLowerCase())) return null;
+  return trimmed;
+}
+
+/** True when admin requests without a token must be REJECTED (production). */
+export function requireAdminAuth(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+/**
+ * Secure-cookie hint: attach `Secure` when the request arrived over HTTPS
+ * (directly or via a proxy that sets x-forwarded-proto). Plain-HTTP local
+ * deployments (localhost / LAN dev) keep working unchanged.
+ */
+export function secureCookieHint(req: Request): boolean {
+  const proto = req.headers.get('x-forwarded-proto');
+  if (proto) return proto.split(',')[0].trim() === 'https';
+  try {
+    return new URL(req.url).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 export function authEnabled(): boolean {
@@ -48,14 +78,32 @@ export function presentedCredential(req: Request): string | null {
 }
 
 /**
- * Return a 401 response when auth is enabled and the credential is wrong;
- * return null when the request may proceed.
+ * Return an error response when the request may not proceed; return null
+ * when it may.
+ *
+ *  - NURAE_ADMIN_TOKEN set → credential required (raw token via Bearer, or
+ *    the signed session cookie minted by /api/auth/login).
+ *  - Unset → open ONLY in non-production (dev/CI); in production this fails
+ *    closed with 503 so an unconfigured deployment can never serve an
+ *    unprotected admin API to the internet.
  */
 export function guard(req: Request): NextResponse | null {
   const expected = adminToken();
-  if (!expected) return null; // localhost dev mode
+  if (!expected) {
+    if (requireAdminAuth()) {
+      return NextResponse.json(
+        {
+          error:
+            'Admin API is locked: NURAE_ADMIN_TOKEN is not configured. Set it in the environment (production refuses to expose an open admin API).',
+        },
+        { status: 503 },
+      );
+    }
+    return null; // localhost dev mode
+  }
   const presented = presentedCredential(req);
   if (presented && safeEqual(presented, expected)) return null;
+  if (presented && verifyAdminSession(presented)) return null; // signed cookie
   return NextResponse.json({ error: 'Unauthorized. Log in with the admin token.' }, { status: 401 });
 }
 

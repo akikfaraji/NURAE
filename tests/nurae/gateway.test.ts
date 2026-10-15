@@ -155,7 +155,7 @@ describe('gateway registration core', () => {
     expect(bad).toContain('not a NURAE V00-series');
   });
 
-  test('bootstrap fallback key: auto-activates on Vercel only, env always wins', async () => {
+  test('gateway key is fail-closed: no hardcoded fallback anywhere (even on Vercel)', async () => {
     delete process.env.NURAE_GATEWAY_KEY;
     delete process.env.VERCEL;
 
@@ -165,26 +165,34 @@ describe('gateway registration core', () => {
     const rejected = await handleGatewayRegister({ endpoint: 'https://b.example.com', key: 'anything' });
     expect(rejected.status).toBe(501);
 
-    // Vercel runtime: the hardcoded bootstrap fallback activates gateway mode
-    // and the fallback key value is accepted as the matching key.
+    // REGRESSION (security hardening): the old hardcoded bootstrap key made
+    // gateway mode silently OPEN on Vercel — a public-repo constant that let
+    // anyone link a hostile backend and intercept all proxied traffic.
+    // Gateway mode must now stay OFF until the operator sets a real key.
     process.env.VERCEL = '1';
     const onVercel = await handleGatewayStatus();
-    expect((onVercel.body as { gatewayMode: boolean }).gatewayMode).toBe(true);
+    expect((onVercel.body as { gatewayMode: boolean }).gatewayMode).toBe(false);
+    const stillRejected = await handleGatewayRegister(
+      { endpoint: 'https://b.example.com', key: 'nurae-f&bc_0U24KN802q0CATd8f9YwX1Pde8aj' },
+      { fetchImpl: healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.002-beta-03' } }) },
+    );
+    expect(stillRejected.status).toBe(501);
+
+    // The fallback constant must no longer exist in source.
+    const bootstrapMod = (await import('../../src/lib/gateway/bootstrap-key')) as unknown as Record<string, unknown>;
+    expect(bootstrapMod.NURAE_GATEWAY_KEY_FALLBACK).toBeUndefined();
+
+    // An explicitly configured env var enables gateway mode as before.
+    process.env.NURAE_GATEWAY_KEY = 'real-secret-key';
+    const enabled = await handleGatewayStatus();
+    expect((enabled.body as { gatewayMode: boolean }).gatewayMode).toBe(true);
+    const wrongKey = await handleGatewayRegister({ endpoint: 'https://b.example.com', key: 'nurae-f&bc_0U24KN802q0CATd8f9YwX1Pde8aj' });
+    expect(wrongKey.status).toBe(401);
     const memoryStore = {
       read: async () => null,
       write: async () => undefined,
       remove: async () => undefined,
     };
-    const accepted = await handleGatewayRegister(
-      { endpoint: 'https://b.example.com', key: 'nurae-f&bc_0U24KN802q0CATd8f9YwX1Pde8aj' },
-      { fetchImpl: healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.002-beta-03' } }), store: memoryStore },
-    );
-    expect(accepted.status).toBe(200);
-
-    // An explicit env var ALWAYS wins over the fallback.
-    process.env.NURAE_GATEWAY_KEY = 'real-secret-key';
-    const wrongKey = await handleGatewayRegister({ endpoint: 'https://b.example.com', key: 'nurae-f&bc_0U24KN802q0CATd8f9YwX1Pde8aj' });
-    expect(wrongKey.status).toBe(401);
     const rightKey = await handleGatewayRegister(
       { endpoint: 'https://b.example.com', key: 'real-secret-key' },
       { fetchImpl: healthFetch({ status: 200, body: { status: 'ok', version: 'V00.01.002-beta-03' } }), store: memoryStore },

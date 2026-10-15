@@ -68,6 +68,21 @@ export const updateProjectSchema = z.object({
   status: z.enum(PROJECT_STATUSES).optional(),
 });
 
+/**
+ * User-supplied AI base URL: absolute http(s) only. The runtime SSRF guard
+ * (ai/url-guard.ts) enforces the real policy at fetch time — this schema
+ * catches obvious nonsense (file:, gopher:, relative strings) at the door.
+ */
+const baseUrlSchema = (label: string) =>
+  z
+    .string()
+    .trim()
+    .url(`${label} must be a valid absolute URL`)
+    .regex(/^https?:\/\//, `${label} must start with http:// or https://`)
+    .max(LIMITS.baseUrlMax)
+    .optional()
+    .or(z.literal(''));
+
 export const createBotSchema = z.object({
   name: nameSchema,
   description: descriptionSchema,
@@ -89,7 +104,7 @@ export const createBotSchema = z.object({
   maxTokens: z.number().int().min(LIMITS.maxTokensMin).max(LIMITS.maxTokensMax).default(1024),
   memorySize: z.number().int().min(LIMITS.memorySizeMin).max(LIMITS.memorySizeMax).default(10),
   apiKey: z.string().trim().max(500).optional().or(z.literal('')),
-  baseUrl: z.string().trim().url('Base URL must be a valid URL').max(LIMITS.baseUrlMax).optional().or(z.literal('')),
+  baseUrl: baseUrlSchema('Base URL'),
 });
 
 export const updateBotConfigSchema = z.object({
@@ -108,7 +123,7 @@ export const updateBotConfigSchema = z.object({
     .regex(/^\d{6,12}:[A-Za-z0-9_-]{25,}$/, 'Telegram bot token format is invalid')
     .optional(),
   apiKey: z.string().trim().max(500).optional().or(z.literal('')),
-  baseUrl: z.string().trim().url('Base URL must be a valid URL').max(LIMITS.baseUrlMax).optional().or(z.literal('')),
+  baseUrl: baseUrlSchema('Base URL'),
   // Owner's own Telegram chat id for instant alerts — digits only (Telegram
   // chat ids are numeric), '' clears the wiring.
   ownerChatId: z

@@ -1021,3 +1021,28 @@ Stage Summary:
 - Agent tool system is production-solid: auth, tiering, gating, rate limits, revocation, MCP + OpenAPI contracts all verified at 3 levels (unit 402, API battery 36/36, browser E2E)
 - 2 product bugs fixed (health-check false OK; user-invisible banner) + 1 test robustness fix; all committed
 - User's OpenRouter key confirmed dead for generation (401 User not found) — ROTATE; ai-health will now tell them honestly
+
+---
+Task ID: 21
+Agent: main (Super Z)
+Task: Full security audit + hardening of the site ("make it so secured that no one can hack")
+
+Work Log:
+- Full attack-surface audit (77 API routes, proxy/middleware, auth libs, gateway, files, billing) via Explore agent
+- CRITICAL FIX C-1: deleted NURAE_GATEWAY_KEY_FALLBACK from bootstrap-key.ts — a hardcoded gateway key in a PUBLIC repo let anyone link a hostile backend on Vercel and intercept ALL /api/* traffic (session cookies, Bearer tokens, admin creds). Gateway mode is now fail-closed: env var or nothing
+- CRITICAL FIX C-2: admin guard() fail-closed — NURAE_ADMIN_TOKEN unset (or left at the .env.example placeholder) in production now answers 503 instead of serving an open admin API; localhost dev/CI behavior unchanged
+- H-1 SSRF: new ai/url-guard.ts — http(s)-only schemes, loopback always allowed (Ollama/LM Studio feature), RFC1918/CGNAT/ULA/blocked by default (NURAE_ALLOW_PRIVATE_AI_URLS=1 opt-in), link-local metadata (169.254.169.254) NEVER allowed; hostnames DNS-resolved and every address judged (rebind-resistant), 60s verdict cache; hooked into OpenAICompatibleProvider.requestOnce (single chokepoint for generate/stream/validate); policy_blocked never retried; zod baseUrl schemas now require http(s)://
+- H-2 rate-limit identity: clientKey now uses the RIGHTMOST x-forwarded-for entry (proxy-append semantics; spoofing the first hop no longer rotates buckets) + recordLoginFailure(): per-account failed-login damping (10/10min, success never blocked)
+- H-3 devCode: registration without SMTP in production no longer returns the verification code (was a silent no-op verification); fail-closed 503 unless NURAE_ALLOW_DEV_CODE=1 explicitly set
+- M-1 headers: next.config.ts headers() → CSP (self + Google Fonts), X-Frame-Options SAMEORIGIN, XCTO nosniff, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy, HSTS, COOP same-origin; poweredByHeader:false
+- M-2/M-3: admin cookie is now a SIGNED HMAC-SHA256 expiring blob (auth/admin-session.ts) — raw token never in a cookie; site Session tokens stored sha256-hashed at rest with transparent legacy-plaintext migration (no forced logouts); Secure cookie hints on https (session/admin/oauth state)
+- M-4 CSRF: central Origin check in src/proxy.ts for all mutating /api/* requests carrying an Origin header (403 cross-origin; absent-Origin server clients unaffected)
+- M-6 OAuth: email_verified claim now fail-closed (=== true); Google identity linking to password accounts refused when Google does not vouch for the email
+- Admin login rate-limited 10/10min/IP; dead next-auth dependency removed
+- Tests: new tests/nurae/security-hardening.test.ts (24 tests) covers all of the above; gateway.test.ts rewritten for fail-closed key
+- Verification: tsc 71 = exact baseline; vitest 426/426 (28 files); npm run build OK; LIVE smoke: headers present on /, cross-origin POST→403, no-Origin→passes, projects 401 unauth, login mints signed cookie, signed cookie→200, homepage/dashboard 200, health ok
+
+Stage Summary:
+- Platform security posture: 2 criticals, 3 highs, 4 mediums fixed + regression-locked by 24 new tests; zero behavior change for localhost dev and same-origin browsers
+- New env knobs documented in .env.example: NURAE_ALLOW_PRIVATE_AI_URLS (LAN AI servers), NURAE_ALLOW_DEV_CODE (no-SMTP self-host); NURAE_ADMIN_TOKEN now REQUIRED in production
+- REMINDERS STILL STANDING: rotate OpenRouter key + Gmail app password + NURAE_ADMIN_TOKEN (akik1616 is burned in git history and is 8 chars — too weak); keys live in 64525cd history

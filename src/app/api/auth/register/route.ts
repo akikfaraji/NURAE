@@ -31,6 +31,20 @@ const BodySchema = z.object({
 
 const CODE_TTL_MS = 15 * 60 * 1000;
 
+/**
+ * When may an unverifiable account self-issue its verification code?
+ *  - Non-production (localhost dev, CI): yes — otherwise the flow is a dead end.
+ *  - Production + NURAE_ALLOW_DEV_CODE=1: yes — an EXPLICIT operator opt-in
+ *    for self-hosted deployments that intentionally run without e-mail.
+ *  - Production, no SMTP, no opt-in: NO. Previously the code was returned to
+ *    the HTTP client, which made e-mail verification a silent no-op: anyone
+ *    could create and verify accounts under arbitrary addresses. Fail closed
+ *    with an actionable operator message instead.
+ */
+function devCodeAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.NURAE_ALLOW_DEV_CODE === '1';
+}
+
 export async function POST(req: Request): Promise<Response> {
   const rl = rateLimit(`register:${clientKey(req)}`, 10, 10 * 60 * 1000);
   if (!rl.allowed) {
@@ -88,7 +102,19 @@ export async function POST(req: Request): Promise<Response> {
 
     const payload: { ok: true; devCode?: string; notice?: string; mailError?: string; mailHint?: string } = { ok: true };
     if (!gmailConfig()) {
-      // Localhost/dev mode — without this the flow would be a dead end.
+      if (!devCodeAllowed()) {
+        // Production without SMTP and without the explicit opt-in: refusing
+        // to mint self-verifiable accounts. The account exists but stays
+        // unverified until the operator configures e-mail.
+        return NextResponse.json(
+          {
+            error:
+              'Email verification is not configured on this server (NURAE_GMAIL_USER / NURAE_GMAIL_APP_PASSWORD missing). Registration cannot complete until the operator configures SMTP, or explicitly sets NURAE_ALLOW_DEV_CODE=1 to allow development-only code display.',
+          },
+          { status: 503 },
+        );
+      }
+      // Dev mode (or explicit opt-in) — without this the flow would be a dead end.
       payload.devCode = code;
       payload.notice = 'Gmail SMTP is not configured (NURAE_GMAIL_USER / NURAE_GMAIL_APP_PASSWORD). Dev code shown.';
     } else if (!sent.ok) {

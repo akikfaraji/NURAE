@@ -22,6 +22,13 @@ import { readGatewayLink } from '@/lib/gateway/store';
  * otherwise answer 503 to its own health checks (and so would the frontend's
  * chain verification). Backend ⇒ proxy is a no-op pass-through.
  *
+ * CSRF hardening (defense in depth on top of SameSite=Lax cookies): every
+ * state-changing /api/* request that CARRIES an Origin header must be
+ * same-origin with the deployment. Requests without an Origin header
+ * (server-to-server calls: Telegram webhooks, agent Bearer clients, curl,
+ * MCP) pass untouched. The check runs centrally here — before routing —
+ * so no route can forget it.
+ *
  * Precedence note: the proxy runs before next.config.ts rewrites, so an
  * accepted gateway link wins over a build-time NURAE_BACKEND_URL. Without
  * NURAE_GATEWAY_KEY this proxy is a no-op pass-through and the app
@@ -31,7 +38,39 @@ import { readGatewayLink } from '@/lib/gateway/store';
  * (file src/proxy.ts, exported function `proxy`) — same runtime behaviour.
  */
 
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * CSRF origin check. Exposed for tests. Returns a 403 response when a
+ * mutating request presents a cross-origin Origin header, else null.
+ */
+export function csrfCheck(req: NextRequest): NextResponse | null {
+  if (SAFE_METHODS.has(req.method)) return null;
+  const origin = req.headers.get('origin');
+  if (!origin) return null; // non-browser clients (curl, webhooks, Bearer agents)
+  let originHost: string | null = null;
+  try {
+    originHost = new URL(origin).host.toLowerCase();
+  } catch {
+    return reject();
+  }
+  const forwardedHost = req.headers.get('x-forwarded-host');
+  const host = (forwardedHost ? forwardedHost.split(',')[0].trim() : req.headers.get('host')) ?? '';
+  if (originHost && originHost === host.toLowerCase()) return null;
+  return reject();
+}
+
+function reject(): NextResponse {
+  return NextResponse.json(
+    { error: 'cross-origin request rejected', message: 'The Origin of this state-changing request does not match the deployment host.' },
+    { status: 403 },
+  );
+}
+
 export async function proxy(req: NextRequest) {
+  const csrf = csrfCheck(req);
+  if (csrf) return csrf;
+
   const { pathname, search } = req.nextUrl;
   if (pathname === '/api' || pathname.startsWith('/api/gateway/')) {
     return NextResponse.next(); // control routes are served locally
@@ -40,7 +79,7 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next(); // I am a registering backend, not a gateway frontend
   }
   if (!effectiveGatewayKey()) {
-    return NextResponse.next(); // gateway mode not enabled on this deployment (env wins; TEMPORARY bootstrap fallback on Vercel)
+    return NextResponse.next(); // gateway mode not enabled on this deployment
   }
   const link = await readGatewayLink();
   if (!link) {

@@ -17,6 +17,7 @@ import {
   ChatMessage,
   CredentialCheckResult,
 } from '../types';
+import { assertSafeAiUrl } from '../url-guard';
 
 export interface OpenAICompatibleOptions {
   id: string;
@@ -79,12 +80,16 @@ export class OpenAICompatibleProvider implements AIProvider {
     config: AIRequestConfig,
     method = 'POST',
   ): Promise<{ ok: boolean; status: number; json: ChatCompletionResponse | null; retryAfterMs?: number }> {
+    // SSRF guard: baseUrl may be user-supplied (bot config). Block non-http(s)
+    // schemes and private/reserved targets BEFORE any socket is opened. This
+    // is the single fetch chokepoint for generate/stream/validate.
+    const safeUrl = await assertSafeAiUrl(url);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const onOuterAbort = () => controller.abort();
     config.signal?.addEventListener('abort', onOuterAbort, { once: true });
     try {
-      const res = await this.fetchImpl(url, {
+      const res = await this.fetchImpl(safeUrl, {
         method,
         headers: this.headers(config),
         body: method === 'POST' ? JSON.stringify(body) : undefined,
@@ -127,6 +132,9 @@ export class OpenAICompatibleProvider implements AIProvider {
       try {
         result = await this.requestOnce(url, body, config);
       } catch (err) {
+        // Policy rejections (SSRF guard) are decisions, not failures — never
+        // retried, never re-classified as network noise.
+        if (err instanceof AIError) throw err;
         const message = err instanceof Error ? err.message : String(err);
         const isTimeout = /abort/i.test(message);
         lastError = isTimeout

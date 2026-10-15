@@ -11,7 +11,7 @@ import { db } from '@/lib/db';
 import { apiError, internalError, validationError } from '@/lib/nurae/api/base';
 import { verifyPassword } from '@/lib/nurae/auth/passwords';
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
-import { createUserSession } from '@/lib/nurae/auth/sessions';
+import { createUserSession, secureHint } from '@/lib/nurae/auth/sessions';
 import { qualifyReferralForUser } from '@/lib/nurae/referral';
 
 const BodySchema = z.object({
@@ -71,7 +71,7 @@ export async function POST(req: Request): Promise<Response> {
     await qualifyReferralForUser(user.id).catch(() => undefined);
 
     const res = NextResponse.json({ ok: true });
-    await createUserSession(res, user.id, req.headers.get('user-agent'));
+    await createUserSession(res, user.id, req.headers.get('user-agent'), secureHint(req));
     return res;
   } catch (err) {
     return internalError(err, 'auth/verify');

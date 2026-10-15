@@ -56,7 +56,8 @@ export type AIErrorCode =
   | 'api_error'
   | 'timeout'
   | 'network_error'
-  | 'invalid_response';
+  | 'invalid_response'
+  | 'policy_blocked';
 
 /** Structured provider error — never carries raw secrets. */
 export class AIError extends Error {

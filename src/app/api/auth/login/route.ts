@@ -1,11 +1,21 @@
 /**
  * NURAE — admin login for the dashboard.
- * POST /api/auth/login { token } → HttpOnly session cookie (7 days).
+ * POST /api/auth/login { token } → HttpOnly SIGNED session cookie (7 days).
+ *
+ * Hardened:
+ *  - The cookie value is a signed, expiring blob (see auth/admin-session.ts) —
+ *    never the raw NURAE_ADMIN_TOKEN, so exfiltrating a cookie does not leak
+ *    the permanent credential.
+ *  - Rate limited per client (10 attempts / 10 min) — online guessing of the
+ *    token is damped even when the deployment is directly exposed.
+ *  - `Secure` is attached when the request arrived over HTTPS.
  * Active only when NURAE_ADMIN_TOKEN is configured.
  */
 
 import { NextResponse } from 'next/server';
-import { ADMIN_COOKIE, adminToken, safeCompare } from '@/lib/nurae/api/base';
+import { ADMIN_COOKIE, adminToken, safeCompare, secureCookieHint } from '@/lib/nurae/api/base';
+import { signAdminSession } from '@/lib/nurae/auth/admin-session';
+import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
 
 export async function POST(req: Request): Promise<Response> {
   const expected = adminToken();
@@ -13,9 +23,20 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json(
       {
         error:
-          'Authentication is not configured (NURAE_ADMIN_TOKEN is unset). Admin access is open in localhost mode.',
+          'Authentication is not configured (NURAE_ADMIN_TOKEN is unset).' +
+          (process.env.NODE_ENV === 'production'
+            ? ' The admin API is locked in production until the token is set.'
+            : ' Admin access is open in localhost mode.'),
       },
       { status: 400 },
+    );
+  }
+
+  const rl = rateLimit(`admin-login:${clientKey(req)}`, 10, 10 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Too many attempts. Try again in ${rl.retryAfter}s.` },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
     );
   }
 
@@ -32,10 +53,11 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'Invalid admin token' }, { status: 401 });
   }
 
+  const secure = secureCookieHint(req);
   const res = NextResponse.json({ ok: true });
   res.headers.append(
     'Set-Cookie',
-    `${ADMIN_COOKIE}=${encodeURIComponent(presented)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`,
+    `${ADMIN_COOKIE}=${encodeURIComponent(signAdminSession())}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}${secure ? '; Secure' : ''}`,
   );
   return res;
 }

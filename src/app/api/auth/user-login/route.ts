@@ -11,7 +11,8 @@ import { db } from '@/lib/db';
 import { apiError, internalError, validationError } from '@/lib/nurae/api/base';
 import { verifyPassword } from '@/lib/nurae/auth/passwords';
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
-import { createUserSession, toSessionUser } from '@/lib/nurae/auth/sessions';
+import { createUserSession, secureHint, toSessionUser } from '@/lib/nurae/auth/sessions';
+import { recordLoginFailure } from '@/lib/nurae/auth/rate-limit';
 
 const BodySchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -39,14 +40,26 @@ export async function POST(req: Request): Promise<Response> {
     // Uniform error for unknown email / wrong password / Google-only account
     // (no account enumeration; scrypt runs anyway when there is no hash).
     const ok = user ? await verifyPassword(password, user.passwordHash) : await verifyPassword(password, null);
-    if (!ok || !user) return apiError('Invalid email or password.', 401);
+    if (!ok || !user) {
+      // Per-account failure damping: an attacker rotating spoofed IPs must
+      // not get unlimited guesses against ONE mailbox. Successful logins are
+      // never blocked (a victim must not be locked out of their own account).
+      const fail = recordLoginFailure(email);
+      if (!fail.allowed) {
+        return NextResponse.json(
+          { error: `Too many failed attempts for this account. Try again in ${fail.retryAfter}s.` },
+          { status: 429, headers: { 'Retry-After': String(fail.retryAfter) } },
+        );
+      }
+      return apiError('Invalid email or password.', 401);
+    }
     if (!user.emailVerified) {
       return apiError('This email is not verified yet. Register again to receive a fresh code.', 403);
     }
 
     await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const res = NextResponse.json({ ok: true, user: toSessionUser(user) });
-    await createUserSession(res, user.id, req.headers.get('user-agent'));
+    await createUserSession(res, user.id, req.headers.get('user-agent'), secureHint(req));
     return res;
   } catch (err) {
     return internalError(err, 'auth/user-login');

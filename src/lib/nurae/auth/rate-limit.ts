@@ -41,9 +41,33 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
   return { allowed: true, retryAfter: 0, remaining: limit - existing.count };
 }
 
-/** Best-effort client identity for rate limiting (proxy-aware). */
+/**
+ * Best-effort client identity for rate limiting (proxy-aware, hardened).
+ *
+ * Uses the RIGHTMOST entry of x-forwarded-for: standard proxies APPEND the
+ * connecting client's address, so the last entry is the one the trusted edge
+ * actually observed — a client cannot move it by sending extra entries.
+ * (The previous leftmost behavior let an attacker rotate fresh identities by
+ * forging the first hop.) Edge proxies that OVERWRITE the header (the
+ * shipped Caddyfile) leave exactly one entry, which this also handles.
+ * x-real-ip (set by platforms like Vercel) is the next best signal; without
+ * any proxy header everything shares the 'local' bucket.
+ */
 export function clientKey(req: Request): string {
   const fwd = req.headers.get('x-forwarded-for');
-  if (fwd) return fwd.split(',')[0].trim();
+  if (fwd) {
+    const parts = fwd.split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
   return req.headers.get('x-real-ip') ?? 'local';
+}
+
+/**
+ * Per-ACCOUNT failure damping for password login (keyed by the lowercased
+ * email, NOT by IP — an attacker rotating spoofed proxies must not get
+ * unlimited guesses against one mailbox). Only failed attempts are counted;
+ * a successful login is never blocked, so victims cannot be locked out.
+ */
+export function recordLoginFailure(email: string): RateLimitResult {
+  return rateLimit(`login-fail:${email.trim().toLowerCase()}`, 10, 10 * 60 * 1000);
 }

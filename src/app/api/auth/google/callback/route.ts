@@ -17,7 +17,7 @@ import {
   validState,
 } from '@/lib/nurae/auth/google';
 import { clientKey, rateLimit } from '@/lib/nurae/auth/rate-limit';
-import { createUserSession } from '@/lib/nurae/auth/sessions';
+import { createUserSession, secureHint } from '@/lib/nurae/auth/sessions';
 import { ensureSignupTrial } from '@/lib/nurae/billing/wallet';
 
 function fail(origin: string, reason: string): Response {
@@ -50,9 +50,19 @@ export async function GET(req: NextRequest): Promise<Response> {
   try {
     const profile = await exchangeCodeForProfile(cfg, code, origin);
     const email = profile.email.toLowerCase();
-    const emailVerified = profile.email_verified !== false;
+    // Fail-closed: Google MUST assert the email is verified. A missing/false
+    // claim no longer silently counts as verified (previously `!== false`,
+    // i.e. absence of evidence was treated as evidence).
+    const emailVerified = profile.email_verified === true;
 
     const existing = await db.user.findUnique({ where: { email } });
+    // Account-linking guard: a pre-existing PASSWORD account may only be
+    // linked to a Google identity when Google vouches for that email. This
+    // blocks a later-registered Google account (with an unverified email
+    // claim) from claiming an old password account.
+    if (existing && existing.passwordHash && !emailVerified) {
+      return fail(origin, 'google-email-unverified');
+    }
     const user = existing
       ? await db.user.update({
           where: { id: existing.id },
@@ -85,7 +95,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         'Cache-Control': 'no-store',
       },
     });
-    await createUserSession(res, user.id, req.headers.get('user-agent'));
+    await createUserSession(res, user.id, req.headers.get('user-agent'), secureHint(req));
     return res;
   } catch (err) {
     console.error(`[NURAE] google callback failed: ${err instanceof Error ? err.message : String(err)}`);

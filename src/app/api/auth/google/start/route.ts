@@ -29,11 +29,14 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const origin = publicOrigin(req);
   const state = randomToken(24);
+  // Secure hint: https requests (direct or via proxy) get a Secure cookie.
+  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0].trim()
+    ?? (process.env.NURAE_PUBLIC_URL?.startsWith('https://') ? 'https' : 'http');
   return new NextResponse(null, {
     status: 302,
     headers: {
       Location: googleAuthUrl(cfg, origin, state),
-      'Set-Cookie': stateCookie(state),
+      'Set-Cookie': stateCookie(state, proto === 'https'),
       'Cache-Control': 'no-store',
     },
   });

@@ -102,8 +102,8 @@ export async function exchangeCodeForProfile(
   return profile;
 }
 
-export function stateCookie(value: string): string {
-  return `${OAUTH_STATE_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${STATE_TTL_S}`;
+export function stateCookie(value: string, secure = false): string {
+  return `${OAUTH_STATE_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${STATE_TTL_S}${secure ? '; Secure' : ''}`;
 }
 
 export function clearStateCookie(): string {

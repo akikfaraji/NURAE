@@ -34,6 +34,58 @@ async function rewrites() {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Don't advertise the framework (X-Powered-By: Next.js) — free recon for
+  // attackers looking for known framework-level CVEs.
+  poweredByHeader: false,
+  // Security headers applied to every response (pages AND /api). CSP notes:
+  //  - 'unsafe-inline' scripts: Next.js injects inline hydration/bootstrap
+  //    scripts; a nonce-CSP requires fully dynamic rendering and breaks
+  //    static pages. The XSS sink inventory is clean (react-markdown without
+  //    rehype-raw, no user-data dangerouslySetInnerHTML), so this is the
+  //    pragmatic hardening level today.
+  //  - 'unsafe-eval': needed by Next dev (react-refresh); harmless to keep
+  //    for prod parity of the header string.
+  //  - fonts.googleapis/gstatic: Julius Sans One / Share Tech Mono / Jost
+  //    (see src/app/layout.tsx preconnect + stylesheet).
+  async headers() {
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https:",
+      "connect-src 'self'",
+      "media-src 'self' blob:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'self'",
+    ].join('; ');
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: csp },
+          // Clickjacking: forbid third-party framing (SAMEORIGIN keeps future
+          // first-party embeds — e.g. Telegram Mini Apps — possible).
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          // MIME confusion: never sniff responses into executable types.
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          // Referrer hygiene: cross-origin navigations leak only the origin.
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // Deny powerful platform APIs the product does not use.
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=()',
+          },
+          // HTTPS-only future visits once a deployment is https (no-op over http).
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          // Isolate browsing context from cross-origin popups/documents.
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+        ],
+      },
+    ];
+  },
   // NOTE: live data (db/, .env, uploads) would otherwise be COPIED into
   // .next/standalone by the file tracer — its include/exclude hooks do not
   // apply to static-page and instrumentation trace files, so the exclusion is
