@@ -962,3 +962,16 @@ Work Log:
 
 Stage Summary:
 - Pushed 007bc29..8126f9d. Windows data home is now C:\Users\<user>\AppData\Local\FRAZIYM\NURAE. User's machine cleanup: the Roaming\FRAZIYM folder (only an empty db from one build, if it exists) and prisma\db\ leftover are both safe to delete. Linux behavior unchanged (dataRoot = project root).
+
+---
+Task ID: 19
+Agent: main (Super Z)
+Task: "make sure the db goes to appdata local. not prisma" — prove the whole chain, close the raw-npx-prisma bypass hole, lock it with tests
+
+Work Log:
+- END-TO-END PROOF (sandbox): npm run db:push → [NURAE] database: <data home>/db/nurae.db, created there, "in sync (20ms)"; prisma/db stays absent. Raw `npx prisma db push` bypass (relative URL from .env) → confirmed it creates prisma/db/nurae.db (the user's original trap — CLI resolves relative file: URLs against prisma/schema.prisma). The wrapper now warns loudly when that stray exists ("app does NOT read it, safe to delete") and keeps targeting the data home.
+- tests/nurae/paths.test.ts (NEW, 7 tests): locks the data-home contract — NURAE_DATA_DIR override on any OS; win32 → %LOCALAPPDATA%\FRAZIYM\NURAE with APPDATA (Roaming) explicitly asserted ignored; homedir\AppData\Local fallback; non-Windows → appRoot; relative file: DATABASE_URL → data root (anti-prisma/db chain); absolute/:memory:/libsql passthrough; resolveDataPath anchoring. Windows branch exercised by faking process.platform (descriptor saved/restored in afterEach). Harness lesson recorded: fake-win32 on a posix runner breaks resolve()/isAbsolute() for drive letters — URL-chain tests use NURAE_DATA_DIR on the real platform instead.
+- VERIFIED: paths tests 7/7; tsc 71 (= baseline); full suite 400/400 (27 files); build/boot behavior untouched this round.
+
+Stage Summary:
+- Pushed 8126f9d..03b347a. The npm db:* scripts + build + start + dev ALL put the db in C:\Users\<user>\AppData\Local\FRAZIYM\NURAE\db\nurae.db. The only way to get a prisma/db stray is bypassing npm scripts with a raw npx prisma command — and the wrapper now detects and calls that out. Suite at 400 tests.
