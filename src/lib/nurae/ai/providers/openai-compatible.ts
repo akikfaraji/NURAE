@@ -210,13 +210,15 @@ export class OpenAICompatibleProvider implements AIProvider {
       baseUrl: config.baseUrl || null,
     };
     try {
-      // Cheap probe first: GET /models (no tokens consumed on most providers).
-      const res = await this.requestOnce(this.endpoint(probeConfig.baseUrl, '/models'), undefined, probeConfig, 'GET');
-      if (res.ok) return { valid: true, detail: 'Credentials accepted.' };
-      if (res.status === 401 || res.status === 403) {
-        return { valid: false, detail: 'Credentials rejected by provider (HTTP 401/403).' };
-      }
-      // /models may not exist on some gateways — fall back to a tiny chat call.
+      // A tiny REAL chat call is the ONLY trustworthy probe. Several gateways
+      // (OpenRouter among them) serve GET /models 200 even for keys that
+      // cannot generate at all (e.g. deleted account → 401 "User not found"
+      // on chat), so probing /models first reported dead keys as healthy and
+      // every real turn then failed with "the AI layer rejected its
+      // credentials". Chat-first also validates the configured MODEL, which
+      // /models never could. Cost: one 8-token request per check (cached 60s
+      // by callers). /models stays only as a fallback for gateways that do
+      // not implement /chat/completions at all.
       const chat = await this.requestOnce(
         this.endpoint(probeConfig.baseUrl, '/chat/completions'),
         { model: probeConfig.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 8, stream: false },
@@ -224,7 +226,18 @@ export class OpenAICompatibleProvider implements AIProvider {
       );
       if (chat.ok) return { valid: true, detail: 'Credentials accepted.' };
       if (chat.status === 401 || chat.status === 403) {
-        return { valid: false, detail: 'Credentials rejected by provider (HTTP 401/403).' };
+        return { valid: false, detail: `Credentials rejected by provider (HTTP ${chat.status}).` };
+      }
+      // Gateway may not implement /chat/completions — only NOW is /models
+      // evidence worth anything. Note this can still miss a key that is
+      // valid for listing but not for generation on such gateways; every
+      // mainstream provider exposes chat, so chat-first is the default truth.
+      if (chat.status === 404) {
+        const res = await this.requestOnce(this.endpoint(probeConfig.baseUrl, '/models'), undefined, probeConfig, 'GET');
+        if (res.ok) return { valid: true, detail: 'Credentials accepted at /models (chat endpoint unavailable).' };
+        if (res.status === 401 || res.status === 403) {
+          return { valid: false, detail: `Credentials rejected by provider (HTTP ${res.status}).` };
+        }
       }
       return { valid: false, detail: `Provider responded with HTTP ${chat.status}.` };
     } catch (err) {

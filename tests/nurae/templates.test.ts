@@ -410,6 +410,22 @@ describe('store — listUsersWithAttribute', () => {
 
 describe('API — from-template instantiation', () => {
   test('creates an owned, compiled bot with growth hooks; refuses strangers', async () => {
+    // This test pins the FORWARDED-HOST link resolution. A deployment may
+    // legitimately set NURAE_SITE_URL (it wins over forwarded headers by
+    // design), so isolate the env here to keep the assertion deterministic.
+    const savedSiteUrl = process.env.NURAE_SITE_URL;
+    delete process.env.NURAE_SITE_URL;
+    const savedPublicUrl = process.env.NURAE_PUBLIC_URL;
+    delete process.env.NURAE_PUBLIC_URL;
+    try {
+      await runFromTemplateScenario();
+    } finally {
+      if (savedSiteUrl !== undefined) process.env.NURAE_SITE_URL = savedSiteUrl;
+      if (savedPublicUrl !== undefined) process.env.NURAE_PUBLIC_URL = savedPublicUrl;
+    }
+  });
+
+  async function runFromTemplateScenario(): Promise<void> {
     const { id: userId } = await makeUser();
     const session = await createUserSession(new NextResponse(), userId, 'vitest');
     const cookie = `nurae_session=${session}`;
@@ -451,5 +467,5 @@ describe('API — from-template instantiation', () => {
     const { bot: otherBot } = (await otherRes.json()) as { bot: { ownerId: string; name: string } };
     expect(otherBot.ownerId).toBe(other);
     expect(otherBot.name).toBe('Referral Ambassador');
-  });
+  }
 });

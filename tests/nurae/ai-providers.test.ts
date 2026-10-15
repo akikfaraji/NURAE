@@ -199,16 +199,39 @@ describe('OpenAI-compatible provider (mocked HTTP)', () => {
     }
   });
 
-  test('validateCredentials: 401 on /models → invalid', async () => {
+  test('validateCredentials: 401 on chat → invalid', async () => {
     const p = makeProvider({ fetchImpl: async () => jsonRes({ error: {} }, 401) });
     const res = await p.validateCredentials(CONFIG);
     expect(res.valid).toBe(false);
   });
 
-  test('validateCredentials: ok on /models → valid', async () => {
-    const p = makeProvider({ fetchImpl: async () => jsonRes({ data: [] }) });
+  test('validateCredentials: ok on chat → valid', async () => {
+    const p = makeProvider({ fetchImpl: async () => jsonRes({ choices: [{ message: { content: 'pong' } }] }) });
     const res = await p.validateCredentials(CONFIG);
     expect(res.valid).toBe(true);
+  });
+
+  test('validateCredentials: chat 404 + /models ok → valid (gateway without chat)', async () => {
+    const p = makeProvider({
+      fetchImpl: async (_url, init) =>
+        String(init?.method ?? 'POST') === 'GET' ? jsonRes({ data: [] }) : jsonRes({ error: 'no chat here' }, 404),
+    });
+    const res = await p.validateCredentials(CONFIG);
+    expect(res.valid).toBe(true);
+  });
+
+  // REGRESSION: OpenRouter serves GET /models 200 even for keys that cannot
+  // generate (deleted account → 401 "User not found" on chat). The old
+  // models-first probe reported such keys as healthy and every real turn
+  // then failed. Chat must be probed FIRST and a chat 401 must be final.
+  test('validateCredentials: /models 200 but chat 401 → INVALID (no false OK)', async () => {
+    const p = makeProvider({
+      fetchImpl: async (_url, init) =>
+        String(init?.method ?? 'POST') === 'GET' ? jsonRes({ data: [{ id: 'x' }] }) : jsonRes({ error: { message: 'User not found.', code: 401 } }, 401),
+    });
+    const res = await p.validateCredentials(CONFIG);
+    expect(res.valid).toBe(false);
+    expect(res.detail).toMatch(/401/);
   });
 });
 

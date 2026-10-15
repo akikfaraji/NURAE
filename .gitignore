@@ -77,3 +77,4 @@ bun.lock
 tool-results/
 scripts/research/
 .design-audit/
+.agent-test-credentials.json

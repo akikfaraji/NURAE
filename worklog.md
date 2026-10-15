@@ -998,3 +998,26 @@ Stage Summary:
 - User's push made coherent: AI-health feature kept + wired, config unified in next.config.ts, schema restored, .env untracked
 - DB contract RE-VERIFIED end-to-end after user's changes: AppData\Local on Windows, project root on Linux, never prisma/
 - MUST TELL USER: rotate OpenRouter key + Gmail app password + NURAE_SECRET_KEY + admin token (all burned in git history); .env will be deleted on their machine by the pull — restore command provided
+
+---
+Task ID: 20
+Agent: main (Super Z)
+Task: Advanced testing of the agent tool system — real LLM agent loop, MCP protocol, browser agent, edge cases
+
+Work Log:
+- Mapped agent surface: 24 tools (tools.ts), /api/v1/{me,tools,tools/call,agent/turn}, /api/mcp (JSON-RPC 2.0), /api/openapi.json, AgentToken auth (nrae_ keys, sha256 at rest, user/platform scopes, allowConsequential gate)
+- Fixture: scripts/seed-agent-fixture.mjs — verified user + 3 tokens (full / limited / platform); scripts/test-agent-api.mjs — 36-case battery
+- FOUND REAL BUG #1 (false-OK health check): OpenRouter serves GET /models 200 even for keys that cannot generate (dead key → 401 "User not found" on chat). validateCredentials probed /models first → ai-health said OK while EVERY agent turn failed. Fixed: chat-first probe (max_tokens 8), /models demoted to fallback for chat-less gateways. +2 tests incl. exact OpenRouter regression. ai-health live-verified: now honestly reports invalid
+- FOUND REAL BUG #2 (invisible banner): /api/ai-health was admin-token-gated but AiHealthBanner lives in the USER dashboard → 401 for every normal user, banner never rendered. Fixed: accepts admin OR any signed-in site user (payload is secret-free; users hit platform-key death via Bot Builder)
+- FOUND BUG #3 (test env leak): templates test pinned forwarded-host link resolution but a deployment's NURAE_SITE_URL legitimately overrides it → env-isolated the test (delete/restore in try/finally)
+- Real LLM agent loop: platform bot → mock-ai (scripts/mock-ai.js) → POST /api/v1/agent/turn natural language → agent created bot draft via bot_create_draft tool loop (steps + draftBotId), turn 2 continued session. (User's real OpenRouter key is DEAD — rotation still required; validated through ai-health + direct chat probe)
+- MCP: initialize/notifications/tools/list/tools/call + all four JSON-RPC error codes + 401/WWW-Authenticate + GET 405 — all pass
+- Gating: limited token + confirm:true → confirm (nothing executes, bot stays stopped); tool-level confirm; full token executes → honest no-telegram-token error. Rate limit 61/min → 429 + Retry-After. Revoked token → instant 401
+- BROWSER AGENT (agent-browser): login → dashboard shows API-created bots + agent session (cross-surface continuity) → banner lifecycle (dead endpoint → visible w/ provider details; restored + Re-check → silent) → UI agent turn created draft #3 with tool-activity chips → Bots list reflects all → API-keys card: mint (raw key shown once) → two-click revoke → DB confirms 1 active token left. 6 screenshots in download/agent-tests/
+- Platform bot restored to openrouter/env-key after tests; NURAE_SITE_URL=http://localhost:3000 added to sandbox .env (template_use needs it)
+- Verification: vitest 402/402 (27 files), tsc 71 = baseline, agent battery 36/36
+
+Stage Summary:
+- Agent tool system is production-solid: auth, tiering, gating, rate limits, revocation, MCP + OpenAPI contracts all verified at 3 levels (unit 402, API battery 36/36, browser E2E)
+- 2 product bugs fixed (health-check false OK; user-invisible banner) + 1 test robustness fix; all committed
+- User's OpenRouter key confirmed dead for generation (401 User not found) — ROTATE; ai-health will now tell them honestly
