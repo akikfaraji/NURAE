@@ -48,11 +48,49 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
-  /* config options here */
   typescript: {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // Native/hard-to-bundle server packages stay external (required at runtime,
+  // not inlined): libSQL engine binaries + the Prisma driver adapter, and
+  // nodemailer (SMTP). Prisma's driver-adapter docs recommend exactly this.
+  serverExternalPackages: [
+    "@libsql/client",
+    "@prisma/adapter-libsql",
+    "libsql",
+    "nodemailer",
+  ],
+  // Client-bundle safety net (webpack builds only — Turbopack ignores this
+  // hook): if any Node-only module ever leaks into a client component's
+  // import graph, fail the resolution instead of polyfilling Node builtins
+  // with browser shims that blow up at runtime with cryptic errors.
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve = config.resolve || {};
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        stream: false,
+        crypto: false,
+        fs: false,
+        path: false,
+        os: false,
+        zlib: false,
+        util: false,
+        url: false,
+        async_hooks: false,
+        tls: false,
+        net: false,
+        buffer: false,
+        dns: false,
+        child_process: false,
+        http: false,
+        https: false,
+        querystring: false,
+      };
+    }
+    return config;
+  },
   rewrites,
 };
 

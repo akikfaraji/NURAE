@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { SiteHeader, useSiteUser } from '@/components/nurae/site-shell';
 import { LoadState, PageFade, StatusBadge, StatLine } from '@/components/nurae/bits';
 import { ApiKeysCard } from '@/components/nurae/api-keys-card';
+import { AiHealthBanner } from '@/components/nurae/ai-health-banner';
 import { MyDashboardDTO, nuraeApi, ApiError } from '@/lib/nurae-client/api';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -123,6 +124,11 @@ export function UserDashboardView({ slugOverride }: { slugOverride?: string }) {
           <Button size="sm" asChild>
             <Link href="/bots/new?ai=1">New bot</Link>
           </Button>
+        </div>
+
+        {/* Silent when the platform AI key works; loud when agents/official bots can't call their provider. */}
+        <div className="mt-4">
+          <AiHealthBanner />
         </div>
 
         {data.bots.length > 0 ? (

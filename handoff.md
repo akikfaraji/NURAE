@@ -5,8 +5,8 @@
 - **Version**: V00.12.000-beta-01
 - **OS**: Windows 11 (PowerShell)
 - **Node**: v24.21.0, npm: 11.19.0
-- **Running Status**: Active on port `3000` (`http://localhost:3000`), Node.js PID `24260`.
-- **DB**: SQLite at `./db/custom.db` (schema in sync, all tables and migrations applied).
+- **Running Status**: Active on port `3000` (`http://localhost:3000`), Node.js PID `24260` (snapshot at time of writing — PIDs change on every restart).
+- **DB**: SQLite inside the Windows data home — `%LOCALAPPDATA%\FRAZIYM\NURAE\db\custom.db` (AppData\Local, never Roaming, never the `prisma/` folder). Do NOT set `DATABASE_URL` in `.env` for local Windows use; leaving it unset lets `src/lib/paths.ts` resolve the data home correctly. `%APPDATA%`-style variables are NOT expanded by Node and must never be used in `DATABASE_URL`.
 
 ---
 

@@ -975,3 +975,26 @@ Work Log:
 
 Stage Summary:
 - Pushed 8126f9d..03b347a. The npm db:* scripts + build + start + dev ALL put the db in C:\Users\<user>\AppData\Local\FRAZIYM\NURAE\db\nurae.db. The only way to get a prisma/db stray is bypassing npm scripts with a raw npx prisma command — and the wrapper now detects and calls that out. Suite at 400 tests.
+
+---
+Task ID: 19
+Agent: main (Super Z)
+Task: Review user's push 64525cd ("I don't know what I did"), fix breakages, enforce AppData\Local DB contract, push
+
+Work Log:
+- Updated origin remote with user's new GitHub PAT; fetched; user's commit 64525cd + our unpushed worklog commit rebased cleanly onto it
+- Audited 64525cd: added AI key-health feature (key-health.ts + /api/ai-health + banner), instrumentation-node.ts extraction, next.config.mjs, committed .env with REAL secrets, deleted prisma/schema.prisma, added 4 junk test-*.js + image.png + handoff.md
+- RESTORED prisma/schema.prisma from 03b347a — schema-sync.ts hard-skips without it (fresh installs would boot with zero tables); db:generate/db:push also dead without it
+- next.config resolution: CONFIG_FILES order puts next.config.mjs BEFORE next.config.ts → user's .mjs silently disabled our rewrites() backend proxy. Merged unique bits (serverExternalPackages: libsql+nodemailer, webpack client fallbacks) into next.config.ts, deleted .mjs
+- SECURITY: git rm --cached .env (was tracked since scaffold despite .gitignore) — real OpenRouter key, Gmail app password, admin token were on GitHub; sandbox .env fixed (removed broken DATABASE_URL, kept user's real keys for functionality)
+- User's DATABASE_URL=file:%APPDATA%/... was doubly wrong: Node never expands %APPDATA% (literal folder inside data home) + Roaming not Local. Correct: unset DATABASE_URL → paths.ts fallback → %LOCALAPPDATA%\FRAZIYM\NURAE
+- handoff.md DB claims corrected (./db/custom.db → data home; %APPDATA% warning)
+- Wired orphaned AiHealthBanner into user-dashboard.tsx (under welcome header)
+- Completed user's half-done refactor: instrumentation.ts → thin delegator (runtime gate + dynamic import) → instrumentation-node.ts registerNode()
+- Removed junk: test-db-connection{,2}.js, test-libsql.js, test-sqlite.js (better-sqlite3 not even a dep), image.png
+- Verification: tsc 71 errors = exact baseline (0 new); vitest 400/400 across 27 files (incl. paths contract + schema-sync); path.win32 simulation → file:C:/Users/<u>/AppData/Local/FRAZIYM/NURAE/db/custom.db (not Roaming, not prisma/)
+
+Stage Summary:
+- User's push made coherent: AI-health feature kept + wired, config unified in next.config.ts, schema restored, .env untracked
+- DB contract RE-VERIFIED end-to-end after user's changes: AppData\Local on Windows, project root on Linux, never prisma/
+- MUST TELL USER: rotate OpenRouter key + Gmail app password + NURAE_SECRET_KEY + admin token (all burned in git history); .env will be deleted on their machine by the pull — restore command provided
