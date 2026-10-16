@@ -40,6 +40,7 @@
 
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { formatWithOptions } from 'node:util';
 import { resolveDataPath } from '@/lib/paths';
@@ -118,10 +119,20 @@ export interface SuperLogger {
   queryFileLogs(opts?: { level?: SuperLevel; q?: string; limit?: number; maxBytes?: number }): LogEntry[];
   /** The JSONL path (for the admin tail API). */
   jsonlPath(): string;
+  /** Sink health for readiness checks (never throws, never blocks). */
+  health(): LogSinkHealth;
   /** Best-effort DB queue drain (awaited by graceful shutdown paths). */
   flush(): Promise<void>;
   /** Test escape hatch: close fds, drop crash listeners. */
   close(): void;
+}
+
+/** Sink health snapshot — what readiness/diagnostic surfaces need to know. */
+export interface LogSinkHealth {
+  level: SuperLevel;
+  jsonl: { enabled: boolean; path: string; usingFallbackDir: boolean };
+  db: { enabled: boolean; degraded: boolean; queued: number };
+  ring: { entries: number; capacity: number };
 }
 
 /** Minimal Prisma surface for the DB sink (structural typing, mock-friendly). */
@@ -226,12 +237,30 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
   let jsonlDisabled = false;
   let jsonlFd: number | null = null;
   let jsonlBytes = 0; // bytes appended since this fd was opened (mid-run rotation)
+  let jsonlFallback = false;
+  let jsonlWarned = false;
   const dir = opts.dir ?? resolveDataPath(join('logs'));
   const fileName = opts.file ?? 'nurae.jsonl';
-  const filePath = join(dir, fileName);
+  let filePath = join(dir, fileName);
 
   function jsonlPath(): string {
     return filePath;
+  }
+
+  /**
+   * A degraded sink must ANNOUNCE itself exactly once. The previous behaviour
+   * set a disabled flag and said nothing anywhere — on a read-only filesystem
+   * (e.g. a serverless deployment directory) file logging died permanently and
+   * silently, which is the one failure mode a logger must never have.
+   */
+  function warnSinkOnce(what: string, err: unknown): void {
+    if (jsonlWarned) return;
+    jsonlWarned = true;
+    try {
+      process.stderr.write(
+        `[NURAE] ${what}: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    } catch { /* even stderr can fail — nothing left to do */ }
   }
 
   function ensureJsonlFd(): number | null {
@@ -254,8 +283,22 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
       }
       jsonlFd = openSync(filePath, 'a');
       return jsonlFd;
-    } catch {
-      jsonlDisabled = true; // unreadable dir / disk full → fail quiet, forever
+    } catch (err) {
+      // Read-only data root (serverless / ephemeral filesystems) → fall back to
+      // the OS temp dir ONCE and say so, instead of going silent forever.
+      if (!jsonlFallback && !opts.dir) {
+        try {
+          jsonlFallback = true;
+          const fallback = join(tmpdir(), 'nurae-logs');
+          mkdirSync(fallback, { recursive: true });
+          filePath = join(fallback, fileName);
+          jsonlFd = openSync(filePath, 'a');
+          warnSinkOnce(`log directory "${dir}" is not writable — structured logs now go to "${filePath}"`, err);
+          return jsonlFd;
+        } catch { /* fall through to the hard disable below */ }
+      }
+      jsonlDisabled = true;
+      warnSinkOnce(`structured JSONL logging DISABLED (target was "${filePath}")`, err);
       return null;
     }
   }
@@ -265,7 +308,9 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
     if (fd === null) return;
     try {
       appendFileSync(fd, line + '\n');
-      jsonlBytes += line.length + 1;
+      // BYTES, not UTF-16 code units: the variable is a byte budget, and
+      // emoji/CJK in Telegram text made the old count under-report badly.
+      jsonlBytes += Buffer.byteLength(line, 'utf8') + 1;
       // Mid-run rotation: the fd lives as long as the process, so size-based
       // rotation must ALSO happen while writing — close, and let the next
       // ensureJsonlFd() shift generations (size is now over the threshold).
@@ -274,10 +319,11 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
         jsonlFd = null;
         jsonlBytes = 0;
       }
-    } catch {
+    } catch (err) {
       jsonlDisabled = true;
       try { closeSync(jsonlFd!); } catch { /* already gone */ }
       jsonlFd = null;
+      warnSinkOnce(`structured JSONL logging DISABLED after a write failure ("${filePath}")`, err);
     }
   }
 
@@ -475,6 +521,12 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
       }
     },
     jsonlPath,
+    health: (): LogSinkHealth => ({
+      level: minLevel,
+      jsonl: { enabled: jsonlSink && !jsonlDisabled, path: filePath, usingFallbackDir: jsonlFallback },
+      db: { enabled: dbSink, degraded: Date.now() < dbCooldownUntil, queued: dbQueue.length },
+      ring: { entries: ring.length, capacity: ringSize },
+    }),
     flush: async () => { await drainDb(); },
     close: () => {
       if (jsonlFd !== null) {
@@ -497,6 +549,7 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
       recent: api.recent,
       queryFileLogs: api.queryFileLogs,
       jsonlPath,
+      health: api.health,
       flush: api.flush,
       close: api.close,
     };

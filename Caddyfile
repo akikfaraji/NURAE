@@ -1,17 +1,19 @@
+# NURAE edge proxy — the single public entry (port 81) for the app on :3000.
+#
+# SECURITY — do NOT reintroduce an XTransformPort-style rule. This file used to
+# carry:
+#
+#     @transform_port_query { query XTransformPort=* }
+#     handle @transform_port_query { reverse_proxy localhost:{query.XTransformPort} }
+#
+# i.e. the proxy target was taken from a QUERY PARAMETER: any client that could
+# reach port 81 could ask Caddy to forward to ANY port bound to loopback
+# (databases, admin panels, cloud-metadata style endpoints, this app's own
+# internal listeners) with no authentication of any kind — an open relay into
+# the whole host. A reverse proxy target must always be a fixed, reviewed
+# address; if another local service has to be published, give it its own
+# explicit site block with its own auth.
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
-
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
-
 	handle {
 		reverse_proxy localhost:3000 {
 			header_up Host {host}

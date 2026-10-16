@@ -165,6 +165,10 @@ model User {
   planId        String?   @map("plan_id")
   planExpiresAt DateTime? @map("plan_expires_at")
   lastLoginAt   DateTime? @map("last_login_at")
+  // Marketing-mail opt-out for a signed-in account, set when the user clicks
+  // unsubscribe in a promotional mail (or asks the operator to stop).
+  // Transactional mail (verification codes) is unaffected.
+  mailOptOutAt  DateTime? @map("mail_opt_out_at")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -599,4 +603,76 @@ model AgentToken {
 
   @@index([ownerId])
   @@map("agent_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Promotional mail — campaigns to registered users
+// ---------------------------------------------------------------------------
+
+// One operator-authored promotional mail. The body is authored once and the
+// per-recipient fan-out lives in email_deliveries (the truth for counting).
+// Lifecycle: draft → queued → sending → sent | cancelled | failed.
+model EmailCampaign {
+  id             String    @id @default(cuid())
+  name           String
+  subject        String
+  text           String
+  html           String?
+  // Audience selector — see AudienceKind in lib/nurae/email/campaign-types.ts
+  audience       String    @default("verified_users")
+  status         String    @default("draft")
+  // Who authored it: 'admin' (console) or 'operator' (agent tool).
+  createdBy      String    @default("admin")
+  // Denormalised counters for cheap list rendering; deliveries stay the truth.
+  recipientCount Int       @default(0)
+  sentCount      Int       @default(0)
+  failedCount    Int       @default(0)
+  skippedCount   Int       @default(0)
+  lastError      String?
+  queuedAt       DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  deliveries EmailDelivery[]
+
+  @@index([status, createdAt])
+  @@map("email_campaigns")
+}
+
+// One recipient of one campaign. The unique (campaign, email) pair is the
+// idempotency guard: a campaign can never mail the same address twice, no
+// matter how often the queue is retried.
+model EmailDelivery {
+  id         String    @id @default(cuid())
+  campaignId String    @map("campaign_id")
+  // Denormalised recipient identity (no FK: a deleted account must not erase
+  // the delivery history of a mail that really went out).
+  userId     String?   @map("user_id")
+  email      String
+  // queued | sent | failed | skipped
+  status     String    @default("queued")
+  // 'unsubscribed' | 'opt_out' | 'unverified' | the SMTP error message
+  detail     String?
+  sentAt     DateTime? @map("sent_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, email])
+  @@index([status, createdAt])
+  @@map("email_deliveries")
+}
+
+// The permanent do-not-mail list. Consulted by BOTH the campaign engine and
+// the invite funnel — an unsubscribe is honored forever, across every sender.
+model EmailSuppression {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  // unsubscribe | bounce | complaint | manual
+  reason    String
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("email_suppressions")
 }

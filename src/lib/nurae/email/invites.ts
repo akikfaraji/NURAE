@@ -15,7 +15,10 @@
  * referral links + the fleet's community CTAs.
  *
  * Guarantees:
- *   - unsubscribed is TERMINAL — a re-opt-in is refused, forever;
+ *   - unsubscribed is TERMINAL — a re-opt-in is refused, forever, and the
+ *     shared suppression list (lib/nurae/email/suppression.ts) is consulted
+ *     before every invite, so an unsubscribe from a promotional campaign
+ *     stops the invitation funnel too;
  *   - every address gets exactly ONE invite and at most ONE reminder;
  *   - the queue respects NURAE_INVITE_DAILY_CAP (default 150/day — well
  *     under Gmail's 500/day sending limit) and paces itself per ticker tick;
@@ -27,6 +30,7 @@ import { db } from '@/lib/db';
 import { sendSiteMail, type SendResult } from '../auth/mailer';
 import { growthLinksFromEnv } from '../bots/growth-links';
 import { platformReferralCode } from '../auth/official-fleet';
+import { isInviteUnsubscribed } from './suppression';
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -157,6 +161,10 @@ export async function recordOptIn(
 ): Promise<OptInResult> {
   const normalized = normalizeEmail(email);
   if (!normalized) return { ok: false, reason: 'invalid_email' };
+  // The shared do-not-mail list wins before anything else is even read: an
+  // unsubscribe (from an invite OR from a promotional campaign) is terminal,
+  // so a fresh opt-in for that address can never be recorded again.
+  if (await isInviteUnsubscribed(normalized)) return { ok: false, reason: 'unsubscribed' };
   const existing = await db.emailInvite.findUnique({ where: { email: normalized } });
   if (existing?.status === 'unsubscribed') return { ok: false, reason: 'unsubscribed' };
   if (existing) {
@@ -180,6 +188,7 @@ export async function recordOptIn(
 export async function sendInviteFor(email: string): Promise<SendResult & { skipped?: boolean }> {
   const normalized = normalizeEmail(email);
   if (!normalized) return { ok: false, detail: 'invalid email' };
+  if (await isInviteUnsubscribed(normalized)) return { ok: false, detail: 'unsubscribed', skipped: true };
   const row = await db.emailInvite.findUnique({ where: { email: normalized } });
   if (!row || row.status === 'unsubscribed') return { ok: false, detail: 'not opted in', skipped: true };
   if (row.sentAt) return { ok: true, detail: 'already invited', skipped: true };
@@ -302,6 +311,13 @@ export async function runInviteQueue(now: Date = new Date()): Promise<{ sent: nu
   });
   let sent = 0;
   for (const row of batch) {
+    // Re-checked per row, not trusted from the opt-in: a suppression that lands
+    // while the invite is already queued must still stop the mail, and the row
+    // is retired (never re-drained) instead of sent.
+    if (await isInviteUnsubscribed(row.email)) {
+      await db.emailInvite.update({ where: { id: row.id }, data: { status: 'unsubscribed' } });
+      continue;
+    }
     const result = await sender(composeInvite(row.email, identity), identity.siteName);
     if (result.ok) {
       await db.emailInvite.update({ where: { id: row.id }, data: { status: 'invited', sentAt: new Date() } });
@@ -328,6 +344,12 @@ export async function runInviteReminders(now: Date = new Date()): Promise<number
   });
   let sent = 0;
   for (const row of rows) {
+    // A reminder is promotional mail too: the suppression list is checked
+    // before every nudge, so an unsubscribe mid-funnel is honoured.
+    if (await isInviteUnsubscribed(row.email)) {
+      await db.emailInvite.update({ where: { id: row.id }, data: { status: 'unsubscribed' } });
+      continue;
+    }
     const result = await sender(composeReminder(row.email, identity), identity.siteName);
     await db.emailInvite.update({
       where: { id: row.id },

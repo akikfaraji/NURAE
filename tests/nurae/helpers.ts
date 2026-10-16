@@ -4,13 +4,33 @@
  * environment points at an isolated test database, never the developer's data.
  */
 
+import { execSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * Repository root, derived from THIS file's own location
+ * (`tests/nurae/helpers.ts` → two levels up). This is the ESM equivalent of
+ * `__dirname`, and it is the ONLY place the suite is allowed to learn where
+ * the repo lives: a hardcoded absolute path works on exactly one machine, and
+ * the suite must run from any checkout on any OS. Deriving it from
+ * `import.meta.url` (rather than `process.cwd()`) also keeps it correct when
+ * vitest is launched from a parent directory.
+ */
+export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 // Unique temp directory per test process → fully isolated DB.
 export const TEST_DIR = mkdtempSync(join(tmpdir(), 'nurae-test-'));
-export const TEST_DB_URL = `file:${join(TEST_DIR, 'test.db')}`;
+// Forward slashes on purpose: `file:C:/…` is the canonical Windows form for
+// prisma/libSQL file: URLs. join() yields backslashes on Windows; the Prisma
+// CLI tolerates them on this toolchain (verified by probe), but canonicalising
+// here keeps the URL the CLI receives byte-identical to the one the app's
+// adapter opens (databaseUrl() in src/lib/paths.ts, and the boot schema sync)
+// — so both consumers demonstrably address ONE file, and the suite inherits
+// the production URL convention instead of depending on CLI leniency.
+export const TEST_DB_URL = `file:${join(TEST_DIR, 'test.db').replace(/\\/g, '/')}`;
 
 process.env.DATABASE_URL = TEST_DB_URL;
 // Keep provider env fallbacks out of tests unless a test sets them explicitly.
@@ -55,13 +75,16 @@ process.env.NURAE_PUBLIC_URL = '';
  *  their "empty platform" assumptions in full-suite runs.) */
 let schemaPushed = false;
 export function pushTestSchema(): void {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { execSync } = require('node:child_process') as typeof import('node:child_process');
   const reset = schemaPushed ? ' --force-reset' : '';
   // Direct entry path + explicit node: immune to `bunx` shebang resolution on
   // node-less boxes (same reason package.json scripts use this form).
+  // cwd MUST be the repo root: the command resolves BOTH the CLI
+  // (node_modules/prisma/build/index.js) AND the schema (prisma/schema.prisma)
+  // relative to it. The previous value was a hardcoded Linux sandbox path
+  // ('/home/z/my-project'), so on Windows the spawn failed for a nonexistent
+  // cwd and EVERY DB-backed file died at import time.
   execSync(`node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss${reset}`, {
-    cwd: '/home/z/my-project',
+    cwd: REPO_ROOT,
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: 'ignore',
   });

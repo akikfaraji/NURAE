@@ -15,7 +15,7 @@ import './helpers';
 
 import { describe, expect, test, afterEach } from 'vitest';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { dataRoot, databaseUrl, resolveDataPath } from '../../src/lib/paths';
 
 const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
@@ -77,14 +77,17 @@ describe('data home resolution (Windows → AppData\\Local)', () => {
   });
 
   test('relative file: DATABASE_URL resolves against the data root, not the schema dir', () => {
-    // The chain under test (relative URL → data root) is platform-independent;
-    // NURAE_DATA_DIR feeds it the same string the win32 branch produces above.
-    // (A windows-style path string can't be used here: the Linux runner's
-    // posix resolve() treats drive letters as relative — a simulation
-    // artifact, not product behavior. Real Windows gets win32 resolve().)
+    // The chain under test (relative URL → data root) is platform-independent,
+    // but the RESULT is host-native: resolveDataPath() uses the host's resolve(),
+    // so a POSIX-shaped NURAE_DATA_DIR becomes drive-anchored on Windows
+    // (C:/mock/data/home) and stays as-is on POSIX. Expected value is computed
+    // the same way the product does it, then canonicalised to forward slashes —
+    // that canonical form is exactly what databaseUrl() must return.
+    const mockHome = resolve('/mock/data/home').replace(/\\/g, '/');
     setEnv('NURAE_DATA_DIR', '/mock/data/home');
     setEnv('DATABASE_URL', 'file:./db/nurae.db');
-    expect(databaseUrl()).toBe('file:/mock/data/home/db/nurae.db');
+    expect(databaseUrl()).toBe(`file:${mockHome}/db/nurae.db`);
+    expect(databaseUrl()).not.toMatch(/\\/);
   });
 
   test('absolute file:, :memory: and non-file URLs pass through untouched', () => {
@@ -100,7 +103,9 @@ describe('data home resolution (Windows → AppData\\Local)', () => {
   test('resolveDataPath: absolute passes through, relative anchors to the data root', () => {
     setEnv('NURAE_DATA_DIR', '/custom/data/home');
     expect(resolveDataPath('/abs/file.bin')).toBe('/abs/file.bin');
-    expect(resolveDataPath('db/uploads')).toBe('/custom/data/home/db/uploads');
+    // resolveDataPath returns the host-native spelling (not a URL), so the
+    // expected value is built with this host's join/resolve.
+    expect(resolveDataPath('db/uploads')).toBe(join(resolve('/custom/data/home'), 'db', 'uploads'));
   });
 });
 
@@ -130,7 +135,8 @@ describe('DATABASE_URL guard (%VAR% Windows references fail with an actionable e
     setEnv('DATABASE_URL', 'file:/abs/My%20Files/nurae.db');
     expect(databaseUrl()).toBe('file:/abs/My%20Files/nurae.db');
     setEnv('DATABASE_URL', 'file:./db/nurae%20copy.db');
-    expect(databaseUrl()).toBe('file:/mock/data/home/db/nurae%20copy.db');
+    // Percent-escapes survive resolution untouched; only the prefix is rebased.
+    expect(databaseUrl()).toBe(`file:${resolve('/mock/data/home').replace(/\\/g, '/')}/db/nurae%20copy.db`);
   });
 
   test('the returned URL is forward-slashed (canonical file: form for libSQL/prisma)', () => {
@@ -138,7 +144,13 @@ describe('DATABASE_URL guard (%VAR% Windows references fail with an actionable e
     // module is bound at import), but the normalization is a plain string
     // replace — a backslash anywhere in the resolved segment must become /.
     setEnv('NURAE_DATA_DIR', '/mock/data/home');
+    // Normalization is a plain string replace: a backslash anywhere in the
+    // resolved segment must become /. The value is rebased on the host-native
+    // data root (win32 → C:/mock/data/home), then asserted to carry no
+    // backslash at all — that canonicalisation is the product guarantee.
     setEnv('DATABASE_URL', 'file:db\\custom.db');
-    expect(databaseUrl()).toBe('file:/mock/data/home/db/custom.db');
+    const url = databaseUrl();
+    expect(url).toBe(`file:${resolve('/mock/data/home').replace(/\\/g, '/')}/db/custom.db`);
+    expect(url).not.toMatch(/\\/);
   });
 });

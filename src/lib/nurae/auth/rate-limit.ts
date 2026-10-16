@@ -42,22 +42,41 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
 }
 
 /**
- * Best-effort client identity for rate limiting (proxy-aware, hardened).
+ * Trust model for the identity below — see NURAE_TRUSTED_PROXY in .env.example.
  *
- * Uses the RIGHTMOST entry of x-forwarded-for: standard proxies APPEND the
- * connecting client's address, so the last entry is the one the trusted edge
- * actually observed — a client cannot move it by sending extra entries.
- * (The previous leftmost behavior let an attacker rotate fresh identities by
- * forging the first hop.) Edge proxies that OVERWRITE the header (the
- * shipped Caddyfile) leave exactly one entry, which this also handles.
- * x-real-ip (set by platforms like Vercel) is the next best signal; without
- * any proxy header everything shares the 'local' bucket.
+ * x-forwarded-for is CLIENT-SUPPLIED data: only the edge in front of this
+ * process decides which entry may be believed. Two shipped shapes:
+ *
+ *   - NURAE_TRUSTED_PROXY=1 → the edge OVERWRITES the header (the shipped
+ *     Caddyfile does exactly that: `header_up X-Forwarded-For {remote_host}`),
+ *     so the LEFTMOST entry is the address the edge actually observed.
+ *   - unset (default) → the historical proxy-APPEND assumption: the proxy
+ *     keeps what the client sent and appends, so the RIGHTMOST entry is the
+ *     one the trusted edge observed and an attacker cannot rotate buckets by
+ *     forging the first hop. A client reaching this process DIRECTLY (no edge
+ *     at all) can still forge the whole header — which is precisely the
+ *     deployment NURAE_TRUSTED_PROXY=1 does not describe. Never expose the
+ *     process to the internet without an overwriting edge; when you have one,
+ *     set the flag so the leftmost (edge-written) entry is the key.
+ */
+export function trustedProxy(): boolean {
+  return process.env.NURAE_TRUSTED_PROXY === '1';
+}
+
+/**
+ * Best-effort client identity for rate limiting (proxy-aware, trust-model-aware).
+ *
+ * The leftmost/rightmost choice follows the edge shape documented above; the
+ * result is always a per-client key (never a shared "all clients" bucket, which
+ * would turn one attacker into a denial of service for everybody). x-real-ip
+ * (set by platforms like Vercel) is the next best signal; with no proxy header
+ * at all everything shares the 'local' bucket.
  */
 export function clientKey(req: Request): string {
   const fwd = req.headers.get('x-forwarded-for');
   if (fwd) {
     const parts = fwd.split(',').map((s) => s.trim()).filter(Boolean);
-    if (parts.length > 0) return parts[parts.length - 1];
+    if (parts.length > 0) return trustedProxy() ? parts[0] : parts[parts.length - 1];
   }
   return req.headers.get('x-real-ip') ?? 'local';
 }
