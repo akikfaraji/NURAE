@@ -78,3 +78,6 @@ tool-results/
 scripts/research/
 .design-audit/
 .agent-test-credentials.json
+
+# runtime logs (dev.log, nurae.jsonl + rotations)
+logs/
