@@ -73,6 +73,13 @@ export interface ToolContext {
   platform?: boolean;
   /** Request-resolved growth links — templates bake them at instantiation. */
   links?: GrowthLinks;
+  /**
+   * True when sessionId is a synthetic audit id (remote REST/MCP calls) that
+   * has no ChatSession row. The session-scoped AgentStep write is skipped —
+   * it would violate the ChatSession FK on every remote call — while the
+   * platform audit Log row is still persisted.
+   */
+  syntheticSession?: boolean;
 }
 
 export interface ToolOutcome {
@@ -1110,20 +1117,24 @@ export async function executeTool(
   }
 
   const status = outcome.status ?? 'ok';
-  // Session-scoped activity record (user-facing progress).
-  await db.agentStep
-    .create({
-      data: {
-        sessionId: ctx.sessionId,
-        seq,
-        tool: toolName,
-        argsJson: truncateForLog(JSON.stringify(rawArgs ?? {}), 2000),
-        resultJson: outcome.data !== undefined ? truncateForLog(JSON.stringify(outcome.data), 4000) : null,
-        status,
-        label: sanitizeForLog(outcome.label).slice(0, 200),
-      },
-    })
-    .catch(() => undefined);
+  // Session-scoped activity record (user-facing progress). Remote calls have
+  // no real session row (synthetic id) — writing one would violate the
+  // ChatSession FK on EVERY remote tool call; they audit via the Log row only.
+  if (!ctx.syntheticSession) {
+    await db.agentStep
+      .create({
+        data: {
+          sessionId: ctx.sessionId,
+          seq,
+          tool: toolName,
+          argsJson: truncateForLog(JSON.stringify(rawArgs ?? {}), 2000),
+          resultJson: outcome.data !== undefined ? truncateForLog(JSON.stringify(outcome.data), 4000) : null,
+          status,
+          label: sanitizeForLog(outcome.label).slice(0, 200),
+        },
+      })
+      .catch(() => undefined);
+  }
   // Platform audit log (sanitized).
   await db.log
     .create({

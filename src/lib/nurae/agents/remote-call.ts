@@ -75,9 +75,13 @@ export async function runRemoteToolCall(
   const base = agentTokenContext(token);
   const ctx: ToolContext = {
     userId: base.userId ?? '',
+    // Synthetic audit id — there is no ChatSession row behind it, so the
+    // session-scoped AgentStep write is skipped (syntheticSession flag) and
+    // remote calls audit through the platform Log row only.
     sessionId: `api-${randomUUID()}`,
     userConfirmed: input.confirm === true,
     platform: base.platform,
+    syntheticSession: true,
   };
 
   const record = await executeTool(ctx, input.tool, input.args ?? {}, seq);
