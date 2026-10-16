@@ -1103,3 +1103,21 @@ Work Log:
 Stage Summary:
 - Platform side verified working live; remaining failure modes are owner-side credential state
 - OWNER CHECKLIST delivered: rotate OpenRouter key (burned key in .env restored from 64525cd may be dead), put it in .env AND/OR re-save in bot settings (stored wins), re-enter Telegram tokens if verify says "could not be decrypted" (encryption key changed in the %APPDATA% episode), webhook needs public URL (polling for localhost)
+
+---
+Task ID: 25
+Agent: main (Super Z)
+Task: "dev.log every error + browser-test the entire site" — with the owner's real .env (tokens sanctioned for testing, revocation imminent)
+
+Work Log:
+- .env audited (6 vars): OPENROUTER_API_KEY works LIVE (ai-health probe + real chat turns accepted); Gmail SMTP creds verified via auth-only nodemailer verify(); DATABASE_URL absent (good); HOST=8723 is DEAD config (launcher reads PORT) — PORT=8723 appended locally; NURAE_ADMIN_TOKEN still the burned 9-char akik1616 (rotation STILL standing)
+- Built dev.log feature: console.error/warn + unhandledRejection -> dataRoot/logs/dev.log, rotate 5MB, fail-quiet, NURAE_DEV_LOG=0 opt-out, boot-first install, launcher prints paths, +6 tests
+- Browser sweep (agent-browser): all public pages 200 + zero JS errors; signup->verify->dashboard e2e; admin console (token login, fleet 6+CS seeded); support chat REAL AI turn; ai-health OK
+- FOUND+FIXED 3 agent bugs (browser-e2e reproduced): (1) tool-markup Qwen regex lost its opening tag — a tooling channel strips the literal <tool_call> from source writes; worked around with [t] char-class; markup calls were silently DROPPED; (2) provider generate() DISCARDED native message.tool_calls — added generateWithTools() + loop adoption in bot-builder+operator with envelope/markup fallback; (3) free-model arg noise — normalizeToolArgs (snake_case + synonyms) + ZodError now lists Accepted keys (retries succeed without docs round)
+- E2E PROOF: builder created real bot "PageTurner" via free model after self-correcting; support chat completed a real AI reply
+- dev.log captured the whole run CLEAN (boot headers + expected not-emailed warn) — copy in download/dev.log
+- Shipped: ee6c823; suite 467/467 (32 files); tsc 71 baseline; build OK; .env never touched git (gitignored, verified)
+
+Stage Summary:
+- Owner-side answers: OpenRouter key VALID (stored per-bot keys still override .env — re-save in bot settings), SMTP VALID, tokens to revoke today were used only for read-mostly probes (getMe-equivalents, SMTP auth-only, AI turns)
+- standing reminders: rotate admin token (9 chars, burned), NURAE_SECRET_KEY 28 chars -> >=32, use PORT not HOST
