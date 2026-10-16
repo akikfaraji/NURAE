@@ -1121,3 +1121,23 @@ Work Log:
 Stage Summary:
 - Owner-side answers: OpenRouter key VALID (stored per-bot keys still override .env — re-save in bot settings), SMTP VALID, tokens to revoke today were used only for read-mostly probes (getMe-equivalents, SMTP auth-only, AI turns)
 - standing reminders: rotate admin token (9 chars, burned), NURAE_SECRET_KEY 28 chars -> >=32, use PORT not HOST
+
+---
+Task ID: 25
+Agent: main (Super Z)
+Task: Live-test OpenRouter API with the user's REAL key from .env
+
+Work Log:
+- Confirmed .env holds a real-format key (sk-or-v1-, 73 chars, free tier)
+- Wrote scripts/probe-openrouter-real.mjs replicating the platform's exact call:
+  POST https://openrouter.ai/api/v1/chat/completions, model=openrouter/free
+- GET /auth/key -> 200 (valid key, free_tier=true, usage=$0, limit=unlimited)
+- POST /chat/completions -> 200; first run reply=null (reasoning model burned
+  all 16 max_tokens on reasoning); rerun with max_tokens=512 -> reply "pong",
+  model=nvidia/nemotron-3.5-super-vl:free, cost=$0
+- GET /models -> 200: 465 models, 15 free
+
+Stage Summary:
+- OpenRouter API CONFIRMED WORKING with user's real key. Platform network path,
+  request shape, and key are all good. Remaining user-side risk is only the
+  Task-24 trap: a stale stored key in bot settings still overrides .env.
