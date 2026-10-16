@@ -1170,3 +1170,34 @@ Stage Summary:
   instead of bot_set_commands for /menu, and narrated unexecuted actions —
   honest tool errors were recorded; possible future prompt hardening
 - New bug fixed: remote-call FK violation (6f141b2)
+
+---
+Task ID: 27
+Agent: main (Super Z)
+Task: Build the NURAE Super Logger — permanent, structured, capture-everything logging
+
+Work Log:
+- Rewrote src/lib/nurae/logging.ts as the Super Logger: structured entries
+  {ts,level,domain,event,message,botId,requestId,durationMs,data,error},
+  4 sinks (console→dev.log mirror, logs/nurae.jsonl 10MB×5 rotation with
+  mid-run rotation support, DB Log table queued+cooldown, 500-entry ring)
+- Deep secret redaction (password/token/apiKey/auth/cookie keys), BigInt/
+  circular/getter-throw safe stringify; NURAE_LOG_LEVEL filtering
+- Crash capture: unhandledRejection + uncaughtException (dev.log misses hard
+  crashes — Node bypasses console); exit(1) semantics preserved
+- internalError() now logs structured w/ request id + x-nurae-request-id header
+- New GET /api/admin/logs/tail (admin guard): ring + JSONL tail, level/q/limit
+- instrumentation-node installs super logger + boot line after dev-logger
+- Fixed during dev: spread-override erasing child scope, fd never rotating
+  mid-run, double-normalization of pre-formatted errors, ring/queue forked
+  across Next.js module instances (globalThis singleton, like db.ts)
+- Tests: tests/nurae/logger.test.ts 15 tests; full suite 482/482 (33 files);
+  tsc delta 0; live smoke 7/7 on the new stack; verified ring+file+DB sinks
+  and JSONL BOOT entry via admin API
+- Commit e29a646 + gitignore logs/
+
+Stage Summary:
+- NURAE now has a permanent logging system usable "later no matter what":
+  every error path is structured, durable (JSONL+DB), queryable at runtime
+  (ring via admin API) and crash-safe; future modules should import { logger }
+  from nurae/logging and use child({domain,botId,requestId}) scoping
