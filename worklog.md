@@ -1086,3 +1086,20 @@ Stage Summary:
 - User fix (PowerShell): (Get-Content .env) | Where-Object { $_ -notmatch '^\s*DATABASE_URL\s*=' } | Set-Content .env ; then Remove-Item -Recurse -Force "$env:LOCALAPPDATA\FRAZIYM\NURAE\%APPDATA%" ; npm start
 - Class of mistake (%VAR% in .env for Node) is now structurally impossible to repeat silently — guard message names the fix verbatim
 - Reminder standing: rotate OpenRouter key + Gmail app password + NURAE_ADMIN_TOKEN (burned in 64525cd history)
+
+---
+Task ID: 24
+Agent: main (Super Z)
+Task: User report — "openrouter api key doesn't work, telegram api doesn't work" + check their devlog push (aec8c47)
+
+Work Log:
+- Pulled user's "devlog" commit aec8c47: only package.json allowScripts block (npm install allowlist), no app changes
+- LIVE-probed both APIs from sandbox: OpenRouter chat/completions 401 clean for garbage key ("User not found."), /models returns 200 even for garbage keys (confirms chat-first probe design), Telegram getMe/getUpdates 401 clean → network paths + endpoints + classification all WORK; user's failures are credential/config state
+- Found the trap: selectProvider gives stored per-bot apiKeyRef precedence over env; old key-health banner told owners to "put the new key in .env" while a dead stored key kept winning → new key never used → "the openrouter key doesn't work"
+- Found second trap: stored secrets encrypted before the %APPDATA% junk-folder fix (or a NURAE_SECRET_KEY rotation) no longer decrypt; key-health silently fell back to probing the env key and could report OK/invalid about the WRONG key
+- Fixes: key-health.ts (+keySource, +storedUnreadable, new 'unreadable' status, correct fix advice per source); secrets.ts (+secretReadable, storedSecretsUnreadable); official-bot/official-fleet status (+secretsUnreadable, ready no longer counts undecryptable stored keys); verify route decrypt failures now actionable; banner + admin cards render the new state
+- Tests: +8 key-health.test.ts (loopback HTTP stub end-to-end, foreign-key ciphertext simulates rotation); vitest 444/444 (29 files); tsc 71 = baseline; build OK; pushed a7aba74
+
+Stage Summary:
+- Platform side verified working live; remaining failure modes are owner-side credential state
+- OWNER CHECKLIST delivered: rotate OpenRouter key (burned key in .env restored from 64525cd may be dead), put it in .env AND/OR re-save in bot settings (stored wins), re-enter Telegram tokens if verify says "could not be decrypted" (encryption key changed in the %APPDATA% episode), webhook needs public URL (polling for localhost)
