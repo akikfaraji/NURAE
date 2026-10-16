@@ -18,6 +18,12 @@ export async function registerNode(): Promise<void> {
   // FIRST: every later boot failure lands in dev.log (data root → logs/dev.log).
   const { installDevLogger } = await import('./lib/nurae/startup/dev-logger');
   installDevLogger();
+  // SECOND: the super logger — structured JSONL + DB + ring + crash capture.
+  // From here on EVERY unhandledRejection / uncaughtException is recorded
+  // durably (dev.log alone misses hard crashes: Node bypasses console).
+  const { installSuperLogger, logBootLine } = await import('./lib/nurae/logging');
+  installSuperLogger();
+  logBootLine();
   const { syncSqliteSchema } = await import('./lib/nurae/startup/schema-sync');
   await syncSqliteSchema();
   const { ensureOfficialBot, migrateLegacyZaiBots } = await import('./lib/nurae/auth/official-bot');

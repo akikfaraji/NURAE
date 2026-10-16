@@ -17,6 +17,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { formatZodError } from '../validation';
 import { verifyAdminSession } from '../auth/admin-session';
+import { logger, newRequestId } from '../logging';
 
 export const ADMIN_COOKIE = 'nurae_admin';
 
@@ -121,8 +122,21 @@ export function apiError(message: string, status = 400): NextResponse {
 
 /** Uniform 500 for unexpected failures — details stay in logs, not responses. */
 export function internalError(err: unknown, context: string): NextResponse {
-  console.error(`[NURAE] ${context}: ${err instanceof Error ? err.message : String(err)}`);
-  return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  const requestId = newRequestId();
+  // Structured record hits ALL sinks: console (→ dev.log), nurae.jsonl, DB,
+  // ring buffer (instantly visible via /api/admin/logs/tail).
+  logger.error({
+    domain: context,
+    event: 'API_INTERNAL_ERROR',
+    requestId,
+    message: err instanceof Error ? err.message : String(err),
+    error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : undefined,
+  });
+  const res = NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  // Correlation: the response carries the id so a user-reported failure can be
+  // traced to its exact structured record across every sink.
+  res.headers.set('x-nurae-request-id', requestId);
+  return res;
 }
 
 // ---------------------------------------------------------------------------
