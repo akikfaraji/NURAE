@@ -1141,3 +1141,32 @@ Stage Summary:
 - OpenRouter API CONFIRMED WORKING with user's real key. Platform network path,
   request shape, and key are all good. Remaining user-side risk is only the
   Task-24 trap: a stale stored key in bot settings still overrides .env.
+
+---
+Task ID: 26
+Agent: main (Super Z)
+Task: Live-test NURAE chat + agent through the platform's own stack using the real OpenRouter key
+
+Work Log:
+- Booted dev server (scripts/dev.mjs, :3000, dev.log); DB already in sync
+- Seeded agent fixture (.agent-test-credentials.json, gitignored)
+- Wrote scripts/test-nurae-live.mjs: chat (login → session → 2 turns) + agent
+  (2 real LLM turns via /api/v1/agent/turn) + persistence check
+- RESULT 7/7 PASS: chat replied "NURAE chat is alive" (3.0s), context retained;
+  agent turn 1: 3 steps, created "Pizza Live Bot" (provider=openrouter,
+  model=openrouter/free); turn 2 kept session; bots_list shows the bot
+- dev.log captured a real bug: prisma:error FK violation on agentStep.create —
+  remote-call.ts passed synthetic 'api-<uuid>' sessionId but AgentStep.sessionId
+  FK-references ChatSession → EVERY remote tools/call (REST+MCP) failed its
+  session-scoped audit write (silently swallowed; Log audit row survived)
+- FIX: ToolContext.syntheticSession flag; remote-call sets it; executeTool skips
+  the AgentStep write for synthetic sessions. Commit 6f141b2
+- Verified: agent suites 44/44, full vitest 467/467 (32 files), tsc delta 0,
+  live tools/call ok with zero new prisma:error in dev.log
+
+Stage Summary:
+- Chat AND agent CONFIRMED WORKING end-to-end with the real OpenRouter key
+- Free-model quality note: model called bot_set_profile (needs Telegram token)
+  instead of bot_set_commands for /menu, and narrated unexecuted actions —
+  honest tool errors were recorded; possible future prompt hardening
+- New bug fixed: remote-call FK violation (6f141b2)
