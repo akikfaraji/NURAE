@@ -1012,6 +1012,57 @@ export interface ExecRecord {
 }
 
 /**
+ * Repair snake_case argument keys before schema validation.
+ *
+ * Free/quantized models routinely emit `system_prompt`, `bot_id`, `max_tokens`
+ * even though the tool schemas declare camelCase keys — every such call used
+ * to die on `.strict()` with "Unrecognized key", burning a full agent round
+ * while the model re-read the docs and retried. Keys that map onto the
+ * schema's own shape are normalized; genuinely unknown keys are kept so
+ * `.strict()` still reports them honestly (the model must learn real shapes).
+ */
+/**
+ * Field-name synonyms weaker models invent (live-verified on OpenRouter free
+ * models): the schema name is a guessing game for them. Only exact schema
+ * keys win — a synonym is applied when the schema has no such key itself.
+ */
+const ARG_SYNONYMS: Record<string, string> = {
+  short_description: 'description',
+  shortDescription: 'description',
+  desc: 'description',
+  prompt: 'systemPrompt',
+  instructions: 'systemPrompt',
+  system_instructions: 'systemPrompt',
+  id: 'botId',
+  bot: 'botId',
+  bot_id: 'botId',
+  max_tokens: 'maxTokens',
+  maxtokens: 'maxTokens',
+};
+
+export function normalizeToolArgs(schema: z.ZodTypeAny, rawArgs: unknown): unknown {
+  if (!rawArgs || typeof rawArgs !== 'object' || Array.isArray(rawArgs)) return rawArgs;
+  const shape = (schema as { shape?: Record<string, unknown> }).shape;
+  if (!shape) return rawArgs;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rawArgs as Record<string, unknown>)) {
+    if (key in shape) {
+      out[key] = value;
+      continue;
+    }
+    const camel = key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+    const synonym = ARG_SYNONYMS[key];
+    const mapped = camel in shape ? camel : synonym !== undefined && synonym in shape ? synonym : null;
+    if (mapped !== null) {
+      if (!(mapped in out)) out[mapped] = value; // explicit schema key (if any) wins
+      continue;
+    }
+    out[key] = value; // unknown stays → strict() still rejects it honestly
+  }
+  return out;
+}
+
+/**
  * Validate + execute one tool call with full auditing. Never throws —
  * failures come back as structured outcomes so a broken tool call can never
  * crash an agent turn.
@@ -1036,14 +1087,22 @@ export async function executeTool(
   }
   let outcome: ToolOutcome;
   try {
-    const args = tool.schema.parse(rawArgs ?? {}) as Record<string, unknown>;
+    const args = tool.schema.parse(normalizeToolArgs(tool.schema, rawArgs ?? {})) as Record<string, unknown>;
     outcome = await tool.exec(ctx, args);
   } catch (err) {
     if (err instanceof z.ZodError) {
+      // Name the accepted keys so the model's retry succeeds WITHOUT a
+      // documentation round-trip (live traffic showed weaker free models
+      // inventing field names and then burning a turn on docs_read).
+      const shape = (tool.schema as { shape?: Record<string, unknown> }).shape;
+      const validKeys = shape ? Object.keys(shape).join(', ') : '';
       outcome = {
         label: `Invalid arguments for ${toolName}`,
         status: 'error',
-        data: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+        data: [
+          ...err.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+          ...(validKeys ? [`Accepted keys: ${validKeys}`] : []),
+        ],
       };
     } else {
       outcome = { label: `Tool ${toolName} failed`, status: 'error', data: String(err) };

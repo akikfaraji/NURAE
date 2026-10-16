@@ -566,13 +566,45 @@ export async function runBotBuilderTurn(input: AgentTurnInput): Promise<AgentTur
     } catch {
       /* billing outage → fail open */
     }
-    const text = await selection.provider.generate(messages, {
+    const config = {
       model: platformBot.model,
       temperature: 0.3, // agents want precision, not poetry
       maxTokens: Math.max(platformBot.maxTokens, AI_ROUND_TOKEN_FLOOR),
       apiKey: apiKey ?? selection.apiKey,
       baseUrl: selection.baseUrl,
-    });
+      tools: toolDescriptors().map((t) => ({ name: t.name, description: t.description, parameters: t.inputSchema })),
+    };
+    // Native function-calling first: free OpenRouter models frequently emit
+    // NATIVE tool_calls that generate() silently discards (it returns text
+    // only) — the agent then "announced" the call and never executed it.
+    // Providers without generateWithTools (custom/local shims) fall back to
+    // the text envelope + markup parsing below.
+    if (typeof selection.provider.generateWithTools === 'function') {
+      const { content, toolCalls } = await selection.provider.generateWithTools(messages, config);
+      const parsed = parseAgentReply(content);
+      const nativeActions = toolCalls
+        .map((c) => {
+          if (typeof c.arguments === 'string') {
+            try {
+              return { tool: c.name, args: JSON.parse(c.arguments || '{}') as Record<string, unknown> };
+            } catch {
+              return { tool: c.name, args: {} as Record<string, unknown> };
+            }
+          }
+          return { tool: c.name, args: (c.arguments ?? {}) as Record<string, unknown> };
+        })
+        .filter((a) => a.tool);
+      if (nativeActions.length > 0 || toolCalls.length > 0) {
+        return {
+          message: parsed.message,
+          actions: [...nativeActions, ...parsed.actions].slice(0, MAX_ACTIONS_PER_ROUND),
+          done: nativeActions.length > 0 ? false : parsed.done,
+          jsonOk: parsed.jsonOk,
+        };
+      }
+      return parsed;
+    }
+    const text = await selection.provider.generate(messages, config);
     return parseAgentReply(text);
   };
 

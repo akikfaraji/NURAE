@@ -14,6 +14,7 @@ import {
   AIError,
   AIProvider,
   AIRequestConfig,
+  AIToolCall,
   ChatMessage,
   CredentialCheckResult,
 } from '../types';
@@ -258,6 +259,86 @@ export class OpenAICompatibleProvider implements AIProvider {
     // MVP: stream is derived from generate() to keep the interface future-proof
     // without implementing SSE per provider in this release.
     yield await this.generate(messages, config);
+  }
+
+  /**
+   * Native OpenAI-style function-calling round. `config.tools` (when present)
+   * is sent as OpenAI function definitions; the response's tool_calls come
+   * back next to the text instead of being discarded. Retries/timeouts share
+   * the generate() machinery by delegating to requestOnce directly.
+   */
+  async generateWithTools(
+    messages: ChatMessage[],
+    config: AIRequestConfig,
+  ): Promise<{ content: string; toolCalls: AIToolCall[] }> {
+    const url = this.endpoint(config.baseUrl, '/chat/completions');
+    const tools = config.tools?.length
+      ? config.tools.map((t) => ({
+          type: 'function' as const,
+          function: { name: t.name, description: t.description, parameters: t.parameters },
+        }))
+      : undefined;
+    const body = {
+      model: config.model,
+      messages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: false,
+      ...(tools ? { tools, tool_choice: 'auto' as const } : {}),
+    };
+
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+      let result: Awaited<ReturnType<typeof this.requestOnce>>;
+      try {
+        result = await this.requestOnce(url, body, config);
+      } catch (err) {
+        if (err instanceof AIError) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        const isTimeout = /abort/i.test(message);
+        const classified = isTimeout
+          ? new AIError('timeout', 'AI request timed out', { retryable: true })
+          : new AIError('network_error', `Network error contacting AI provider: ${message}`, { retryable: true });
+        if (classified.retryable && attempt < this.maxAttempts) {
+          await sleep(this.backoff(attempt));
+          continue;
+        }
+        throw classified;
+      }
+
+      const { ok, status, json } = result;
+      if (!ok) {
+        if (status === 401 || status === 403) {
+          throw new AIError('invalid_credentials', 'AI provider rejected the credentials (HTTP 401/403)', { status });
+        }
+        if (status === 429 && attempt < this.maxAttempts) {
+          await sleep(result.retryAfterMs ?? this.backoff(attempt));
+          continue;
+        }
+        if (status >= 500 && attempt < this.maxAttempts) {
+          await sleep(this.backoff(attempt));
+          continue;
+        }
+        const detail = json?.error?.message || `AI provider request failed (HTTP ${status})`;
+        throw new AIError('api_error', detail, { status });
+      }
+
+      const choice = json?.choices?.[0]?.message;
+      const content = typeof choice?.content === 'string' ? choice.content : '';
+      const rawCalls = Array.isArray(choice?.tool_calls) ? choice!.tool_calls : [];
+      const toolCalls: AIToolCall[] = [];
+      for (const c of rawCalls) {
+        const fn = (c as { function?: { name?: unknown; arguments?: unknown } }).function;
+        const name = typeof fn?.name === 'string' ? fn.name : '';
+        if (!name) continue;
+        const args = fn?.arguments;
+        toolCalls.push({
+          name,
+          arguments: typeof args === 'string' || (args !== null && typeof args === 'object') ? args : {},
+        });
+      }
+      return { content, toolCalls };
+    }
+    throw new AIError('api_error', 'AI request failed after retries');
   }
 
   async validateCredentials(config: Partial<AIRequestConfig>): Promise<CredentialCheckResult> {

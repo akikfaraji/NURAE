@@ -101,6 +101,10 @@ process.env.PORT = process.env.PORT || '3000';
 process.env.HOSTNAME = process.env.HOSTNAME || '0.0.0.0';
 
 console.log(`[NURAE] starting production server (data root: ${dataHome}, port: ${process.env.PORT})`);
+console.log(
+  `[NURAE] error logs: ${resolve(dataHome, 'logs', 'dev.log')} (every app error; NURAE_DEV_LOG=0 to disable)` +
+    ` + ${resolve(root, 'server.log')} (full boot output)`,
+);
 
 const child = spawn(process.execPath, [serverJs], {
   cwd: root,

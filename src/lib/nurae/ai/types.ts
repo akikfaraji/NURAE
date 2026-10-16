@@ -28,6 +28,15 @@ export interface AIRequestConfig {
   baseUrl?: string | null;
   /** Abort signal for cooperative cancellation (bot stop / shutdown). */
   signal?: AbortSignal;
+  /** OpenAI-style function definitions — only honored by generateWithTools(). */
+  tools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
+}
+
+/** One native tool call returned by the model (OpenAI function-calling shape). */
+export interface AIToolCall {
+  name: string;
+  /** Raw arguments — usually a JSON string; parsed lazily by the caller. */
+  arguments: string | Record<string, unknown>;
 }
 
 export interface CredentialCheckResult {
@@ -44,6 +53,18 @@ export interface AIProvider {
    * exists so future channels/UI can adopt streaming without interface churn.
    */
   stream?(messages: ChatMessage[], config: AIRequestConfig): AsyncIterable<string>;
+  /**
+   * Optional native function-calling round: sends `tools` and returns the
+   * model's tool_calls next to its text. Free OpenRouter models frequently
+   * emit NATIVE tool_calls that generate() discards (it returns text only) —
+   * agent loops that silently lost every such call now prefer this method.
+   * When a provider does not implement it, callers fall back to generate()
+   * and text-markup parsing.
+   */
+  generateWithTools?(
+    messages: ChatMessage[],
+    config: AIRequestConfig,
+  ): Promise<{ content: string; toolCalls: AIToolCall[] }>;
   /** Verify credentials/configuration with a minimal, cheap call. */
   validateCredentials(config: Partial<AIRequestConfig>): Promise<CredentialCheckResult>;
 }

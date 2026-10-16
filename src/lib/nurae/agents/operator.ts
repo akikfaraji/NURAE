@@ -293,13 +293,47 @@ export async function runOperatorTurn(input: OperatorTurnInput): Promise<Operato
 
   /** One model round. No billing gate here — the operator IS the platform. */
   const modelRound = async (messages: ChatMessage[]) => {
-    const text = await selection.provider.generate(messages, {
+    const config = {
       model: platformBot.model,
       temperature: 0.2, // operators want precision even more than builders
       maxTokens: Math.max(platformBot.maxTokens, AI_ROUND_TOKEN_FLOOR),
       apiKey: apiKey ?? selection.apiKey,
       baseUrl: selection.baseUrl,
-    });
+      // BOTH tiers: the operator executes user tools AND platform-only tools.
+      tools: [...toolDescriptors(), ...platformToolDescriptors()].map((t) => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      })),
+    };
+    // Native tool_calls first — generate() discards them (text-only) and free
+    // models emit them constantly; see bot-builder.modelRound for the rationale.
+    if (typeof selection.provider.generateWithTools === 'function') {
+      const { content, toolCalls } = await selection.provider.generateWithTools(messages, config);
+      const parsed = parseAgentReply(content);
+      const nativeActions = toolCalls
+        .map((c) => {
+          if (typeof c.arguments === 'string') {
+            try {
+              return { tool: c.name, args: JSON.parse(c.arguments || '{}') as Record<string, unknown> };
+            } catch {
+              return { tool: c.name, args: {} as Record<string, unknown> };
+            }
+          }
+          return { tool: c.name, args: (c.arguments ?? {}) as Record<string, unknown> };
+        })
+        .filter((a) => a.tool);
+      if (nativeActions.length > 0 || toolCalls.length > 0) {
+        return {
+          message: parsed.message,
+          actions: [...nativeActions, ...parsed.actions].slice(0, MAX_ACTIONS_PER_ROUND),
+          done: nativeActions.length > 0 ? false : parsed.done,
+          jsonOk: parsed.jsonOk,
+        };
+      }
+      return parsed;
+    }
+    const text = await selection.provider.generate(messages, config);
     return parseAgentReply(text);
   };
 

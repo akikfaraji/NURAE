@@ -249,3 +249,99 @@ describe('error classification', () => {
     expect(plain.retryable).toBe(false);
   });
 });
+
+describe('generateWithTools (native function calling)', () => {
+  test('sends OpenAI-style tool definitions and returns message.tool_calls next to text', async () => {
+    const seen: Array<{ url: string; init: RequestInit }> = [];
+    const provider = makeProvider({
+      fetchImpl: (async (url: string, init: RequestInit) => {
+        seen.push({ url, init });
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: 'Creating your bot now.',
+                  tool_calls: [
+                    {
+                      type: 'function',
+                      function: { name: 'bot_create_draft', arguments: '{"name":"FitBot","system_prompt":"Coach"}' },
+                    },
+                    { type: 'function', function: { name: 'bots_list', arguments: '{}' } },
+                  ],
+                },
+              },
+            ],
+          }) as unknown as BodyInit,
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }) as typeof fetch,
+    });
+
+    const out = await provider.generateWithTools(
+      [{ role: 'user', content: 'build a gym bot' }],
+      {
+        model: 'openrouter/free',
+        temperature: 0.3,
+        maxTokens: 512,
+        apiKey: 'k',
+        tools: [{ name: 'bots_list', description: 'List bots', parameters: { type: 'object', properties: {} } }],
+      },
+    );
+
+    expect(out.content).toBe('Creating your bot now.');
+    expect(out.toolCalls).toHaveLength(2);
+    expect(out.toolCalls[0]).toEqual({
+      name: 'bot_create_draft',
+      arguments: '{"name":"FitBot","system_prompt":"Coach"}',
+    });
+    expect(out.toolCalls[1].arguments).toEqual('{}'); // raw pass-through; the caller parses
+
+    const body = JSON.parse(String(seen[0].init.body)) as {
+      tools: Array<{ type: string; function: { name: string } }>;
+      tool_choice: string;
+    };
+    expect(body.tools[0]).toMatchObject({ type: 'function', function: { name: 'bots_list' } });
+    expect(body.tool_choice).toBe('auto');
+  });
+
+  test('malformed tool_call entries are dropped, not thrown', async () => {
+    const provider = makeProvider({
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'x', tool_calls: [{ function: {} }, { function: { name: 'ok', arguments: null } }] } }],
+          }) as unknown as BodyInit,
+          { status: 200 },
+        )) as typeof fetch,
+    });
+    const out = await provider.generateWithTools([{ role: 'user', content: 'hi' }], {
+      model: 'm',
+      temperature: 0,
+      maxTokens: 10,
+      apiKey: 'k',
+    });
+    expect(out.toolCalls).toHaveLength(1);
+    expect(out.toolCalls[0]).toMatchObject({ name: 'ok', arguments: {} });
+  });
+
+  test('no tools in config → no tools field sent, empty call list returned', async () => {
+    let body: Record<string, unknown> = {};
+    const provider = makeProvider({
+      fetchImpl: (async (_url: string, init: RequestInit) => {
+        body = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'plain' } }] }) as unknown as BodyInit, {
+          status: 200,
+        });
+      }) as typeof fetch,
+    });
+    const out = await provider.generateWithTools([{ role: 'user', content: 'hi' }], {
+      model: 'm',
+      temperature: 0,
+      maxTokens: 10,
+      apiKey: 'k',
+    });
+    expect(body.tools).toBeUndefined();
+    expect(out).toEqual({ content: 'plain', toolCalls: [] });
+  });
+});

@@ -4,7 +4,9 @@
  * Live traffic showed models emit tool calls as TEXT in several markup
  * dialects instead of the strict JSON envelope the agent loops ask for:
  *
- *   <tool_call>bots_list</tool_call>                                 (Qwen/OpenChat)
+ *   <[t]ool_call>bots_list</tool_call> (Qwen/OpenChat — spelled with a
+ *     character class in this comment because a previous tooling pass
+ *     stripped the plain opening tag from this very source file)
  *   <|tool_call_start|>[bot_create_draft(name='X')]<|tool_call_end|> (CommandR/Hermes)
  *   mcp:tool <invoke name="customers_overview"></invoke> </mcp:tool> (GLM/MCP)
  *   <dots_function_call><invoke name="fleet_status"/></dots_function_call>
@@ -210,7 +212,7 @@ function parseFnBody(body: string): MarkupCall | null {
   return { tool, args: args ?? {} };
 }
 
-/** Parse `<tool_call>` bodies: bare name, name+JSON, JSON, or fn(args). */
+/** Parse a Qwen/OpenChat heredoc body: bare name, name+JSON, JSON, or fn(args). */
 function parseToolCallBody(body: string): MarkupCall | null {
   const trimmed = body.trim();
   if (!trimmed) return null;
@@ -232,7 +234,12 @@ function parseToolCallBody(body: string): MarkupCall | null {
     return null;
   }
   // fn(python args) — may span lines and contain nested quotes/brackets.
-  const fn = /^([A-Za-z_][A-Za-z0-9_]*)\s*\(([\s\S]*)\)\s*$/.exec(trimmed);
+  // Bracketed heredoc form `[fn(a=1)]` (Hermes lists a call as an array
+  // element) is unwrapped first so the same parser handles both.
+  const unbracketed = trimmed.startsWith('[') && trimmed.endsWith(']')
+    ? trimmed.slice(1, -1).trim()
+    : trimmed;
+  const fn = /^([A-Za-z_][A-Za-z0-9_]*)\s*\(([\s\S]*)\)\s*$/.exec(unbracketed);
   if (fn) {
     const args = parsePythonArgs(fn[2]);
     return { tool: fn[1], args: args ?? {} };
@@ -344,8 +351,15 @@ export function extractMarkupCalls(text: string): { calls: MarkupCall[]; cleaned
     take(m.span, parseFnBody(body) ?? parseToolCallBody(body));
   }
 
-  // 3. <tool_call> … </tool_call> (Qwen/OpenChat).
-  for (const m of matchAllSpans(text, /<tool_call>([\s\S]*?)<\/tool_call>/g)) {
+  // 3. Qwen/OpenChat heredoc: the tool_call tag pair wraps a JSON envelope or
+  //    fn(args) body. The OPENING tag is part of the pattern — a lazy
+  //    "any-char run up to the closing tag" alone starts the match at the
+  //    beginning of the message, swallows the whole preamble, fails to parse
+  //    it, and silently DROPS the tool call (live-verified: the bot builder
+  //    died exactly this way). The opening tag is spelled with a character
+  //    class: a previous tooling pass stripped the plain literal from this
+  //    source file, which is how that live failure shipped.
+  for (const m of matchAllSpans(text, /<[t]ool_call>([\s\S]*?)<\/tool_call>/g)) {
     if (inFences(fences, m.span.start)) continue;
     take(m.span, parseToolCallBody(m.groups[0] ?? ''));
   }
@@ -365,8 +379,13 @@ export function extractMarkupCalls(text: string): { calls: MarkupCall[]; cleaned
     .replace(/<\/?dots_function_call>/g, '')
     .replace(/<\/?function_call>/g, '')
     .replace(/<\|?(?:\/)?tool_call_(?:start|end)\|?>/g, '')
+    // Stray/dangling tags: truncated model output leaves unmatched tags
+    // behind — never let markup leak into chat bubbles. The residue strip
+    // uses the same character-class spelling for the same reason as above.
+    .replace(/<\/?[t]ool_call>/g, '')
     .replace(/<\/?invoke\b[^>]*>/g, '')
-    .replace(/<arg_key>[\s\S]*?<\/arg_key>|<arg_value>[\s\S]*?<\/arg_value>/g, '')
+    .replace(/<arg_key>[\s\S]*?<\/arg_key>/g, '')
+    .replace(/<arg_value>[\s\S]*?<\/arg_value>/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();

@@ -15,6 +15,9 @@
  */
 
 export async function registerNode(): Promise<void> {
+  // FIRST: every later boot failure lands in dev.log (data root → logs/dev.log).
+  const { installDevLogger } = await import('./lib/nurae/startup/dev-logger');
+  installDevLogger();
   const { syncSqliteSchema } = await import('./lib/nurae/startup/schema-sync');
   await syncSqliteSchema();
   const { ensureOfficialBot, migrateLegacyZaiBots } = await import('./lib/nurae/auth/official-bot');
