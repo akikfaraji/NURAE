@@ -12,6 +12,11 @@ import { SecretManager } from '@/lib/nurae/secrets';
 import { selectProvider } from '@/lib/nurae/ai/registry';
 import { TelegramAdapter } from '@/lib/nurae/telegram/adapter';
 
+/** Decrypt failures must read as an ACTION for the owner, not as raw crypto noise. */
+function readableSecretError(kind: 'token' | 'API key'): string {
+  return `Stored ${kind} could not be decrypted — the encryption key changed (NURAE_SECRET_KEY rotated or the database path moved). Re-enter the ${kind} in this bot's configuration; it will be re-encrypted with the current key.`;
+}
+
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, ctx: Ctx): Promise<Response> {
@@ -30,11 +35,19 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
       if (!bot.telegramTokenRef) {
         telegram.detail = 'No Telegram token stored yet — add the bot token in configuration.';
       } else {
-        const adapter = new TelegramAdapter({ token: SecretManager.decrypt(bot.telegramTokenRef) });
-        const me = await adapter.getMe();
-        telegram.valid = true;
-        telegram.detail = 'Telegram identity verified.';
-        telegram.username = me.username ? `@${me.username}` : null;
+        let token: string | null = null;
+        try {
+          token = SecretManager.decrypt(bot.telegramTokenRef);
+        } catch {
+          telegram.detail = readableSecretError('token');
+        }
+        if (token !== null) {
+          const adapter = new TelegramAdapter({ token });
+          const me = await adapter.getMe();
+          telegram.valid = true;
+          telegram.detail = 'Telegram identity verified.';
+          telegram.username = me.username ? `@${me.username}` : null;
+        }
       }
     } catch (err) {
       telegram.detail = err instanceof Error ? err.message : String(err);
@@ -42,20 +55,33 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
 
     const provider: { valid: boolean; detail: string } = { valid: false, detail: 'Not checked' };
     try {
-      const selection = selectProvider(bot.provider, {
-        apiKey: bot.apiKeyRef ? SecretManager.decrypt(bot.apiKeyRef) : null,
-        baseUrl: bot.baseUrl,
-      });
-      if (selection.info.requiresKey && !selection.apiKey) {
-        provider.detail = `No API key configured for provider "${selection.info.label}".`;
+      let storedApiKey: string | null = null;
+      let storedKeyError: string | null = null;
+      if (bot.apiKeyRef) {
+        try {
+          storedApiKey = SecretManager.decrypt(bot.apiKeyRef);
+        } catch {
+          storedKeyError = readableSecretError('API key');
+        }
+      }
+      if (storedKeyError) {
+        provider.detail = storedKeyError;
       } else {
-        const check = await selection.provider.validateCredentials({
-          model: bot.model,
-          baseUrl: selection.baseUrl,
-          apiKey: selection.apiKey,
+        const selection = selectProvider(bot.provider, {
+          apiKey: storedApiKey,
+          baseUrl: bot.baseUrl,
         });
-        provider.valid = check.valid;
-        provider.detail = check.detail ?? (check.valid ? 'Valid.' : 'Invalid.');
+        if (selection.info.requiresKey && !selection.apiKey) {
+          provider.detail = `No API key configured for provider "${selection.info.label}".`;
+        } else {
+          const check = await selection.provider.validateCredentials({
+            model: bot.model,
+            baseUrl: selection.baseUrl,
+            apiKey: selection.apiKey,
+          });
+          provider.valid = check.valid;
+          provider.detail = check.detail ?? (check.valid ? 'Valid.' : 'Invalid.');
+        }
       }
     } catch (err) {
       provider.detail = err instanceof Error ? err.message : String(err);

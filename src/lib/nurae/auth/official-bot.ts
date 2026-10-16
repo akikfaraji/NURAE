@@ -114,6 +114,8 @@ export interface OfficialBotStatus {
   ready: boolean; // AI answerable (own key OR env fallback)
   hasTelegramToken: boolean;
   hasApiKey: boolean;
+  /** A stored token/key exists but can no longer be decrypted (encryption key changed) — re-enter both. */
+  secretsUnreadable: boolean;
   status: string | null; // Telegram runtime status
   telegramUsername: string | null;
   transport: string | null;
@@ -123,16 +125,21 @@ export interface OfficialBotStatus {
 export async function officialBotStatus(): Promise<OfficialBotStatus> {
   const bot = await getOfficialBot();
   if (!bot) {
-    return { botId: null, ready: false, hasTelegramToken: false, hasApiKey: false, status: null, telegramUsername: null, transport: null };
+    return { botId: null, ready: false, hasTelegramToken: false, hasApiKey: false, secretsUnreadable: false, status: null, telegramUsername: null, transport: null };
   }
+  const { storedSecretsUnreadable, secretReadable } = await import('../secrets');
   const selection = selectProvider(bot.provider, { apiKey: null, baseUrl: bot.baseUrl });
   const envKey = selection.info.apiKeyEnvVar ? process.env[selection.info.apiKeyEnvVar] || '' : '';
-  const ready = selection.info.requiresKey ? Boolean(bot.apiKeyRef) || Boolean(envKey) : true;
+  // A stored key counts toward "ready" only when it can actually be decrypted;
+  // an unreadable stored key silently falls back to .env at runtime.
+  const storedKeyUsable = Boolean(bot.apiKeyRef) && secretReadable(bot.apiKeyRef);
+  const ready = selection.info.requiresKey ? storedKeyUsable || Boolean(envKey) : true;
   return {
     botId: bot.id,
     ready,
     hasTelegramToken: Boolean(bot.telegramTokenRef),
     hasApiKey: Boolean(bot.apiKeyRef),
+    secretsUnreadable: storedSecretsUnreadable(bot.telegramTokenRef, bot.apiKeyRef),
     status: bot.status,
     telegramUsername: bot.telegramUsername,
     transport: bot.transport,

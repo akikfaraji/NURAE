@@ -184,6 +184,8 @@ export interface FleetBotStatus {
   botId: string | null;
   hasTelegramToken: boolean;
   hasApiKey: boolean;
+  /** A stored token/key exists but can no longer be decrypted (encryption key changed) — re-enter both. */
+  secretsUnreadable: boolean;
   /** AI answerable: bot key stored OR the provider's env fallback exists. */
   ready: boolean;
   status: string | null;
@@ -213,6 +215,7 @@ export async function officialFleetStatus(): Promise<FleetBotStatus[]> {
         botId: null,
         hasTelegramToken: false,
         hasApiKey: false,
+        secretsUnreadable: false,
         ready: false,
         status: null,
         transport: null,
@@ -220,14 +223,19 @@ export async function officialFleetStatus(): Promise<FleetBotStatus[]> {
       });
       continue;
     }
+    const { storedSecretsUnreadable, secretReadable } = await import('../secrets');
     const selection = selectProvider(bot.provider, { apiKey: null, baseUrl: bot.baseUrl });
     const envKey = selection.info.apiKeyEnvVar ? process.env[selection.info.apiKeyEnvVar] || '' : '';
-    const ready = selection.info.requiresKey ? Boolean(bot.apiKeyRef) || Boolean(envKey) : true;
+    // A stored key counts toward "ready" only when it can actually be decrypted;
+    // an unreadable stored key silently falls back to .env at runtime.
+    const storedKeyUsable = Boolean(bot.apiKeyRef) && secretReadable(bot.apiKeyRef);
+    const ready = selection.info.requiresKey ? storedKeyUsable || Boolean(envKey) : true;
     out.push({
       ...base,
       botId: bot.id,
       hasTelegramToken: Boolean(bot.telegramTokenRef),
       hasApiKey: Boolean(bot.apiKeyRef),
+      secretsUnreadable: storedSecretsUnreadable(bot.telegramTokenRef, bot.apiKeyRef),
       ready,
       status: bot.status,
       transport: bot.transport,

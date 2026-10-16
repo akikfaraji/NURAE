@@ -590,6 +590,11 @@ export function OfficialBotCard({
             pendingText={o?.status ? o.status : 'Not started yet'}
           />
         </div>
+        {o?.secretsUnreadable && (
+          <p role="alert" className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            Stored credentials can no longer be decrypted (the encryption key changed). The .env fallback does NOT apply while a stored key exists — open the bot, re-enter the token and API key, then save.
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
             Setup: {stepsDone}/2 keys · customers chat on your site with just the AI key; add a token from @BotFather to run it on Telegram.
@@ -678,11 +683,14 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
       <CardContent className="space-y-0">
         {(fleet ?? []).map((entry) => {
           const needsToken = !entry.hasTelegramToken;
+          const unreadable = Boolean(entry.secretsUnreadable);
           const stateLabel = entry.status === 'running'
             ? `Running${entry.transport ? ` (${entry.transport})` : ''}`
-            : needsToken
-              ? 'Needs token'
-              : 'Ready to start';
+            : unreadable
+              ? 'Credentials unreadable'
+              : needsToken
+                ? 'Needs token'
+                : 'Ready to start';
           return (
             <div
               key={entry.templateId}
@@ -692,26 +700,33 @@ export function OfficialFleetCard({ onOpenBot }: { onOpenBot: (botId: string) =>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium text-foreground">{entry.name}</span>
                   <span className="text-[11px] uppercase tracking-widest text-muted-foreground">{entry.category}</span>
+                  {unreadable && (
+                    <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive" title="Encryption key changed — re-enter the token and API key in the bot settings">
+                      re-enter credentials
+                    </span>
+                  )}
                 </div>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">{entry.tagline}</p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <span
                   className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-                  title={needsToken ? 'Paste a @BotFather token in the bot page' : undefined}
+                  title={unreadable ? 'Encryption key changed — re-enter the token and API key in the bot settings' : needsToken ? 'Paste a @BotFather token in the bot page' : undefined}
                 >
                   <span
                     className={
                       'inline-block h-1.5 w-1.5 rounded-full ' +
-                      (entry.status === 'running'
-                        ? 'animate-pulse bg-foreground'
-                        : needsToken
-                          ? 'bg-muted-foreground'
-                          : 'bg-muted-foreground/60')
+                      (unreadable
+                        ? 'bg-destructive'
+                        : entry.status === 'running'
+                          ? 'animate-pulse bg-foreground'
+                          : needsToken
+                            ? 'bg-muted-foreground'
+                            : 'bg-muted-foreground/60')
                     }
                   />
                   {/* The blocker stays visible — a tooltip alone never reaches touch. */}
-                  {needsToken ? 'Needs a @BotFather token' : stateLabel}
+                  {unreadable ? 'Re-enter credentials' : needsToken ? 'Needs a @BotFather token' : stateLabel}
                 </span>
                 {entry.telegramUsername && (
                   <span className="hidden font-mono text-xs text-muted-foreground sm:inline">

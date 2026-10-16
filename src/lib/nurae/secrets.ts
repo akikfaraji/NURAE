@@ -105,9 +105,37 @@ export function decryptSecret(payload: string): string {
   return dec.toString('utf8');
 }
 
-/** True when the string looks like an encrypted secret payload. */
+/**
+ * True when the string looks like an encrypted secret payload.
+ */
 export function isEncryptedSecret(value: string): boolean {
   return value.startsWith('v1:');
+}
+
+/**
+ * True when the stored secret ref decrypts cleanly with the current master
+ * key. Absent refs are vacuously readable. Used to decide whether a stored
+ * credential can actually be used (runtime silently falls back to .env when
+ * it cannot) and to warn owners that re-entry is required when it cannot.
+ */
+export function secretReadable(ref: string | null | undefined): boolean {
+  if (!ref) return true;
+  try {
+    decryptSecret(ref);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when ANY of the given stored secret refs exists but can no longer be
+ * decrypted with the current master key (NURAE_SECRET_KEY rotated, or the
+ * database/key-file path moved). Dashboards use this to tell an owner
+ * "re-enter your credentials" instead of showing a configured-but-dead bot.
+ */
+export function storedSecretsUnreadable(...refs: Array<string | null | undefined>): boolean {
+  return refs.some((ref) => !secretReadable(ref));
 }
 
 export const SecretManager = {

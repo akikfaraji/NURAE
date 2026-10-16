@@ -12,11 +12,13 @@ import { Button } from '@/components/ui/button';
 import { RefreshIcon } from '@/components/nurae/icons';
 
 interface AiHealth {
-  status: 'ok' | 'invalid' | 'missing' | 'unreachable' | 'unconfigured';
+  status: 'ok' | 'invalid' | 'missing' | 'unreadable' | 'unreachable' | 'unconfigured';
   ok: boolean;
   provider: string | null;
   model: string | null;
   envVar: string | null;
+  keySource?: 'stored' | 'env' | null;
+  storedUnreadable?: boolean;
   detail: string;
   checkedAt: string;
 }
@@ -25,6 +27,7 @@ const TITLES: Record<AiHealth['status'], string> = {
   ok: 'AI provider connected',
   invalid: 'AI key rejected - agents and official bots are offline',
   missing: 'No AI key configured - agents and official bots are offline',
+  unreadable: 'Stored AI key unreadable - re-enter it in the bot settings',
   unreachable: 'AI provider unreachable',
   unconfigured: 'Official bot not set up yet',
 };
@@ -65,6 +68,7 @@ export function AiHealthBanner() {
             Provider: {health.provider}
             {health.model ? ` · model: ${health.model}` : ''}
             {health.envVar ? ` · env var: ${health.envVar}` : ''}
+            {health.keySource ? ` · key source: ${health.keySource === 'stored' ? 'bot settings (overrides .env)' : '.env fallback'}` : ''}
           </p>
         )}
       </div>

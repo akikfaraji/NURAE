@@ -244,6 +244,8 @@ export interface FleetEntry {
   botId: string | null;
   hasTelegramToken: boolean;
   hasApiKey: boolean;
+  /** Stored token/key exists but can no longer be decrypted — re-enter both in the bot settings. */
+  secretsUnreadable?: boolean;
   ready: boolean;
   status: string | null;
   transport: string | null;
@@ -256,6 +258,8 @@ export interface OfficialBotResponse {
     ready: boolean;
     hasTelegramToken: boolean;
     hasApiKey: boolean;
+    /** Stored token/key exists but can no longer be decrypted — re-enter both in the bot settings. */
+    secretsUnreadable?: boolean;
     status: string | null;
     telegramUsername: string | null;
     transport: string | null;
