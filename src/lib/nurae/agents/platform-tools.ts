@@ -95,6 +95,7 @@ const platformOverview: ToolSpec = {
             openai: Boolean(process.env.OPENAI_API_KEY),
             openrouter: Boolean(process.env.OPENROUTER_API_KEY),
             deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
+            orca: Boolean(process.env.ORCA_API_KEY),
             glm: Boolean(process.env.GLM_API_KEY),
             local: Boolean(process.env.LOCAL_API_KEY),
           },
@@ -441,7 +442,7 @@ const fleetBotUpdate: ToolSpec = {
       botId: botIdSchema.optional(),
       description: z.string().min(1).max(2000).optional(),
       systemPrompt: z.string().min(1).max(8000).optional(),
-      provider: z.enum(['openai', 'openrouter', 'deepseek', 'glm', 'local', 'custom']).optional(),
+      provider: z.enum(['openai', 'openrouter', 'deepseek', 'orca', 'glm', 'local', 'custom']).optional(),
       model: z.string().min(1).max(200).optional(),
       temperature: z.number().min(0).max(2).optional(),
     })

@@ -7,6 +7,7 @@
  *   AIProvider
  *   ├── openai     (OpenAI-compatible HTTP)
  *   ├── openrouter (OpenAI-compatible HTTP — free models included)
+ *   ├── orca       (OrcaRouter — OpenAI-compatible multi-vendor gateway)
  *   ├── deepseek   (OpenAI-compatible HTTP)
  *   ├── glm        (Zhipu open platform — OpenAI-compatible HTTP)
  *   ├── local      (Ollama / llama.cpp / vLLM — OpenAI-compatible HTTP)

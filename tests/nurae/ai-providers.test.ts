@@ -36,13 +36,23 @@ function makeProvider(overrides?: Partial<ConstructorParameters<typeof OpenAICom
 describe('provider registry & selector', () => {
   test('catalog covers the required provider families', () => {
     const ids = PROVIDER_CATALOG.map((p) => p.id);
-    for (const id of ['openai', 'openrouter', 'deepseek', 'glm', 'local', 'custom']) {
+    for (const id of ['openai', 'openrouter', 'deepseek', 'orca', 'glm', 'local', 'custom']) {
       expect(ids).toContain(id);
     }
     expect(ids).not.toContain('zai'); // built-in GLM removed
     expect(getProviderInfo('openrouter')?.defaultModel).toBe('openrouter/free');
     expect(getProviderInfo('openai')?.requiresKey).toBe(true);
     expect(getProviderInfo('openai')?.defaultBaseUrl).toBe('https://api.openai.com/v1');
+    expect(getProviderInfo('orca')?.defaultBaseUrl).toBe('https://api.orcarouter.ai/v1');
+    expect(getProviderInfo('orca')?.apiKeyEnvVar).toBe('ORCA_API_KEY');
+    expect(getProviderInfo('local')?.defaultBaseUrl).toBe('http://127.0.0.1:8080/v1');
+  });
+
+  test('selectProvider resolves orca to the OpenAI-compatible gateway base URL', () => {
+    const sel = selectProvider('orca', { apiKey: 'sk-orca-test' });
+    expect(sel.provider.id).toBe('orca');
+    expect(sel.baseUrl).toBe('https://api.orcarouter.ai/v1');
+    expect(sel.apiKey).toBe('sk-orca-test');
   });
 
   test('selectProvider returns a working provider instance', () => {

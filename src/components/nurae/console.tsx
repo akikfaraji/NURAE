@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { OverviewView, ProjectView, ProjectsView, CustomersView, AdminBotsView, SiteSettingsView, OfficialBotCard, OfficialFleetCard } from '@/components/nurae/views';
+import { DepthBackground, Glass, Kicker, PageContainer } from '@/components/nurae/depth';
 import { BotView } from '@/components/nurae/bot-view';
 import { OperatorAgentView } from '@/components/nurae/operator-view';
 import { Catalog, nuraeApi } from '@/lib/nurae-client/api';
@@ -215,9 +216,10 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-6xl items-center gap-4 px-4 sm:px-6">
+    <div className="relative flex min-h-screen flex-col">
+      <DepthBackground />
+      <header className="sticky top-0 z-20 shrink-0 border-b border-[color:var(--depth-line)] bg-[color:var(--depth-1)] backdrop-blur-xl">
+        <div className="mx-auto flex h-12 max-w-none items-center gap-4 px-4 sm:px-6 lg:px-8">
           <button
             className="flex shrink-0 items-baseline gap-2 text-left"
             onClick={() => go({ type: 'overview' })}
@@ -289,11 +291,14 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+      <main className="relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 lg:px-8">
+        <div className="n-workspace">
+          <div className="min-w-0">
         {view.type === 'overview' && (
           <div className="mb-6">
+            <Kicker className="mb-1.5">NURAE Admin</Kicker>
             <h1 className="text-xl font-semibold text-foreground sm:text-2xl">Dashboard</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               The official bot, the built-in fleet, and the state of the platform — {NURAE_VERSION}.
             </p>
             <div className="mt-6 space-y-4">
@@ -338,10 +343,77 @@ export function NuraeConsole({ initialSection }: { initialSection?: string }) {
             onBack={() => go({ type: 'project', id: view.projectId })}
           />
         )}
+          </div>
+
+          {/* Runtime rail. Real state only: nav, version, core reachability and
+              the current surface. It exists because a console page that ends
+              two inches down the viewport reads as a bug, and because these
+              are the four facts worth keeping visible while you work. */}
+          <aside className="hidden xl:block">
+            <div className="sticky top-20 space-y-3">
+              <div className="n-glass p-3">
+                <p className="n-kicker mb-2">Workspace</p>
+                <nav className="flex flex-col gap-0.5">
+                  {([
+                    ['overview', 'Dashboard'],
+                    ['bots', 'Bots'],
+                    ['projects', 'Projects'],
+                    ['agent', 'Agent'],
+                    ['customers', 'Customers'],
+                    ['settings', 'Site'],
+                  ] as const).map(([key, label]) => {
+                    const active = key === 'overview' ? view.type === 'overview' : view.type === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => go(key === 'overview' ? { type: 'overview' } : ({ type: key } as View))}
+                        className={
+                          'flex h-7 items-center rounded-md px-2 text-left text-[12.5px] transition-colors ' +
+                          (active ? 'bg-white/6 text-foreground' : 'text-muted-foreground hover:text-foreground')
+                        }
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+              <div className="n-glass p-3">
+                <p className="n-kicker mb-2">Runtime</p>
+                <dl className="m-0 space-y-1.5 text-[12px]">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="m-0 text-muted-foreground">Version</dt>
+                    <dd className="n-num m-0">{NURAE_VERSION}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="m-0 text-muted-foreground">Core</dt>
+                    <dd className="n-num m-0">{coreUp === null ? '…' : coreUp ? 'online' : 'offline'}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="m-0 text-muted-foreground">Surface</dt>
+                    <dd className="n-num m-0">{view.type}</dd>
+                  </div>
+                </dl>
+              </div>
+              <div className="n-glass p-3">
+                <p className="n-kicker mb-2">Jump to</p>
+                <div className="flex flex-col gap-1 text-[12.5px]">
+                  <Link href="/admin/agent" className="text-muted-foreground transition-colors hover:text-foreground">
+                    Ask the operator
+                  </Link>
+                  <Link href="/" className="text-muted-foreground transition-colors hover:text-foreground">
+                    Open the public site
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
       </main>
 
-      <footer className="mt-auto border-t border-border/60 bg-background">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-[11px] text-muted-foreground sm:px-6">
+      <footer className="mt-auto border-t border-[color:var(--depth-line-soft)] bg-transparent">
+        <div className="mx-auto flex max-w-none flex-wrap items-center justify-between gap-2 px-4 py-4 text-[11px] text-muted-foreground sm:px-6 lg:px-8">
           <span>
             NURAE <span className="font-mono">{NURAE_VERSION}</span>
           </span>
@@ -372,30 +444,32 @@ function LoginGate({ onAuthenticated }: { onAuthenticated: () => void | Promise<
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <PageContainer mainClassName="flex items-center justify-center">
       <div className="w-full max-w-xs">
-        <h1 className="text-lg font-medium text-foreground">NURAE Admin</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Enter the admin token to continue.
-        </p>
-        <form onSubmit={submit} className="mt-6 space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="admin-token" className="sr-only">Admin token</Label>
-            <Input
-              id="admin-token"
-              type="password"
-              autoComplete="current-password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Admin token"
-              autoFocus
-            />
-          </div>
-          <Button type="submit" className="w-full" size="sm" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </form>
+        <Glass className="p-5">
+          <h1 className="text-lg font-medium text-foreground">NURAE Admin</h1>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Enter the admin token to continue.
+          </p>
+          <form onSubmit={submit} className="mt-6 space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-token" className="sr-only">Admin token</Label>
+              <Input
+                id="admin-token"
+                type="password"
+                autoComplete="current-password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Admin token"
+                autoFocus
+              />
+            </div>
+            <Button type="submit" className="w-full" size="sm" disabled={busy}>
+              {busy ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
+        </Glass>
       </div>
-    </div>
+    </PageContainer>
   );
 }

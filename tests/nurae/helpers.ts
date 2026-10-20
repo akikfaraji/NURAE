@@ -45,6 +45,7 @@ process.env.DATABASE_URL = TEST_DB_URL;
 process.env.OPENAI_API_KEY = '';
 process.env.OPENROUTER_API_KEY = '';
 process.env.DEEPSEEK_API_KEY = '';
+process.env.ORCA_API_KEY = '';
 process.env.GLM_API_KEY = '';
 process.env.LOCAL_API_KEY = '';
 process.env.CUSTOM_API_KEY = '';

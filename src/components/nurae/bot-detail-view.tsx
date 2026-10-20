@@ -1,15 +1,19 @@
 'use client';
 
 /**
- * NURAE — /bots/[id]: one bot, end to end.
+ * NURAE — /bots/[id]: one bot, end to end (V4 Depth studio layout).
  *
- * Sections (Behavior is the primary surface — the technical layer is underneath):
- *   header row    name · status · run / stop / restart (run = go live)
- *   behavior      what the bot does, in plain language (the source of truth)
- *   preview       a REAL pipeline turn — exactly what Telegram will deliver
- *   configuration identity + AI settings (token/key write-only)
- *   advanced      raw commands / replies (escape hatch; a later behavior save recompiles)
- *   danger zone   archive / delete (two-step)
+ *   banner        breadcrumb kicker · live status · run / stop / restart
+ *   workspace     one tabbed Glass panel — every panel stays mounted (hidden
+ *                 when inactive) so switching tabs never drops form state,
+ *                 preview captures or unsaved drafts:
+ *     behavior       what the bot does, in plain language (the source of truth)
+ *     preview        a REAL pipeline turn — exactly what Telegram will deliver
+ *     ecosystem      audience · broadcast · schedules · payments
+ *     configuration  identity + AI settings (token/key write-only)
+ *     advanced       raw commands / replies (escape hatch; a later behavior save recompiles)
+ *     danger zone    archive / delete (two-step)
+ *   rail (lg+)    sticky facts only — status, wiring, config numbers, timestamps
  *
  * Everything talks to ownership-checked /api/my/bots endpoints.
  */
@@ -21,7 +25,8 @@ import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-she
 import { Markdown } from '@/components/nurae/markdown';
 import { BehaviorSection } from '@/components/nurae/bot-behavior-section';
 import { AudienceSection, BroadcastSection, PaymentsSection, SchedulesSection } from '@/components/nurae/bot-ecosystem-sections';
-import { PageFade } from '@/components/nurae/bits';
+import { Pill, StatusBadge } from '@/components/nurae/bits';
+import { Glass, Kicker, Metric, PageContainer } from '@/components/nurae/depth';
 import {
   ApiError,
   CapturedSendDTO,
@@ -62,6 +67,7 @@ export function BotDetailView() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<WorkspaceTab>('behavior');
 
   const load = useCallback(async () => {
     try {
@@ -199,114 +205,287 @@ export function BotDetailView() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    <>
       <SiteHeader user={user} onSignOut={signOut} />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6">
-        <PageFade>
-        {/* Header row */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link href="/bots" className="text-xs text-muted-foreground hover:text-foreground">← Bots</Link>
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span
-              aria-hidden
-              className={
-                'h-1.5 w-1.5 rounded-full ' +
-                (bot.status === 'running' ? 'animate-pulse bg-foreground' : bot.status === 'error' ? 'bg-destructive' : 'bg-muted-foreground/40')
-              }
-            />
-            {bot.status}
-            {bot.telegramUsername ? ` · ${bot.telegramUsername}` : ''}
+      <PageContainer
+        variant="studio"
+        // The sticky 48px SiteHeader sits above this column; hand its height
+        // back so a short page still ends flush with the viewport.
+        className="min-h-[calc(100dvh-48px)]"
+        mainClassName="mx-auto w-full max-w-6xl"
+        kicker={
+          <>
+            <Link href="/bots" className="underline-offset-4 hover:text-foreground hover:underline">
+              Bots
+            </Link>
+            <span className="text-muted-foreground/50"> / </span>
+            <span className="text-foreground/70">{bot.name}</span>
+          </>
+        }
+        title={bot.name}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={bot.status} />
+            {bot.telegramUsername ? (
+              <span className="font-mono text-[11px] text-muted-foreground">@{bot.telegramUsername}</span>
+            ) : null}
           </span>
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {bot.status === 'running' ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={saving}
-                  title="Stop the bot — it stops answering on Telegram until you run it again"
-                  onClick={() => void unpublish()}
-                >
-                  Stop
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={saving}
-                  title="Restart — reloads the bot's configuration and re-registers the Telegram webhook"
-                  onClick={() => void restart()}
-                >
-                  {saving ? '…' : 'Restart'}
-                </Button>
-              </>
-            ) : (
+        }
+        actions={
+          bot.status === 'running' ? (
+            <>
               <Button
                 size="sm"
+                variant="outline"
                 disabled={saving}
-                title="Put the bot live on Telegram — it starts answering right away"
-                onClick={() => void publish()}
+                title="Stop the bot — it stops answering on Telegram until you run it again"
+                onClick={() => void unpublish()}
               >
-                {saving ? '…' : bot.status === 'stopped' || bot.status === 'error' ? 'Run' : 'Publish'}
+                Stop
               </Button>
-            )}
-          </div>
-        </div>
-        <h1 className="mt-3 text-xl font-medium tracking-tight text-foreground">{bot.name}</h1>
-        {bot.statusDetail && (
-          <p className="mt-1 text-xs text-destructive">{bot.statusDetail}</p>
-        )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saving}
+                title="Restart — reloads the bot's configuration and re-registers the Telegram webhook"
+                onClick={() => void restart()}
+              >
+                {saving ? '…' : 'Restart'}
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              disabled={saving}
+              title="Put the bot live on Telegram — it starts answering right away"
+              onClick={() => void publish()}
+            >
+              {saving ? '…' : bot.status === 'stopped' || bot.status === 'error' ? 'Run' : 'Publish'}
+            </Button>
+          )
+        }
+      >
+        {bot.statusDetail && <p className="mt-3 text-xs text-destructive">{bot.statusDetail}</p>}
         {savedAt && <p className="mt-1 text-[11px] text-muted-foreground">Saved {savedAt}</p>}
         {error && <p className="mt-1 text-xs text-destructive" role="alert">{error}</p>}
 
-        {/* Behavior — the primary surface */}
-        <BehaviorSection bot={bot} saving={saving} onSave={patch} />
+        {/* Studio workspace: tabbed panel + telemetry rail. Every panel stays
+            mounted (hidden when inactive) so tab switches never drop form
+            state, preview captures or unsaved drafts. */}
+        <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_264px]">
+          <Glass bleed className="overflow-hidden">
+            <WorkspaceTabs active={tab} onChange={setTab} />
+            <div className="p-4 sm:p-5">
+              <TabPanel id="behavior" active={tab === 'behavior'}>
+                {/* BehaviorSection and the ecosystem sections carry their own
+                    stacked-section margins — drop the redundant first one. */}
+                <div className="[&>*:first-child]:mt-0 [&>*:first-child]:border-t-0 [&>*:first-child]:pt-0">
+                  <BehaviorSection bot={bot} saving={saving} onSave={patch} />
+                </div>
+              </TabPanel>
+              <TabPanel id="preview" active={tab === 'preview'}>
+                <PreviewSection bot={bot} />
+              </TabPanel>
+              <TabPanel id="ecosystem" active={tab === 'ecosystem'}>
+                <div className="[&>*:first-child]:mt-0 [&>*:first-child]:border-t-0 [&>*:first-child]:pt-0">
+                  <AudienceSection botId={botId} refreshKey={0} />
+                  <BroadcastSection botId={botId} refreshKey={0} onSent={() => void load()} />
+                  <SchedulesSection botId={botId} refreshKey={0} />
+                  <PaymentsSection botId={botId} refreshKey={0} />
+                </div>
+              </TabPanel>
+              <TabPanel id="configuration" active={tab === 'configuration'}>
+                <ConfigSection bot={bot} catalog={catalog} saving={saving} onSave={patch} />
+              </TabPanel>
+              <TabPanel id="advanced" active={tab === 'advanced'}>
+                <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground/80">
+                  The technical internals that Behaviors compile into. You can edit them by hand —
+                  note that the next change to Behaviors recompiles and replaces them.
+                </p>
+                <div className="mt-4 space-y-6">
+                  <CommandsSection bot={bot} saving={saving} onSave={patch} />
+                  <RepliesSection bot={bot} saving={saving} onSave={patch} />
+                </div>
+              </TabPanel>
+              <TabPanel id="danger" active={tab === 'danger'}>
+                <div className="flex flex-wrap gap-2">
+                  <DangerButton label={bot.archived ? 'Unarchive' : 'Archive'} onConfirm={() => void patch({ archived: !bot.archived })} />
+                  <DangerButton label="Delete bot" destructive onConfirm={() => void remove()} />
+                </div>
+              </TabPanel>
+            </div>
+          </Glass>
+          <TelemetryRail bot={bot} savedAt={savedAt} />
+        </div>
+      </PageContainer>
+    </>
+  );
+}
 
-        {/* Preview — the real pipeline */}
-        <PreviewSection bot={bot} />
+/**
+ * Depth idiom for in-panel sections: one Kicker heading, optional hint, content.
+ * Stacked-section margins are gone — the tab panel owns spacing now.
+ */
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <Kicker>{title}</Kicker>
+      {hint && <p className="mb-4 max-w-2xl text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
+      <div>{children}</div>
+    </section>
+  );
+}
 
-        {/* Ecosystem — audience, reach, rhythm, money */}
-        <AudienceSection botId={botId} refreshKey={0} />
-        <BroadcastSection botId={botId} refreshKey={0} onSent={() => void load()} />
-        <SchedulesSection botId={botId} refreshKey={0} />
-        <PaymentsSection botId={botId} refreshKey={0} />
+// ---------------------------------------------------------------------------
+// Studio workspace — tabs (state-preserving) + telemetry rail
+// ---------------------------------------------------------------------------
 
-        {/* Configuration */}
-        <ConfigSection bot={bot} catalog={catalog} saving={saving} onSave={patch} />
+const WORKSPACE_TABS = [
+  { id: 'behavior', label: 'Behavior' },
+  { id: 'preview', label: 'Preview' },
+  { id: 'ecosystem', label: 'Ecosystem' },
+  { id: 'configuration', label: 'Configuration' },
+  { id: 'advanced', label: 'Advanced' },
+  { id: 'danger', label: 'Danger zone' },
+] as const;
 
-        {/* Advanced — the technical layer, by choice */}
-        <details className="mt-12 border-t border-border/60 pt-6">
-          <summary className="cursor-pointer text-xs font-medium uppercase tracking-widest text-muted-foreground hover:text-foreground">
-            Advanced · commands &amp; replies
-          </summary>
-          <p className="mt-2 max-w-2xl text-xs leading-relaxed text-muted-foreground/80">
-            The technical internals that Behaviors compile into. You can edit them by hand —
-            note that the next change to Behaviors recompiles and replaces them.
-          </p>
-          <CommandsSection bot={bot} saving={saving} onSave={patch} />
-          <RepliesSection bot={bot} saving={saving} onSave={patch} />
-        </details>
+type WorkspaceTab = (typeof WORKSPACE_TABS)[number]['id'];
 
-        {/* Danger zone */}
-        <section className="mt-12 border-t border-border/60 pt-6">
-          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Danger zone</h2>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <DangerButton label={bot.archived ? 'Unarchive' : 'Archive'} onConfirm={() => void patch({ archived: !bot.archived })} />
-            <DangerButton label="Delete bot" destructive onConfirm={() => void remove()} />
-          </div>
-        </section>
-        </PageFade>
-      </main>
+/** Tab strip with roving tabindex; Arrow keys / Home / End move between tabs. */
+function WorkspaceTabs({ active, onChange }: { active: WorkspaceTab; onChange: (id: WorkspaceTab) => void }) {
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const idx = WORKSPACE_TABS.findIndex((t) => t.id === active);
+    let next: number | null = null;
+    if (e.key === 'ArrowRight') next = (idx + 1) % WORKSPACE_TABS.length;
+    else if (e.key === 'ArrowLeft') next = (idx + WORKSPACE_TABS.length - 1) % WORKSPACE_TABS.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = WORKSPACE_TABS.length - 1;
+    if (next !== null) {
+      e.preventDefault();
+      onChange(WORKSPACE_TABS[next].id);
+      tabRefs.current[next]?.focus();
+    }
+  };
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Bot workspace sections"
+      onKeyDown={onKeyDown}
+      className="flex flex-wrap items-end gap-1 border-b border-[color:var(--depth-line)] px-2 pt-2"
+    >
+      {WORKSPACE_TABS.map((t, i) => {
+        const selected = active === t.id;
+        return (
+          <button
+            key={t.id}
+            ref={(el) => {
+              tabRefs.current[i] = el;
+            }}
+            type="button"
+            role="tab"
+            id={`bot-tab-${t.id}`}
+            aria-selected={selected}
+            aria-controls={`bot-panel-${t.id}`}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onChange(t.id)}
+            className={
+              'n-press -mb-px rounded-t-lg border border-b-0 px-3 py-2 text-[12px] transition-colors ' +
+              (selected
+                ? 'border-[color:var(--depth-line)] bg-white/[0.04] text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground')
+            }
+          >
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+/** Panel wrapper — stays MOUNTED when hidden so state survives tab switches. */
+function TabPanel({ id, active, children }: { id: WorkspaceTab; active: boolean; children: React.ReactNode }) {
   return (
-    <section className="mt-10 border-t border-border/60 pt-6">
-      <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{title}</h2>
-      {hint && <p className="mt-1 text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
-      <div className="mt-4">{children}</div>
-    </section>
+    <div role="tabpanel" id={`bot-panel-${id}`} aria-labelledby={`bot-tab-${id}`} hidden={!active}>
+      {children}
+    </div>
+  );
+}
+
+/** One labelled fact line in the telemetry rail. */
+function RailFact({
+  label,
+  value,
+  mono = false,
+  num = false,
+  alert = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+  num?: boolean;
+  alert?: boolean;
+}) {
+  return (
+    <div className="border-b border-[color:var(--depth-line-soft)] py-2 last:border-b-0">
+      <Kicker className="mb-1">{label}</Kicker>
+      <p
+        className={
+          'm-0 truncate text-[12.5px] ' +
+          (alert ? 'text-destructive ' : 'text-foreground ') +
+          (mono ? 'font-mono text-[11.5px] ' : '') +
+          (num ? 'n-num ' : '')
+        }
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The lg+ telemetry rail. The file has no token-usage or latency data, so the
+ * rail carries only what the code actually has: status, wiring, config
+ * numbers and timestamps. Nothing here is invented.
+ */
+function TelemetryRail({ bot, savedAt }: { bot: UserBotDTO; savedAt: string | null }) {
+  return (
+    <Glass as="aside" className="sticky top-16 self-start">
+      <Kicker>Status</Kicker>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <StatusBadge status={bot.status} />
+        {bot.archived ? <Pill>Archived</Pill> : null}
+      </div>
+
+      <div className="mt-4">
+        <RailFact label="Telegram" value={bot.telegramUsername ? `@${bot.telegramUsername}` : 'not connected'} mono />
+        <RailFact label="Telegram token" value={bot.hasTelegramToken ? 'stored' : 'missing'} alert={!bot.hasTelegramToken} />
+        <RailFact label="AI provider key" value={bot.hasApiKey ? 'stored' : 'not set'} />
+        <RailFact label="Provider / model" value={`${bot.provider} / ${bot.model}`} mono />
+        <RailFact
+          label="Owner alerts"
+          value={bot.ownerChatId ? `wired to ${bot.ownerChatId}` : 'not set'}
+          mono={Boolean(bot.ownerChatId)}
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-3 border-b border-[color:var(--depth-line-soft)] pb-4">
+        <Metric label="Behaviors" value={bot.behaviors.length} />
+        <Metric label="Commands" value={bot.commands.length} />
+        <Metric label="Replies" value={bot.replies.length} />
+      </div>
+
+      <div className="mt-2">
+        <RailFact label="Temperature" value={bot.temperature} num />
+        <RailFact label="Max tokens" value={bot.maxTokens} num />
+        <RailFact label="Memory" value={bot.memorySize} num />
+        <RailFact label="Last updated" value={new Date(bot.updatedAt).toLocaleString()} num />
+        <RailFact label="Last saved" value={savedAt ?? '—'} num />
+      </div>
+    </Glass>
   );
 }
 

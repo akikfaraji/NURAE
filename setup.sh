@@ -157,6 +157,7 @@ NURAE_BOT_TRANSPORT=polling
 OPENAI_API_KEY=
 OPENROUTER_API_KEY=
 DEEPSEEK_API_KEY=
+ORCA_API_KEY=
 GLM_API_KEY=
 LOCAL_API_KEY=
 CUSTOM_API_KEY=
@@ -174,15 +175,16 @@ optional_ai_key() {
   printf '\nOptional: paste a default AI API key now (Enter to skip — you can\nadd keys per-bot in the dashboard later): '
   read -r aikey
   [[ -n "$aikey" ]] || return 0
-  echo "  1) openai   2) openrouter   3) deepseek   4) glm   5) local   6) custom"
-  printf  '  Provider number [1-6, Enter = openrouter]: '
+  echo "  1) openai   2) openrouter   3) deepseek   4) orca   5) glm   6) local   7) custom"
+  printf  '  Provider number [1-7, Enter = openrouter]: '
   read -r pick
   case "${pick:-2}" in
     1) VAR=OPENAI_API_KEY ;;
     3) VAR=DEEPSEEK_API_KEY ;;
-    4) VAR=GLM_API_KEY ;;
-    5) VAR=LOCAL_API_KEY ;;
-    6) VAR=CUSTOM_API_KEY ;;
+    4) VAR=ORCA_API_KEY ;;
+    5) VAR=GLM_API_KEY ;;
+    6) VAR=LOCAL_API_KEY ;;
+    7) VAR=CUSTOM_API_KEY ;;
     *) VAR=OPENROUTER_API_KEY ;;
   esac
   local esc="${aikey//&/\\&}"; esc="${esc//|/\\|}"

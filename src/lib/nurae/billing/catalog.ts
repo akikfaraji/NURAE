@@ -42,7 +42,7 @@ export const DEFAULT_CATALOG: FeatureSpec[] = [
   {
     key: 'ai_assistant',
     displayName: 'NURAE assistant turn',
-    description: 'AI turns in the NURAE chat, support chat and handoff suggestions.',
+    description: 'AI turns in the NURAE assistant chat and handoff suggestions.',
     unit: 'turn',
     unitPriceMicros: 2_000, // $0.002
     freeDailyUnits: 25,

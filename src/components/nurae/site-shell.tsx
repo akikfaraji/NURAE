@@ -298,8 +298,8 @@ export function SiteHeader({
   const currentHref = activeHref(pathname, [...nav, ...extraNav]);
 
   return (
-    <header className="sticky top-0 z-30 shrink-0 border-b border-border/60 bg-background/85 backdrop-blur">
-      <div className="mx-auto flex h-12 max-w-6xl items-center gap-4 px-4 sm:px-6">
+    <header className="sticky top-0 z-30 shrink-0 border-b border-[color:var(--depth-line)] bg-[color:var(--depth-1)] backdrop-blur-xl">
+      <div className="mx-auto flex h-12 max-w-none items-center gap-4 px-4 sm:px-6 lg:px-8">
         {/* Mobile menu */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           {!hideMobileMenu && (
@@ -372,8 +372,8 @@ export function SiteHeader({
 
 export function SiteFooter({ siteName }: { siteName: string }) {
   return (
-    <footer className="mt-auto border-t border-border/60 bg-background">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-[11px] text-muted-foreground sm:px-6">
+    <footer className="mt-auto border-t border-[color:var(--depth-line-soft)] bg-transparent">
+      <div className="mx-auto flex max-w-none flex-wrap items-center justify-between gap-2 px-4 py-4 text-[11px] text-muted-foreground sm:px-6 lg:px-8">
         <span>
           {siteName} <span className="font-mono">{NURAE_VERSION}</span>
         </span>

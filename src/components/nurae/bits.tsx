@@ -1,45 +1,63 @@
 'use client';
 
 /**
- * NURAE dashboard — shared presentational bits.
- * Visual language: premium black monochrome (zero chroma except the
- * restrained error red), rounded-md controls, clean ops-console look.
+ * NURAE — shared presentational bits.
+ *
+ * These render on every page (status badges in every bot row, pills in three
+ * shells, LoadState in every data view), so they are the second lever after
+ * the design tokens: restyle here and the whole product moves at once.
+ *
+ * The visual contract is the depth system (see globals.css): 10px mono labels,
+ * 30px controls, hairline dividers, no decorative colour. Colour is reserved
+ * for state that is genuinely bad (error) or genuinely good (running), and
+ * even then it is one dot plus a word, not a glowing badge.
  */
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { motion, MotionConfig } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { SkeletonRows } from '@/components/nurae/depth';
 
-const STATUS_STYLES: Record<string, { label: string; className: string }> = {
-  running: { label: 'Running', className: 'bg-foreground text-background border-transparent' },
-  starting: { label: 'Starting…', className: 'bg-muted text-foreground border-border' },
-  stopping: { label: 'Stopping…', className: 'bg-muted text-foreground border-border' },
-  stopped: { label: 'Stopped', className: 'bg-muted text-foreground border-border' },
-  error: { label: 'Error', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
+const STATUS_STYLES: Record<string, { label: string; className: string; dot: string }> = {
+  running: {
+    label: 'Running',
+    className: 'border-transparent bg-foreground text-background',
+    dot: 'bg-background',
+  },
+  starting: { label: 'Starting', className: 'border-[color:var(--depth-line)] bg-white/5 text-foreground', dot: 'bg-muted-foreground animate-pulse' },
+  stopping: { label: 'Stopping', className: 'border-[color:var(--depth-line)] bg-white/5 text-foreground', dot: 'bg-muted-foreground animate-pulse' },
+  stopped: { label: 'Stopped', className: 'border-[color:var(--depth-line)] bg-transparent text-muted-foreground', dot: 'bg-muted-foreground/60' },
+  error: { label: 'Error', className: 'border-destructive/40 bg-destructive/10 text-destructive', dot: 'bg-destructive' },
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
-  const style = STATUS_STYLES[status] ?? { label: status, className: 'bg-muted text-foreground border-border' };
+  const style = STATUS_STYLES[status] ?? {
+    label: status,
+    className: 'border-[color:var(--depth-line)] bg-transparent text-muted-foreground',
+    dot: 'bg-muted-foreground/60',
+  };
   return (
-    <Badge variant="outline" className={cn(style.className, className)} data-testid={`bot-status-${status}`}>
-      <span
-        className={cn(
-          'mr-1.5 inline-block h-1.5 w-1.5 rounded-full',
-          status === 'running' && 'animate-pulse bg-foreground',
-          status === 'error' && 'bg-destructive',
-          (status === 'starting' || status === 'stopping') && 'animate-pulse bg-muted-foreground',
-          status === 'stopped' && 'bg-muted-foreground/60',
-        )}
-      />
+    <Badge
+      variant="outline"
+      className={cn(
+        'h-[20px] gap-1.5 rounded-full px-2 py-0 font-mono text-[10px] font-medium uppercase tracking-[0.06em]',
+        style.className,
+        className,
+      )}
+      data-testid={`bot-status-${status}`}
+    >
+      <span className={cn('inline-block h-1.5 w-1.5 rounded-full', style.dot)} aria-hidden="true" />
       {style.label}
     </Badge>
   );
 }
 
-/** Typographic stat line — real numbers, no boxes. The dashboard pattern:
- *  `label value · label value` reads in one glance and never pretends that
- *  an empty account has "cards" of content. */
+/**
+ * Typographic stat line. Kept because the dashboard pattern is still right:
+ * `label value` reads in one glance and never pretends an empty account has
+ * "cards" of content.
+ */
 export function StatLine({
   items,
   className,
@@ -48,53 +66,53 @@ export function StatLine({
   className?: string;
 }) {
   return (
-    <p className={cn('flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm', className)}>
+    <dl className={cn('flex flex-wrap items-baseline gap-x-6 gap-y-1', className)}>
       {items.map((item) => (
-        <span key={item.label} className="flex items-baseline gap-2">
-          <span className="text-xs text-muted-foreground">{item.label}</span>
-          <span
+        <div key={item.label} className="flex items-baseline gap-2">
+          <dt className="n-kicker">{item.label}</dt>
+          <dd
             className={cn(
-              'text-sm font-medium tabular-nums',
+              'n-num m-0 text-[13px] font-medium',
               item.alert ? 'text-destructive' : 'text-foreground',
             )}
           >
             {item.value}
-          </span>
-        </span>
+          </dd>
+        </div>
       ))}
-    </p>
+    </dl>
   );
 }
 
-/** Small all-caps label chip — one shared shape for official/category/
- *  transport/verified markers (was hand-rolled at three sizes). */
+/** One shared all-caps marker for official / category / transport labels. */
 export function Pill({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <Badge
-      variant="outline"
+    <span
       className={cn(
-        'rounded-full border-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground',
+        'inline-flex h-[20px] items-center rounded-full border border-[color:var(--depth-line)] px-2',
+        'font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground',
         className,
       )}
     >
       {children}
-    </Badge>
+    </span>
   );
 }
 
-/** Inline loading row — replaces bare “Loading…” paragraphs. */
+/** Inline loading row for surfaces that do not know their final shape. */
 export function LoadingRow({ label = 'Loading…' }: { label?: string }) {
   return (
-    <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+    <p className="flex items-center gap-2 text-[12px] text-muted-foreground" role="status">
       <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" aria-hidden />
       {label}
     </p>
   );
 }
 
-/** Quiet failure panel — one honest idiom for "the data did not arrive",
- *  visually distinct from the dashed EmptyState so a broken load can never
- *  masquerade as "nothing here yet". */
+/**
+ * Quiet failure panel. Visually distinct from the dashed EmptyState so a
+ * broken load can never masquerade as "nothing here yet".
+ */
 export function ErrorPanel({
   message,
   onRetry,
@@ -107,14 +125,11 @@ export function ErrorPanel({
   return (
     <div
       role="alert"
-      className={cn(
-        'flex flex-col items-center justify-center rounded-lg border border-border px-6 py-10 text-center',
-        className,
-      )}
+      className={cn('n-glass flex flex-col items-start gap-3 px-4 py-4', className)}
     >
-      <p className="max-w-sm text-sm leading-relaxed text-foreground">{message}</p>
+      <p className="m-0 max-w-prose text-[12.5px] leading-relaxed text-foreground">{message}</p>
       {onRetry && (
-        <Button variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+        <Button variant="outline" size="sm" onClick={onRetry}>
           Retry
         </Button>
       )}
@@ -122,8 +137,11 @@ export function ErrorPanel({
   );
 }
 
-/** One primitive for the three data states — loading, failed, empty, then the
- *  real content. Stops every view from inventing its own loading/error idiom. */
+/**
+ * One primitive for the three data states. Loading now renders rows shaped
+ * like the data instead of a centred sentence, so the layout does not jump
+ * when the response lands.
+ */
 export function LoadState({
   loading,
   error,
@@ -145,14 +163,14 @@ export function LoadState({
 }) {
   if (loading) {
     return (
-      <div className={cn('px-4 py-10 text-center sm:px-6', className)}>
-        <LoadingRow label={loadingLabel ?? 'Loading…'} />
+      <div className={cn('py-3', className)} role="status" aria-label={loadingLabel ?? 'Loading'}>
+        <SkeletonRows rows={4} />
       </div>
     );
   }
   if (error) {
     return (
-      <div className={cn('px-4 py-6 sm:px-6', className)}>
+      <div className={cn('py-2', className)}>
         <ErrorPanel message={error} onRetry={onRetry} />
       </div>
     );
@@ -163,8 +181,7 @@ export function LoadState({
   return <div className={className}>{children}</div>;
 }
 
-/** Route-level fade — restrained by design: 6px rise, 240ms, out like a
- *  breath. Respects prefers-reduced-motion via MotionConfig. */
+/** Route-level fade: 6px rise, 240ms, opacity only, reduced-motion aware. */
 export function PageFade({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <MotionConfig reducedMotion="user">
@@ -180,6 +197,7 @@ export function PageFade({ children, className }: { children: React.ReactNode; c
   );
 }
 
+/** Empty state: a hairline surface with one action, not a dashed poster. */
 export function EmptyState({
   title,
   description,
@@ -190,21 +208,22 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
-      {action ? <div className="mt-4">{action}</div> : null}
+    <div className="n-glass flex flex-col items-start gap-2 px-4 py-5">
+      <h3 className="m-0 text-[13px] font-medium text-foreground">{title}</h3>
+      <p className="m-0 max-w-prose text-[12.5px] leading-relaxed text-muted-foreground">{description}</p>
+      {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );
 }
 
+/** Definition grid used by bot configuration surfaces. */
 export function BotMeta({ items }: { items: Array<{ label: string; value: React.ReactNode }> }) {
   return (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
       {items.map((item) => (
         <div key={item.label} className="min-w-0">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
-          <dd className="mt-0.5 truncate text-sm font-medium text-foreground">{item.value}</dd>
+          <dt className="n-kicker">{item.label}</dt>
+          <dd className="m-0 mt-1 truncate text-[13px] text-foreground">{item.value}</dd>
         </div>
       ))}
     </dl>

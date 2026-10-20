@@ -20,6 +20,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
 import { Markdown } from '@/components/nurae/markdown';
 import { LoadingRow, PageFade } from '@/components/nurae/bits';
+import { DepthBackground } from '@/components/nurae/depth';
 import { SessionList } from '@/components/nurae/session-list';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import {
@@ -400,18 +401,19 @@ export function ChatsView() {
   );
 
   return (
-    <div className="flex h-dvh flex-col bg-background">
+    <div className="relative flex h-dvh flex-col bg-background">
+      <DepthBackground />
       <SiteHeader user={user} onSignOut={signOut} hideMobileMenu />
 
-      <PageFade className="flex min-h-0 flex-1 flex-col">
+      <PageFade className="relative z-10 flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
         {/* Sidebar — desktop */}
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-border/60 md:flex">
+        <aside className="hidden w-64 shrink-0 flex-col border-r border-[color:var(--depth-line)] bg-background/50 backdrop-blur-md md:flex">
           <div className="p-3">
             <button
               type="button"
               onClick={() => openSession(null)}
-              className="w-full rounded-md border border-border px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-muted/60"
+              className="w-full rounded-md border border-[color:var(--depth-line)] px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-white/5"
             >
               + New chat
             </button>
@@ -477,7 +479,7 @@ export function ChatsView() {
         </Sheet>
 
         {/* Conversation */}
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className="relative z-10 flex min-w-0 flex-1 flex-col">
           {topBar}
           {!activeId ? (
             <>
@@ -487,8 +489,8 @@ export function ChatsView() {
                 busy={sending}
                 prefill={prefill}
               />
-              <div className="shrink-0 border-t border-border/60 bg-background">
-                <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6">
+              <div className="shrink-0 border-t border-[color:var(--depth-line)] bg-background/60 backdrop-blur-xl">
+                <div className="w-full max-w-4xl px-4 py-3 sm:px-8">
                   {attachmentChips}
                   {composer}
                 </div>
@@ -497,7 +499,7 @@ export function ChatsView() {
           ) : (
             <>
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
+                <div className="w-full max-w-4xl space-y-3 px-4 py-5 sm:px-8">
                   {loadingSession && <LoadingRow label="Loading conversation…" />}
                   {entries.map((m) => (
                     <Message key={m.id} entry={m} />
@@ -530,8 +532,8 @@ export function ChatsView() {
               </div>
 
               {/* Composer */}
-              <div className="shrink-0 border-t border-border/60 bg-background">
-                <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6">
+              <div className="shrink-0 border-t border-[color:var(--depth-line)] bg-[color:var(--depth-1)] backdrop-blur-xl">
+                <div className="mx-auto w-full max-w-4xl px-4 py-3 sm:px-6">
                   {attachmentChips}
                   {composer}
                   <p className="mt-1.5 hidden text-[10px] text-muted-foreground/70 sm:block">

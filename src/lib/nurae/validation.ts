@@ -33,7 +33,7 @@ export const LIMITS = {
 // AI providers (kept in sync with src/lib/nurae/ai/providers.ts)
 // ---------------------------------------------------------------------------
 
-export const PROVIDER_IDS = ['openai', 'openrouter', 'deepseek', 'glm', 'local', 'custom'] as const;
+export const PROVIDER_IDS = ['openai', 'openrouter', 'deepseek', 'orca', 'glm', 'local', 'custom'] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 // ---------------------------------------------------------------------------

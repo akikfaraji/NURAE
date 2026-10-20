@@ -46,7 +46,7 @@ model Bot {
   // Optional base URL override for openai-compatible providers.
   baseUrl              String? @map("base_url")
   systemPrompt         String  @default("You are a helpful assistant. Answer clearly and concisely.") @map("system_prompt")
-  provider             String  @default("openrouter") // openai | openrouter | deepseek | glm | local | custom
+  provider             String  @default("openrouter") // openai | openrouter | deepseek | orca | glm | local | custom
   model                String  @default("openrouter/free") @map("model")
   temperature          Float   @default(0.7)
   maxTokens            Int     @default(1024) @map("max_tokens")

@@ -17,7 +17,8 @@ import { ApiError, SessionUserDTO, UserBotDTO, nuraeApi } from '@/lib/nurae-clie
 import { TEMPLATE_CATALOG } from '@/lib/nurae/bots/templates';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { LoadingRow, PageFade } from '@/components/nurae/bits';
+import { LoadingRow, PageFade, StatusBadge } from '@/components/nurae/bits';
+import { DepthBackground, Glass, Kicker, Metric } from '@/components/nurae/depth';
 
 export function BotsListView() {
   const { user, checked, signOut } = useSiteUser();
@@ -42,97 +43,127 @@ export function BotsListView() {
     );
   }
 
+  const runningCount = bots.filter((b) => b.status === 'running').length;
+  const wiredCount = bots.filter((b) => b.hasTelegramToken).length;
+
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    <div className="relative flex min-h-screen flex-col">
+      <DepthBackground />
       <SiteHeader user={user} onSignOut={signOut} />
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6">
-        <PageFade>
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-medium tracking-tight text-foreground">Bots</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              What you have built. Configuration, testing and publishing live on each bot.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" asChild>
-              <Link href="/bots/new?ai=1">New bot</Link>
-            </Button>
-            <Button size="sm" variant="outline" asChild>
-              <Link href="/bots/new">Start from scratch</Link>
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-10 flex items-baseline justify-between gap-4">
-          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Your bots</p>
-          <span className="text-xs text-muted-foreground">{loaded ? bots.length : '…'}</span>
-        </div>
-
-        {!loaded ? (
-          <div className="mt-4">
-            <LoadingRow />
-          </div>
-        ) : bots.length === 0 ? (
-          <div className="mt-6 max-w-lg">
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Say what the bot should do —
-              <span className="text-foreground"> “when someone starts my restaurant bot, welcome them with buttons for Menu, Order and Contact” </span>
-              — and NURAE builds it. You approve everything before it goes live, and can fine-tune every detail afterwards.
-            </p>
-            <div className="mt-4 flex gap-3">
+      <main className="relative z-10 mx-auto w-full max-w-5xl flex-1 px-4 py-7 sm:px-6">
+        <PageFade className="n-stagger">
+          <div className="flex flex-wrap items-baseline justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-medium tracking-tight text-foreground sm:text-2xl">Bots</h1>
+              <p className="mt-1 text-[12.5px] text-muted-foreground">
+                What you have built. Configuration, testing and publishing live on each bot.
+              </p>
+            </div>
+            <div className="flex gap-2">
               <Button size="sm" asChild>
-                <Link href="/bots/new?ai=1">Describe a bot</Link>
+                <Link href="/bots/new?ai=1">New bot</Link>
               </Button>
-              <Link href="#built-in" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from a built-in bot below</Link>
+              <Button size="sm" variant="outline" asChild>
+                <Link href="/bots/new">Start from scratch</Link>
+              </Button>
             </div>
           </div>
-        ) : (
-          <ul className="mt-4 border-t border-border/60">
-            {bots.map((b) => (
-              <li key={b.id} className="border-b border-border/60">
-                <Link
-                  href={`/bots/${b.id}`}
-                  className="group flex items-center gap-4 py-3 transition-colors hover:bg-muted/30"
-                >
-                  <span
-                    aria-hidden
-                    className={
-                      'h-1.5 w-1.5 shrink-0 rounded-full ' +
-                      (b.status === 'running'
-                        ? 'animate-pulse bg-foreground'
-                        : b.status === 'error'
-                          ? 'bg-destructive'
-                          : 'bg-muted-foreground/40')
-                    }
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-foreground">{b.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {b.telegramUsername ?? (b.hasTelegramToken ? 'token set' : 'no token yet')}
-                      {' · '}
-                      {b.provider}/{b.model}
-                    </span>
-                  </span>
-                  <span className="hidden text-xs text-muted-foreground sm:block">
-                    {b.behaviors.length > 0
-                      ? `${b.behaviors.length} behavior${b.behaviors.length === 1 ? '' : 's'} · `
-                      : b.commands.length > 0
-                        ? `${b.commands.length} cmd · `
-                        : ''}
-                    {b.behaviors.length === 0 && b.replies.length > 0 ? `${b.replies.length} rules · ` : ''}
-                    {b.status}
-                  </span>
-                  <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                    →
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
 
-        <BuiltInBotsSection />
+          {/* Where you stand: one glass strip, four metrics, mono numerals */}
+          {loaded && bots.length > 0 && (
+            <Glass className="mt-4 grid grid-cols-2 gap-y-4 py-3 sm:grid-cols-4">
+              <Metric label="Bots" value={bots.length} />
+              <Metric label="Running" value={runningCount} sub={`${bots.length - runningCount} stopped`} />
+              <Metric label="Telegram Wired" value={wiredCount} sub={`${bots.length - wiredCount} missing token`} />
+              <Metric label="Templates" value={TEMPLATE_CATALOG.length} sub="ready to launch" />
+            </Glass>
+          )}
+
+          <section className="mt-8">
+            <div className="flex items-baseline justify-between">
+              <Kicker className="mb-0">Your bots</Kicker>
+              <span className="n-num text-xs text-muted-foreground">{loaded ? `${bots.length} registered` : '…'}</span>
+            </div>
+
+            {!loaded ? (
+              <Glass className="mt-3">
+                <LoadingRow />
+              </Glass>
+            ) : bots.length === 0 ? (
+              <Glass className="mt-3 max-w-xl">
+                <Kicker>First bot</Kicker>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Say what the bot should do —
+                  <span className="text-foreground"> “when someone starts my restaurant bot, welcome them with buttons for Menu, Order and Contact” </span>
+                  — and NURAE builds it. You approve everything before it goes live, and can fine-tune every detail afterwards.
+                </p>
+                <div className="mt-4 flex gap-3">
+                  <Button size="sm" asChild>
+                    <Link href="/bots/new?ai=1">Describe a bot</Link>
+                  </Button>
+                  <Link href="#built-in" className="self-center text-xs text-muted-foreground hover:text-foreground">or start from a built-in bot below</Link>
+                </div>
+              </Glass>
+            ) : (
+              <Glass bleed className="mt-3 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-[color:var(--depth-line)]">
+                        <th scope="col" className="h-8 px-4 text-left align-middle">
+                          <span className="n-kicker">Bot</span>
+                        </th>
+                        <th scope="col" className="h-8 px-4 text-left align-middle">
+                          <span className="n-kicker">Status</span>
+                        </th>
+                        <th scope="col" className="h-8 px-4 text-left align-middle">
+                          <span className="n-kicker">Model / Provider</span>
+                        </th>
+                        <th scope="col" className="h-8 px-4 text-right align-middle">
+                          <span className="n-kicker">Telegram</span>
+                        </th>
+                        <th scope="col" className="h-8 px-4 text-right align-middle">
+                          <span className="n-kicker"></span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bots.map((b) => (
+                        <tr key={b.id} className="border-b border-[color:var(--depth-line-soft)] transition-colors hover:bg-white/[0.02]">
+                          <td className="h-10 px-4 align-middle">
+                            <Link href={`/bots/${b.id}`} className="truncate text-[13px] font-medium text-foreground underline-offset-4 hover:underline">
+                              {b.name}
+                            </Link>
+                            <span className="ml-2 font-mono text-[11px] text-muted-foreground">
+                              {b.telegramUsername ? `@${b.telegramUsername}` : 'no username'}
+                            </span>
+                          </td>
+                          <td className="h-10 px-4 align-middle">
+                            <StatusBadge status={b.status} />
+                          </td>
+                          <td className="h-10 px-4 align-middle font-mono text-xs text-muted-foreground">
+                            {b.provider}/{b.model}
+                          </td>
+                          <td className="h-10 px-4 text-right align-middle">
+                            <span className="n-num text-[11.5px] text-muted-foreground">
+                              {b.hasTelegramToken ? 'token set' : 'missing'}
+                            </span>
+                          </td>
+                          <td className="h-10 px-4 text-right align-middle">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={`/bots/${b.id}`}>Configure →</Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Glass>
+            )}
+          </section>
+
+          <BuiltInBotsSection />
         </PageFade>
       </main>
     </div>
@@ -165,51 +196,53 @@ function BuiltInBotsSection() {
 
   return (
     <section id="built-in" className="mt-12 scroll-mt-16">
-      <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Built-in bots</p>
-      <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-        Five finished bots for the classic jobs. Pick one — it arrives fully configured,
-        you connect the token, it runs. Every bot you deploy links its users to NURAE.
+      <Kicker className="mb-1">Built-in templates</Kicker>
+      <p className="max-w-xl text-[12.5px] text-muted-foreground">
+        Five finished bots for classic jobs. Pick one — it arrives fully configured,
+        you connect the token, and it runs. Every bot you deploy links its users to NURAE.
       </p>
-      <ul className="mt-4 border-t border-border/60">
-        {TEMPLATE_CATALOG.map((t) => (
-          <li key={t.id} className="border-b border-border/60">
-            <button
-              type="button"
-              onClick={() => setOpen(open === t.id ? null : t.id)}
-              aria-expanded={open === t.id}
-              className="group flex w-full items-center gap-4 py-3 text-left transition-colors hover:bg-muted/30"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-foreground">{t.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">{t.tagline}</span>
-              </span>
-              <span className="hidden shrink-0 text-[11px] uppercase tracking-widest text-muted-foreground sm:block">
-                {t.category}
-              </span>
-              <span aria-hidden className="w-4 shrink-0 text-center text-xs text-muted-foreground">
-                {open === t.id ? '−' : '+'}
-              </span>
-            </button>
-            {open === t.id && (
-              <div className="max-w-2xl pb-4">
-                <p className="text-sm leading-relaxed text-muted-foreground">{t.description}</p>
-                <ul className="mt-3 space-y-1">
-                  {t.highlights.map((h) => (
-                    <li key={h} className="text-xs text-muted-foreground">· {h}</li>
-                  ))}
-                </ul>
-                {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
-                <div className="mt-3 flex items-center gap-3">
-                  <Button size="sm" disabled={busy !== null} onClick={() => void instantiateTemplate(t.id)}>
-                    {busy === t.id ? 'Creating…' : 'Use this bot'}
-                  </Button>
-                  <span className="text-xs text-muted-foreground">Creates a draft — connect your @BotFather token next.</span>
+      <Glass bleed className="mt-4 overflow-hidden">
+        <ul className="m-0 list-none p-0 divide-y divide-[color:var(--depth-line-soft)]">
+          {TEMPLATE_CATALOG.map((t) => (
+            <li key={t.id} className="transition-colors hover:bg-white/[0.02]">
+              <button
+                type="button"
+                onClick={() => setOpen(open === t.id ? null : t.id)}
+                aria-expanded={open === t.id}
+                className="group flex w-full items-center gap-4 px-4 py-3 text-left"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-foreground">{t.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{t.tagline}</span>
+                </span>
+                <span className="hidden shrink-0 font-mono text-[10.5px] uppercase tracking-wider text-muted-foreground sm:block">
+                  {t.category}
+                </span>
+                <span aria-hidden className="w-4 shrink-0 text-center font-mono text-xs text-muted-foreground">
+                  {open === t.id ? '−' : '+'}
+                </span>
+              </button>
+              {open === t.id && (
+                <div className="border-t border-[color:var(--depth-line-soft)] bg-white/[0.01] px-4 py-4">
+                  <p className="max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">{t.description}</p>
+                  <ul className="mt-3 space-y-1">
+                    {t.highlights.map((h) => (
+                      <li key={h} className="text-xs text-muted-foreground">· {h}</li>
+                    ))}
+                  </ul>
+                  {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+                  <div className="mt-4 flex items-center gap-3">
+                    <Button size="sm" disabled={busy !== null} onClick={() => void instantiateTemplate(t.id)}>
+                      {busy === t.id ? 'Creating…' : 'Use this bot'}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">Creates a draft — connect your @BotFather token next.</span>
+                  </div>
                 </div>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Glass>
     </section>
   );
 }

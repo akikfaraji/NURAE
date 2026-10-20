@@ -81,3 +81,6 @@ scripts/research/
 
 # runtime logs (dev.log, nurae.jsonl + rotations)
 logs/
+
+# visual verification captures (headless Chrome screenshot matrices)
+.zshots*/

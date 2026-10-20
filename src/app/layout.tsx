@@ -55,6 +55,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: NURAE_BOOT_SCRIPT }} />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}>
+        {/* Texture: one grain layer only. The dither/grid/vignette stack read as
+            a transparency checkerboard behind data, so it is gone. */}
+        <div className="n-texture" aria-hidden="true" />
         {children}
         <NuraeIntroOverlay />
         <Toaster position="top-center" theme="dark" />

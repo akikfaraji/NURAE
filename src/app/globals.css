@@ -317,3 +317,567 @@ html[data-nurae-intro='pending'] .nurae-boot-layer * {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
+
+/* ===========================================================================
+   Site-wide depth pass
+   ---------------------------------------------------------------------------
+   Applied at the token level on purpose: 17 page wrappers each paint their own
+   opaque surface, so restyling one page at a time is how you end up with one
+   page updated and seventeen left behind. These rules move every page at once.
+   =========================================================================== */
+
+/* The page surface becomes a veiled depth field instead of a flat fill.
+   86% opacity keeps text contrast intact while letting the aurora read. */
+:root,
+.dark {
+  --background: #0b0b0c;
+  --radius: 0.75rem;
+}
+
+/* The body itself must not paint over the field it sits on. */
+body {
+  background-color: transparent;
+}
+
+/* Level 0 painted once, behind everything, on every route. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: #0b0b0c;
+}
+/* No pattern layer: a checkered / dithered field behind data reads as a
+   transparency grid, not as depth. Solid base, one grain layer at most. */
+body::after {
+  content: none;
+}
+
+/*
+   The dense table, applied to every data table in the product (38 of them in
+   views.tsx alone). Scoped to tables inside a main landmark so layout tables
+   in marketing copy are untouched.
+*/
+main table {
+  width: 100%;
+  border-collapse: collapse;
+}
+main thead th {
+  height: 30px;
+  padding-right: 12px;
+  text-align: left;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+main tbody td {
+  height: 34px;
+  padding-right: 12px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  vertical-align: middle;
+}
+main thead th:last-child,
+main tbody td:last-child {
+  padding-right: 0;
+}
+main tbody tr:hover td {
+  background-color: color-mix(in oklab, var(--foreground) 3%, transparent);
+}
+/* Numbers line up by default; no page has to remember tabular-nums. */
+main tbody td,
+main tfoot td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus language for the whole product. */
+:where(a, button, [role='button'], input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ===========================================================================
+   Texture: film grain, dither, vignette
+   ---------------------------------------------------------------------------
+   Three stacked layers, all on ONE fixed element behind every page:
+     1. film grain — feTurbulence tile (180px), alpha baked into the SVG
+     2. dither     — 2px checker; at 1x it reads as a printed halftone, not as
+                     a pattern, which is what separates dither from wallpaper
+     3. vignette   — a separate element, because it needs full opacity while
+                     the grain layer sits at 5%
+
+   Rules that keep it from becoming noise-for-noise's-sake:
+     - position: fixed and pointer-events: none. Never on a scrolling
+       container: that repaints the whole viewport every frame.
+     - z-index: -1, so it can never sit above text or steal contrast.
+     - one tunable per layer (--n-grain, --n-dither) instead of magic
+       numbers scattered through components.
+     - removed entirely under prefers-contrast: more and forced-colors,
+       where texture actively hurts legibility.
+     - no blend mode. soft-light/overlay on a full-viewport layer is the
+       expensive version and costs ~2x on integrated GPUs.
+   =========================================================================== */
+
+:root {
+  --n-grain: 0.055;
+  --n-dither: 0.03;
+  --n-grain-size: 180px;
+}
+
+.n-texture {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--n-grain);
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='180' height='180' filter='url(%23g)' opacity='0.62'/></svg>"),
+    conic-gradient(
+      rgba(255, 255, 255, 0.9) 0 25%,
+      transparent 0 50%,
+      rgba(255, 255, 255, 0.9) 0 75%,
+      transparent 0
+    );
+  background-size: var(--n-grain-size) var(--n-grain-size), 2px 2px;
+  background-repeat: repeat, repeat;
+  image-rendering: pixelated;
+}
+/* The dither is its own element so the two layers can carry different
+   strengths while sharing one fixed backdrop. */
+.n-dither {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--n-dither);
+  background-image: conic-gradient(
+    rgba(255, 255, 255, 1) 0 25%,
+    transparent 0 50%,
+    rgba(255, 255, 255, 1) 0 75%,
+    transparent 0
+  );
+  background-size: 2px 2px;
+}
+
+.n-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(120% 92% at 50% 16%, transparent 40%, rgba(0, 0, 0, 0.42) 100%);
+}
+
+/* Texture is the first thing to go when it would cost legibility. */
+@media (prefers-contrast: more), (forced-colors: active) {
+  .n-texture,
+  .n-dither,
+  .n-vignette {
+    display: none;
+  }
+}
+
+/* Optional: a slow grain "boil". Off by default; two lines to enable per
+   section, and it is the only looping motion in the product besides the
+   aurora. Kept gated because 8fps grain across a 4K viewport is real work. */
+@media (prefers-reduced-motion: no-preference) {
+  .n-texture-animated {
+    animation: n-grain-boil 1.2s steps(4) infinite;
+  }
+}
+@keyframes n-grain-boil {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-12px, 8px, 0); }
+  50% { transform: translate3d(9px, -10px, 0); }
+  75% { transform: translate3d(-7px, -6px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+/*
+   Every panel in the product, without touching 20 files.
+   The codebase paints panels with `bg-card` (the shadcn Card and ~20
+   hand-rolled equivalents). Promoting that one utility to the glass surface
+   re-skins every page at once, while small controls (bg-transparent/bg-muted)
+   stay flat. This is the difference between "one page updated" and "every page
+   updated": the lever is the token, not the component.
+*/
+main .bg-card {
+  background-color: #16171d;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+
+/* One radius for panels, tables, buttons and accordions. Mixing sharp and
+   heavily rounded corners in one screen is the fastest way to look unfinished. */
+main .rounded-lg,
+main .rounded-xl,
+main .rounded-md,
+main .bg-card,
+main button,
+main [data-slot='button'] {
+  border-radius: 12px;
+}
+/* Panels that also carry a radius get the system radius, not 0.5rem. */
+main .bg-card.rounded-lg,
+main .bg-card.rounded-xl {
+  border-radius: 14px;
+}
+/* One hairline colour across every page, so nothing looks stitched on. At 12%
+   white it is actually visible on #0b0b0c; at 8% it read as no border at all. */
+main .border-border {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+main .border-border\/60 {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+/* Chat bubbles: a real surface, not a grey block. */
+main .bg-muted\/70 {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--depth-line-soft);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  main .bg-card {
+    background-color: var(--depth-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/*
+   ---------------------------------------------------------------------------
+   Fluid page frame
+   ---------------------------------------------------------------------------
+   Three different jobs, three rules. Cramming them into one max-width is why
+   the site looked empty on a 1780px window and cramped on a 1280px laptop:
+
+     1. DATA pages (tables, consoles) take the window. A table that stops at
+        1152px while the window is 1780px wastes the only axis that matters.
+     2. PROSE pages (about, help, pricing, featured) keep a readable measure.
+        1560px of running text is unreadable; 72ch is not negotiable.
+     3. GUTTERS scale with the window instead of jumping at two breakpoints.
+*/
+main {
+  width: 100%;
+  padding-inline: clamp(16px, 2.2vw, 32px);
+}
+
+/*
+   Page containers: full width, on every shell. The marketing pages wrap their
+   content in a plain `div` (not a `main`), which is why the side gaps survived
+   the first pass and why /pricing stayed a 768px column inside a 1792px window.
+   Small containers (max-w-sm/md, the auth card and the admin gate) are left
+   alone on purpose: they are meant to be narrow.
+*/
+main[class*='max-w-3xl'],
+main[class*='max-w-4xl'],
+main[class*='max-w-5xl'],
+main[class*='max-w-6xl'],
+main > div[class*='max-w-3xl'],
+main > div[class*='max-w-4xl'],
+main > div[class*='max-w-5xl'],
+main > div[class*='max-w-6xl'] {
+  max-width: none;
+}
+
+/*
+   Reading measure lives on the text, not on the container: paragraphs stay
+   around 76 characters while rules, cards and tables span the window. This is
+   what lets a page be full-bleed without becoming a 190-character line.
+*/
+main p,
+main li,
+main blockquote {
+  max-width: 76ch;
+}
+
+/*
+   Height: only claim the viewport where there is something to fill it with.
+   On a laptop at 720px the page should flow; on a tall monitor the workspace
+   should not end two inches down.
+*/
+@media (min-height: 760px) {
+  main {
+    min-height: calc(100dvh - 48px);
+  }
+}
+
+/*
+   The admin workspace: sidebar beside the content on wide screens, stacked
+   below it on narrow ones. The rail is `display:none` under 1280px in the
+   component, so this is the layout half of the same decision.
+*/
+.n-workspace {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1280px) {
+  .n-workspace {
+    grid-template-columns: minmax(0, 1fr) 288px;
+  }
+}
+
+/*
+   Coarse pointers (touch): denser than a desktop is wrong here. Rows grow to
+   a thumb, controls to 40px, and the 10px labels get a little more tracking
+   so they stay legible at arm's length.
+*/
+@media (pointer: coarse) {
+  main tbody td {
+    height: 44px;
+  }
+  main button,
+  main [role='button'] {
+    min-height: 40px;
+  }
+  .n-kicker {
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+  }
+}
+
+/*
+   Small screens: 16px inputs stop iOS from zooming the whole page on focus,
+   which is the single most common "this site feels broken on my phone" bug.
+*/
+@media (max-width: 640px) {
+  main input,
+  main select,
+  main textarea {
+    font-size: 16px;
+  }
+  main h1 {
+    font-size: 22px;
+  }
+}
+
+/* Tables scroll inside their own box instead of pushing the page sideways. */
+main [class*='overflow-x-auto'] table {
+  min-width: 640px;
+}
+
+/*
+   Page-level typography: every page had its own h1 size (text-xl, text-2xl,
+   text-3xl), which is why no two screens felt like the same product. One
+   scale, applied here, so a new page inherits it instead of choosing.
+*/
+main h1 {
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+@media (min-width: 640px) {
+  main h1 {
+    font-size: 28px;
+  }
+}
+main h2 {
+  letter-spacing: -0.01em;
+}
+
+/* Form controls: one height, one radius, one focus ring. */
+main input:not([type='checkbox']):not([type='radio']):not([type='range']),
+main select,
+main textarea {
+  min-height: 34px;
+  border-radius: 8px;
+}
+main textarea {
+  min-height: 72px;
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { filter: blur(60px); }
+}
+
+
+:root {
+  --depth-0: #06070a;
+  --depth-1: rgba(255, 255, 255, 0.045);
+  --depth-2: rgba(255, 255, 255, 0.065);
+  --depth-solid: #12151b;
+  --depth-line: rgba(255, 255, 255, 0.1);
+  --depth-line-soft: rgba(255, 255, 255, 0.06);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 120ms;
+  --dur-2: 240ms;
+  --dur-3: 560ms;
+}
+
+/* Level 0 — the living background. Fixed, non-interactive, behind content. */
+.n-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: var(--depth-0);
+}
+.n-aurora::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(46% 38% at 22% 18%, rgba(58, 96, 160, 0.3), transparent 62%),
+    radial-gradient(40% 34% at 82% 12%, rgba(120, 86, 54, 0.2), transparent 60%),
+    radial-gradient(52% 44% at 70% 88%, rgba(48, 86, 120, 0.22), transparent 64%);
+  filter: blur(70px);
+  animation: n-drift 64s ease-in-out infinite alternate;
+}
+.n-aurora::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, #000 30%, transparent 78%);
+  mask-image: radial-gradient(70% 60% at 50% 30%, #000 30%, transparent 78%);
+  opacity: 0.5;
+}
+@keyframes n-drift {
+  from { transform: translate3d(-1.5%, -1%, 0) scale(1.02); }
+  to { transform: translate3d(1.5%, 1.5%, 0) scale(1.06); }
+}
+
+/* Variant lights. Same field, same drift, different sources — 'studio' leans
+   violet for the bot workspaces, 'marketing' is warmer and slower for the
+   public pages. The dashboard default is the unmodified .n-aurora. */
+.n-aurora--studio::before {
+  background:
+    radial-gradient(46% 38% at 18% 14%, rgba(64, 78, 160, 0.32), transparent 62%),
+    radial-gradient(40% 34% at 84% 10%, rgba(96, 60, 150, 0.2), transparent 60%),
+    radial-gradient(52% 44% at 68% 90%, rgba(40, 70, 130, 0.24), transparent 64%);
+}
+.n-aurora--marketing::before {
+  background:
+    radial-gradient(46% 38% at 24% 16%, rgba(70, 100, 170, 0.26), transparent 62%),
+    radial-gradient(42% 36% at 80% 10%, rgba(150, 110, 70, 0.18), transparent 60%),
+    radial-gradient(54% 46% at 62% 92%, rgba(60, 90, 130, 0.2), transparent 64%);
+  animation-duration: 80s;
+}
+
+/* Level 1 — panels and tables. */
+.n-glass {
+  background: #16171d;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: none;
+}
+/* Level 2 — detached sheets, one step lighter than a panel. */
+.n-sheet {
+  background: #16171d;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* Hairline that reads on glass instead of the flat page. */
+.n-hair { border-color: var(--depth-line-soft); }
+
+/* Mono numerals, right-aligned by callers. */
+.n-num { font-variant-numeric: tabular-nums; font-family: var(--font-geist-mono), ui-monospace, monospace; }
+
+/* 9.5px is the smallest label size in the system; tracking carries legibility. */
+.n-kicker {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Feedback: only on interactive elements, and only what the user caused. */
+.n-press {
+  transition:
+    background-color var(--dur-1) var(--ease-io),
+    border-color var(--dur-1) var(--ease-io),
+    color var(--dur-1) var(--ease-io),
+    transform var(--dur-1) var(--ease-out);
+}
+.n-press:active { transform: scale(0.98); }
+
+/* Ring: --fill is a percentage set by the component; Chromium interpolates it. */
+@property --n-fill {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+.n-ring {
+  --n-fill: 0%;
+  width: 92px;
+  height: 92px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(
+    var(--foreground) 0 var(--n-fill),
+    rgba(255, 255, 255, 0.09) var(--n-fill) 100%
+  );
+  transition: --n-fill 820ms var(--ease-out);
+  box-shadow: inset 0 0 0 1px var(--depth-line);
+}
+.n-ring > span {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  background: #0b0e13;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Loading rows are shaped like the data they replace. */
+@keyframes n-shimmer {
+  from { background-position: 180% 0; }
+  to { background-position: -80% 0; }
+}
+.n-skel {
+  height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
+  background-size: 220% 100%;
+  animation: n-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .n-rise { animation: n-rise var(--dur-3) var(--ease-out) both; }
+  .n-stagger > * { animation: n-rise var(--dur-3) var(--ease-out) both; }
+  .n-stagger > *:nth-child(2) { animation-delay: 80ms; }
+  .n-stagger > *:nth-child(3) { animation-delay: 160ms; }
+  .n-stagger > *:nth-child(4) { animation-delay: 240ms; }
+  .n-stagger > *:nth-child(5) { animation-delay: 320ms; }
+}
+@keyframes n-rise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Fallbacks. Both are real: neither is a 'best effort' note. */
+@media (prefers-reduced-transparency: reduce) {
+  .n-glass,
+  .n-sheet {
+    background: var(--depth-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .n-aurora::before { animation: none; }
+  .n-skel { animation: none; background: rgba(255, 255, 255, 0.08); }
+  .n-ring { transition: none; }
+}
+

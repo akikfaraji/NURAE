@@ -5,13 +5,15 @@
  * Contact channels come live from the admin-configured site settings.
  * (The version strip that used to duplicate the footer is gone — the
  * footer alone carries version + vendor now.)
+ *
+ * V4 depth pass: PageContainer (marketing light); the Contact header
+ * converged on the kicker style while staying an h2.
  */
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
 import { SiteFooter, SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
-import { PageFade } from '@/components/nurae/bits';
+import { PageContainer } from '@/components/nurae/depth';
 import { SiteInfoResponse, nuraeApi } from '@/lib/nurae-client/api';
 
 export function AboutPage() {
@@ -32,11 +34,14 @@ export function AboutPage() {
   const telegramHandle = siteInfo?.site.telegramHandle ?? '';
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col">
       <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-12 sm:px-6">
-        <PageFade>
-        <h1 className="text-2xl font-medium tracking-tight text-foreground">About {siteName}</h1>
+      <PageContainer
+        variant="marketing"
+        kicker={siteName}
+        title={`About ${siteName}`}
+        className="min-h-0 flex-1"
+      >
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
           {siteName} is a platform by <strong className="font-medium text-foreground">FRAZIYM TECH &amp; AI</strong> that puts
           AI-powered Telegram bots in anyone&apos;s hands — no code, no servers, no DevOps. You describe the bot,
@@ -50,7 +55,7 @@ export function AboutPage() {
           your account, with secrets encrypted at rest.
         </p>
 
-        <h2 className="mt-10 text-xs font-medium uppercase tracking-widest text-muted-foreground">Contact</h2>
+        <h2 className="n-kicker m-0 mt-10 font-normal">Contact</h2>
         <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           {supportEmail && (
             <a href={`mailto:${supportEmail}`} className="text-foreground underline-offset-4 hover:underline">
@@ -71,8 +76,7 @@ export function AboutPage() {
             Ask the CS bot
           </Link>
         </div>
-        </PageFade>
-      </main>
+      </PageContainer>
       <SiteFooter siteName={siteName} />
     </div>
   );

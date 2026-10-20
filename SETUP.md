@@ -243,7 +243,7 @@ your stable domain and none of this churn exists.
 ## 6. Configure AI (the bot's brain)
 
 Dashboard → your bot → **AI provider**: pick a provider from the catalog
-(openai / openrouter / deepseek / glm / local / custom), paste its API key
+(openai / openrouter / deepseek / orca / glm / local / custom), paste its API key
 and model name. Keys are encrypted with `NURAE_SECRET_KEY` before hitting the
 database. Send your bot a message in Telegram — it should answer using the
 configured model.

@@ -5,15 +5,20 @@
  * Static answers for the top questions (verification codes, bots, keys) plus
  * the live contact channels from site settings. Includes the spam-folder
  * guidance for verification mail (Gmail files OTP mail as spam sometimes).
+ *
+ * V4 depth pass: PageContainer (marketing light); the native <details> FAQ
+ * became the shared Accordion inside a Glass panel — type="multiple", so
+ * several answers can stay open, like the details blocks it replaced.
  */
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { SiteFooter, SiteHeader, SiteSplash, useSiteUser } from '@/components/nurae/site-shell';
-import { PageFade } from '@/components/nurae/bits';
 import { MailIcon, TelegramIcon } from '@/components/nurae/icons';
 import { SiteInfoResponse, nuraeApi } from '@/lib/nurae-client/api';
+import { Glass, Kicker, PageContainer } from '@/components/nurae/depth';
 
 const FAQ: Array<{ q: string; a: React.ReactNode }> = [
   {
@@ -98,41 +103,44 @@ export function HelpPage() {
   const telegramHandle = siteInfo?.site.telegramHandle ?? '';
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col">
       <SiteHeader variant={user ? 'app' : 'public'} user={user} onSignOut={signOut} />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
-        <PageFade>
-        <h1 className="text-2xl font-medium tracking-tight text-foreground">Help &amp; FAQ</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Quick answers about accounts, verification codes and bots. Anything else — the{' '}
-          <Link href="/chats" className="text-foreground underline underline-offset-2">
-            NURAE CS Bot
-          </Link>{' '}
-          is one click away.
-        </p>
-
-        <div className="mt-8 space-y-4">
-          {FAQ.map((item) => (
-            <details
-              key={item.q}
-              className="group rounded-xl border border-border bg-card px-5 py-4 open:pb-5"
-            >
-              <summary className="cursor-pointer list-none text-sm font-medium text-foreground marker:hidden">
-                <span className="mr-2 inline-block text-muted-foreground transition-transform group-open:rotate-90">
-                  ›
-                </span>
-                {item.q}
-              </summary>
-              <div className="mt-3 space-y-2 pl-5 text-sm leading-relaxed text-muted-foreground [&_strong]:text-foreground">
-                {item.a}
-              </div>
-            </details>
-          ))}
-        </div>
+      <PageContainer
+        variant="marketing"
+        kicker="Help center"
+        title="Help & FAQ"
+        description={
+          <>
+            Quick answers about accounts, verification codes and bots. Anything else — the{' '}
+            <Link href="/chats" className="text-foreground underline underline-offset-2">
+              NURAE CS Bot
+            </Link>{' '}
+            is one click away.
+          </>
+        }
+        className="min-h-0 flex-1"
+      >
+        <Kicker className="mt-8">FAQ</Kicker>
+        <Glass bleed className="mt-3 overflow-hidden">
+          <Accordion type="multiple" className="w-full">
+            {FAQ.map((item) => (
+              <AccordionItem key={item.q} value={item.q} className="border-[color:var(--depth-line-soft)]">
+                <AccordionTrigger className="px-4 py-3.5 text-left text-[13px] font-medium text-foreground hover:no-underline">
+                  {item.q}
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-2 text-sm leading-relaxed text-muted-foreground [&_strong]:text-foreground">
+                    {item.a}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </Glass>
 
         {/* Contact card */}
-        <div className="mt-10 rounded-xl border border-border bg-card p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Still stuck?</h2>
+        <Glass className="mt-10 p-6">
+          <h2 className="n-kicker m-0 font-normal">Still stuck?</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             The fastest route is the CS Bot chat — it escalates to the team with your chat history attached.
           </p>
@@ -159,9 +167,8 @@ export function HelpPage() {
               </Button>
             )}
           </div>
-        </div>
-        </PageFade>
-      </main>
+        </Glass>
+      </PageContainer>
       <SiteFooter siteName={siteName} />
     </div>
   );

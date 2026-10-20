@@ -27,6 +27,7 @@ import {
   useSiteUser,
 } from '@/components/nurae/site-shell';
 import { PageFade } from '@/components/nurae/bits';
+import { DepthBackground, Glass } from '@/components/nurae/depth';
 import {
   ApiError,
   SessionUserDTO,
@@ -75,11 +76,12 @@ export function SiteHome() {
   const siteName = siteInfo?.site.siteName ?? 'NURAE';
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="relative flex min-h-screen flex-col bg-background">
+      <DepthBackground />
       <SiteHeader variant="public" user={null} />
-      <main className="flex-1">
+      <main className="relative z-10 flex-1">
         <PageFade>
-        {/* Hero — typography and space, nothing else */}
+        {/* Hero — typography and space with glass card */}
         <section>
           <div className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24">
             <div className="grid gap-12 lg:grid-cols-[1.2fr_1fr] lg:gap-20">
@@ -111,15 +113,17 @@ export function SiteHome() {
                 )}
               </div>
               <div id="auth" className="scroll-mt-24">
-                <AuthCard
-                  googleEnabled={siteInfo?.auth.googleEnabled ?? false}
-                  authError={authError}
-                  clearAuthError={() => setAuthError(null)}
-                  onAuthenticated={(u) => {
-                    setUser(u);
-                    router.push('/dashboard');
-                  }}
-                />
+                <Glass className="p-6 sm:p-8">
+                  <AuthCard
+                    googleEnabled={siteInfo?.auth.googleEnabled ?? false}
+                    authError={authError}
+                    clearAuthError={() => setAuthError(null)}
+                    onAuthenticated={(u) => {
+                      setUser(u);
+                      router.push('/dashboard');
+                    }}
+                  />
+                </Glass>
               </div>
             </div>
           </div>
@@ -163,10 +167,10 @@ export function SiteHome() {
 }
 
 // ---------------------------------------------------------------------------
-// Auth card — sign in / create account / verify code
+// Auth card — sign in / create account / verify code / forgot & reset password
 // ---------------------------------------------------------------------------
 
-type AuthStep = 'signin' | 'signup' | 'verify';
+type AuthStep = 'signin' | 'signup' | 'verify' | 'forgot' | 'reset';
 
 function AuthCard({
   googleEnabled,
@@ -183,6 +187,7 @@ function AuthCard({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [code, setCode] = useState('');
   const [devCode, setDevCode] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -195,6 +200,9 @@ function AuthCard({
     setError(null);
     setNotice(null);
     setMailError(null);
+    setDevCode(null);
+    setCode('');
+    setNewPassword('');
     setStep(next);
   };
 
@@ -268,6 +276,68 @@ function AuthCard({
     }
   };
 
+  // --- Forgot / reset password handlers -------------------------------------
+
+  const submitForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setMailError(null);
+    setDevCode(null);
+    try {
+      const r = await nuraeApi.forgotPassword(email.trim().toLowerCase());
+      if (r.devCode) setDevCode(r.devCode);
+      if (r.mailError) {
+        setMailError(r.mailError);
+      } else {
+        setNotice(`A 6-digit reset code was sent to ${email}. It expires in 15 minutes.`);
+      }
+      setCode('');
+      setNewPassword('');
+      setStep('reset');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send reset code');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resendReset = async () => {
+    setBusy(true);
+    setError(null);
+    setMailError(null);
+    setDevCode(null);
+    try {
+      const r = await nuraeApi.forgotPassword(email.trim().toLowerCase());
+      if (r.devCode) setDevCode(r.devCode);
+      if (r.mailError) {
+        setMailError(r.mailError);
+      } else {
+        setNotice(`A new code was sent to ${email}. The old one no longer works.`);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not resend the code');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await nuraeApi.resetPassword(email.trim().toLowerCase(), code.trim(), newPassword);
+      onAuthenticated(r.user);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Password reset failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // --------------------------------------------------------------------------
+
   const submitVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -291,7 +361,101 @@ function AuthCard({
         </div>
       )}
 
-      {step === 'verify' ? (
+      {step === 'forgot' ? (
+        <form onSubmit={submitForgot} className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium text-foreground">Reset your password</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Enter your account email and we&apos;ll send you a 6-digit reset code.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="forgot-email">Email</Label>
+            <Input
+              id="forgot-email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@gmail.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="bg-transparent"
+            />
+          </div>
+          {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+          <Button type="submit" className="w-full" size="sm" disabled={busy}>
+            {busy ? 'Sending…' : 'Send reset code'}
+          </Button>
+          <div className="text-center text-xs">
+            <button type="button" onClick={() => switchStep('signin')} className="text-muted-foreground hover:text-foreground">
+              Back to sign in
+            </button>
+          </div>
+        </form>
+      ) : step === 'reset' ? (
+        <form onSubmit={submitReset} className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium text-foreground">Set a new password</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{notice ?? `Enter the 6-digit code sent to ${email} and choose a new password.`}</p>
+          </div>
+          {mailError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive" role="alert">
+              <p className="font-medium">The email could not be sent — no code will arrive.</p>
+              <p className="mt-1 opacity-90">{mailError}</p>
+            </div>
+          )}
+          {devCode && (
+            <div className="rounded-md border border-border px-3 py-2.5 text-center">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Dev reset code</div>
+              <div className="mt-1 font-mono text-2xl tracking-[0.4em] text-foreground">{devCode}</div>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="reset-code">Reset code</Label>
+            <Input
+              id="reset-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              className="text-center font-mono text-lg tracking-[0.5em]"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="reset-new-password">New password</Label>
+            <Input
+              id="reset-new-password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Min 8 characters"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              className="bg-transparent"
+            />
+          </div>
+          {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+          <Button type="submit" className="w-full" size="sm" disabled={busy || code.length !== 6 || newPassword.length < 8}>
+            {busy ? 'Resetting…' : 'Set new password'}
+          </Button>
+          <div className="flex items-center justify-between text-xs">
+            <button
+              type="button"
+              onClick={resendReset}
+              disabled={busy}
+              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+            >
+              Resend code
+            </button>
+            <button type="button" onClick={() => switchStep('signin')} className="text-muted-foreground hover:text-foreground">
+              Back to sign in
+            </button>
+          </div>
+        </form>
+      ) : step === 'verify' ? (
         <form onSubmit={submitVerify} className="space-y-4">
           <div>
             <h2 className="text-lg font-medium text-foreground">Verify your email</h2>
@@ -394,7 +558,16 @@ function AuthCard({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="signin-password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="signin-password">Password</Label>
+                  <button
+                    type="button"
+                    onClick={() => switchStep('forgot')}
+                    className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <Input
                   id="signin-password"
                   type="password"

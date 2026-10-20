@@ -646,6 +646,16 @@ export const nuraeApi = {
       body: JSON.stringify({ email, password }),
     }),
   userLogout: () => api<{ ok: true }>('/api/auth/user-logout', { method: 'POST' }),
+  forgotPassword: (email: string) =>
+    api<{ ok: true; devCode?: string; mailError?: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    api<{ ok: true; user: SessionUserDTO }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, newPassword }),
+    }),
   me: () => api<{ user: SessionUserDTO | null }>('/api/auth/me'),
   supportStatus: () => api<SupportStatusResponse>('/api/support/status'),
   supportHistory: () => api<{ messages: ChatMessageDTO[] }>('/api/support/history'),
