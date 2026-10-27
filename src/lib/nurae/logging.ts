@@ -239,7 +239,15 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
   let jsonlBytes = 0; // bytes appended since this fd was opened (mid-run rotation)
   let jsonlFallback = false;
   let jsonlWarned = false;
-  const dir = opts.dir ?? resolveDataPath(join('logs'));
+  // NOTE: the fs/path calls below carry `/*turbopackIgnore: true*/` comments.
+  // These sinks write to RUNTIME-resolved paths (resolveDataPath → data root,
+  // which differs per environment). Turbopack's static tracer cannot scope
+  // them, so without the ignore comments it traces the WHOLE PROJECT into
+  // every server bundle (8 "Dynamic filesystem access causes tracing of the
+  // whole project" warnings on Vercel → bloated serverless functions). The
+  // comments are inert at runtime — they only opt the call out of build-time
+  // tracing, per Turbopack's official remedy.
+  const dir = opts.dir ?? resolveDataPath(join(/*turbopackIgnore: true*/ 'logs'));
   const fileName = opts.file ?? 'nurae.jsonl';
   let filePath = join(/*turbopackIgnore: true*/ dir, fileName);
 
@@ -274,8 +282,12 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
           const from = i === 1 ? filePath : `${filePath}.${i - 1}`;
           const to = `${filePath}.${i}`;
           try {
+
             if (existsSync(/*turbopackIgnore: true*/ to)) unlinkSync(to);
             if (existsSync(from)) renameSync(from, to);
+            if (existsSync(/*turbopackIgnore: true*/ to)) unlinkSync(/*turbopackIgnore: true*/ to);
+            if (existsSync(/*turbopackIgnore: true*/ from)) renameSync(/*turbopackIgnore: true*/ from, to);
+
           } catch {
             /* best-effort rotation */
           }

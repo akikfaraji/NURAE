@@ -34,6 +34,15 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const standalone = resolve(root, '.next/standalone');
 
+// Vercel executes `npm run build` as-is, but its builder traces and packages
+// the app itself and never produces .next/standalone (NURAE deliberately
+// builds WITHOUT standalone on Vercel — see next.config.ts, the
+// vercel/next.js#96657 ENOENT). There is nothing to assemble or prune there.
+if (process.env.VERCEL) {
+  console.log('[NURAE] postbuild: Vercel build detected — standalone assembly/prune skipped (Vercel packages its own output).');
+  process.exit(0);
+}
+
 if (!existsSync(resolve(standalone, 'server.js'))) {
   console.error('[NURAE] postbuild: .next/standalone/server.js not found — did `next build` succeed?');
   process.exit(1);
