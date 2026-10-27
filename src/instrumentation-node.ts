@@ -121,9 +121,30 @@ export async function registerNode(): Promise<void> {
     // (after its own live checks) and /api/health stops reporting otherwise.
     boot.markBootComplete();
   } catch (err) {
-    // Never swallow: remember the failing phase for readiness, then rethrow so
-    // Next.js still surfaces the boot failure like it did before.
+    // Never hide the failure: remember the failing phase for readiness first.
     boot.markBootFailure(currentPhase, err, Date.now() - phaseStart);
+
+    // THEN — two delivery models:
+    //  - Self-host (long-lived `next start` / start-prod.mjs): rethrow, like
+    //    before — fail-fast is the feature; the launcher surfaces the boot
+    //    error immediately.
+    //  - Vercel (serverless): register() runs on EVERY lambda cold start, and
+    //    a throw here bricks the function — measured live: static pages kept
+    //    serving from the CDN while EVERY /api/* answered a bare 500 because
+    //    the boot died before the first request (no DATABASE_URL → the official
+    //    bot seeding cannot touch a database on the read-only /var/task fs).
+    //    There the boot failure is PUBLISHED instead of fatal: the lambda stays
+    //    alive, /api/health answers 200 ready:false naming the failed phase,
+    //    /api/ready names the failing live check, and the error is loudly on
+    //    stderr (Vercel function logs). Honest, not dead.
+    if (process.env.VERCEL) {
+      console.error(
+        `[NURAE] boot failed in serverless environment (phase: ${currentPhase}): ` +
+          (err instanceof Error ? (err.stack ?? err.message) : String(err)) +
+          ' — continuing to serve; /api/health reports ready:false until this phase is fixed.',
+      );
+      return;
+    }
     throw err;
   }
 }
