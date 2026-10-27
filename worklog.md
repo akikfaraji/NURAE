@@ -1201,3 +1201,46 @@ Stage Summary:
   every error path is structured, durable (JSONL+DB), queryable at runtime
   (ring via admin API) and crash-safe; future modules should import { logger }
   from nurae/logging and use child({domain,botId,requestId}) scoping
+
+---
+Task ID: 27
+Agent: Z (main agent)
+Task: Diagnose and fix NURAE Vercel deploy failure ("check why is nurae failing in vercel deploy?")
+
+Work Log:
+- Pulled 9aee920 (promotional-mail engine + production hardening) from origin
+- Mapped Vercel deploy status across ~60 commits via GitHub status API: last
+  success was 75ff4f2 (V00.06.000-beta-03); every deploy since failed
+- User pasted the real Vercel build log. Build compiles fine (22.7s) but dies
+  at finalization: ENOENT /vercel/path0/.next/next-server.js.nft.json
+- Root cause: vercel/next.js#96657 — with an adapter (Vercel CLI) present,
+  Turbopack skips emitting next-server.js.nft.json, but the output:'standalone'
+  finalize step reads it unconditionally. NURAE sets standalone (self-host).
+- Fix 1 (2ef0582): next.config.ts output = 'standalone' only outside Vercel;
+  scripts/postbuild.mjs no-ops under VERCEL; logging.ts JSONL-sink fs/path
+  calls carry /*turbopackIgnore: true*/ — kills all 8 "Dynamic filesystem
+  access causes tracing of the whole project" warnings (bloated serverless
+  bundles)
+- Verified in a clean clone (npm ci + VERCEL=1 npm run build → exit 0; non-
+  VERCEL build → standalone assembled+pruned, exit 0); vitest 515/515
+- Deploy went GREEN. But live probing showed / 200 while every /api/* returned
+  bare 500: instrumentation register() rethrows boot failure on lambda cold
+  start (schema-sync mkdir /var/task/db on read-only fs) → function bricked
+- Fix 2 (e3af5e6): instrumentation-node catch records the failure via
+  markBootFailure and, under VERCEL, returns instead of rethrowing (self-host
+  keeps fail-fast). Lambda serves; /api/health 200 ready:false, /api/ready 503
+  naming the exact failing phase
+- Cleaned scratch clone (.vercel-sim)
+
+Stage Summary:
+- Vercel deploys are green again after ~30 broken commits: 2ef0582 (build),
+  e3af5e6 (serverless boot tolerance)
+- Live production alias nurae.vercel.app: / 200, /api/health 200
+  ready:false "boot-failed", /api/ready 503 detail
+  "schema-sync: ENOENT mkdir /var/task/db" — honest, actionable
+- REMAINING (operator action, no code): per README §12 set Vercel env vars —
+  DATABASE_URL (Turso libsql://) + DATABASE_AUTH_TOKEN, NURAE_SECRET_KEY,
+  NURAE_ADMIN_TOKEN, AI/Gmail keys; then schema-sync → skipped-managed and
+  readiness can go green
+- vitest 515/515 (35 files); tsc 77 (all pre-existing from 9aee920, zero in
+  touched files)
