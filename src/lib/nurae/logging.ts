@@ -239,9 +239,17 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
   let jsonlBytes = 0; // bytes appended since this fd was opened (mid-run rotation)
   let jsonlFallback = false;
   let jsonlWarned = false;
-  const dir = opts.dir ?? resolveDataPath(join('logs'));
+  // NOTE: the fs/path calls below carry `/*turbopackIgnore: true*/` comments.
+  // These sinks write to RUNTIME-resolved paths (resolveDataPath → data root,
+  // which differs per environment). Turbopack's static tracer cannot scope
+  // them, so without the ignore comments it traces the WHOLE PROJECT into
+  // every server bundle (8 "Dynamic filesystem access causes tracing of the
+  // whole project" warnings on Vercel → bloated serverless functions). The
+  // comments are inert at runtime — they only opt the call out of build-time
+  // tracing, per Turbopack's official remedy.
+  const dir = opts.dir ?? resolveDataPath(join(/*turbopackIgnore: true*/ 'logs'));
   const fileName = opts.file ?? 'nurae.jsonl';
-  let filePath = join(dir, fileName);
+  let filePath = join(/*turbopackIgnore: true*/ dir, fileName);
 
   function jsonlPath(): string {
     return filePath;
@@ -268,20 +276,20 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
     if (jsonlDisabled) return null;
     try {
       mkdirSync(dir, { recursive: true });
-      if (existsSync(filePath) && statSync(filePath).size > rotateBytes) {
+      if (existsSync(/*turbopackIgnore: true*/ filePath) && statSync(/*turbopackIgnore: true*/ filePath).size > rotateBytes) {
         // Shift generations: .4→.5, .3→.4, … current→.1
         for (let i = keepGenerations; i >= 1; i--) {
           const from = i === 1 ? filePath : `${filePath}.${i - 1}`;
           const to = `${filePath}.${i}`;
           try {
-            if (existsSync(to)) unlinkSync(to);
-            if (existsSync(from)) renameSync(from, to);
+            if (existsSync(/*turbopackIgnore: true*/ to)) unlinkSync(/*turbopackIgnore: true*/ to);
+            if (existsSync(/*turbopackIgnore: true*/ from)) renameSync(/*turbopackIgnore: true*/ from, to);
           } catch {
             /* best-effort rotation */
           }
         }
       }
-      jsonlFd = openSync(filePath, 'a');
+      jsonlFd = openSync(/*turbopackIgnore: true*/ filePath, 'a');
       return jsonlFd;
     } catch (err) {
       // Read-only data root (serverless / ephemeral filesystems) → fall back to
@@ -291,8 +299,8 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
           jsonlFallback = true;
           const fallback = join(tmpdir(), 'nurae-logs');
           mkdirSync(fallback, { recursive: true });
-          filePath = join(fallback, fileName);
-          jsonlFd = openSync(filePath, 'a');
+          filePath = join(/*turbopackIgnore: true*/ fallback, fileName);
+          jsonlFd = openSync(/*turbopackIgnore: true*/ filePath, 'a');
           warnSinkOnce(`log directory "${dir}" is not writable — structured logs now go to "${filePath}"`, err);
           return jsonlFd;
         } catch { /* fall through to the hard disable below */ }
@@ -491,11 +499,11 @@ export function createSuperLogger(opts: SuperLoggerOptions = {}): SuperLogger {
     },
     queryFileLogs(fileOpts?: { level?: SuperLevel; q?: string; limit?: number; maxBytes?: number }): LogEntry[] {
       try {
-        if (!existsSync(filePath)) return [];
+        if (!existsSync(/*turbopackIgnore: true*/ filePath)) return [];
         const maxBytes = Math.min(fileOpts?.maxBytes ?? 512 * 1024, 4 * 1024 * 1024);
-        const size = statSync(filePath).size;
+        const size = statSync(/*turbopackIgnore: true*/ filePath).size;
         const start = Math.max(0, size - maxBytes);
-        const raw = readFileSync(filePath, 'utf8');
+        const raw = readFileSync(/*turbopackIgnore: true*/ filePath, 'utf8');
         const slice = start > 0 ? raw.slice(raw.indexOf('\n') + 1) : raw; // drop the partial first line
         const lines = slice.split('\n').filter((l) => l.trim().length > 0);
         let entries: LogEntry[] = [];

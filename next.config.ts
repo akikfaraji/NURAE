@@ -33,7 +33,15 @@ async function rewrites() {
 }
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // `output: "standalone"` serves SELF-HOSTING (scripts/start-prod.mjs boots
+  // .next/standalone/server.js). It must NOT be active on Vercel: the Vercel
+  // CLI registers itself as a Next adapter, Turbopack then skips emitting
+  // .next/next-server.js.nft.json (adapters don't read it), but the
+  // standalone finalize step still reads it unconditionally — every Vercel
+  // build dies with "ENOENT … next-server.js.nft.json" (vercel/next.js#96657,
+  // reproduced on 16.3.4). Vercel also runs its own tracer/packager, so
+  // standalone would be pure loss there. VERCEL is set in every Vercel build.
+  output: process.env.VERCEL ? undefined : "standalone",
   // Don't advertise the framework (X-Powered-By: Next.js) — free recon for
   // attackers looking for known framework-level CVEs.
   poweredByHeader: false,
