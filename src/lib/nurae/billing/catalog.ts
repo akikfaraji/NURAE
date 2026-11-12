@@ -177,7 +177,7 @@ export function cryptoBotToken(): string | null {
   return t && t.trim().length > 0 ? t.trim() : null;
 }
 
-export const TRIAL_DAYS = 7;
+export const TRIAL_DAYS = 30;
 
 export function trialEndsForNewUser(now: Date = new Date()): Date {
   return new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);

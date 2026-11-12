@@ -187,8 +187,37 @@ export async function supportChatTurn(userId: string, text: string): Promise<Cha
     return { ok: false, reply: null, error: 'official_bot_unavailable', message: 'The support bot is temporarily unavailable. Try again shortly.', status: 503 };
   }
 
-  const store = createPrismaRuntimeStore(db);
+  const user = await db.user.findUnique({ where: { id: userId }, select: { trialEndsAt: true } });
+  const trialActive = Boolean(user?.trialEndsAt && user.trialEndsAt > new Date());
+  const dailyLimit = trialActive ? 15 : 20;
+
   const chatId = `web:${userId}`;
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const conversation = await db.conversation.findUnique({
+    where: { botId_chatId: { botId: bot.id, chatId } },
+  });
+  let todayCount = 0;
+  if (conversation) {
+    todayCount = await db.message.count({
+      where: {
+        conversationId: conversation.id,
+        role: 'user',
+        timestamp: { gte: todayStart },
+      },
+    });
+  }
+  if (todayCount >= dailyLimit) {
+    return {
+      ok: false,
+      reply: null,
+      error: 'daily_limit_reached',
+      message: `Daily support request limit reached (${dailyLimit}/day). Try again tomorrow.`,
+      status: 429,
+    };
+  }
+
+  const store = createPrismaRuntimeStore(db);
   const selection = selectProvider(bot.provider, { apiKey: null, baseUrl: bot.baseUrl });
   let apiKey: string | null = null;
   if (bot.apiKeyRef) {

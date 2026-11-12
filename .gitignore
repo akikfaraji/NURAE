@@ -84,3 +84,5 @@ logs/
 
 # visual verification captures (headless Chrome screenshot matrices)
 .zshots*/
+# Axodex local index (160MB+ binary artifacts; regenerate with `axodex analyze`)
+.axodex/
